@@ -1,0 +1,6 @@
+:root { font-family: Inter, system-ui, sans-serif; color: #17202a; background: #f5f7fa; }
+body { margin: 0; } main { max-width: 1100px; margin: 0 auto; padding: 36px; }
+header { display: flex; align-items: baseline; gap: 16px; } h1 { letter-spacing: .12em; } header span { color: #687385; }
+.empty { margin-top: 42px; padding: 48px; background: white; border: 1px solid #dce2ea; border-radius: 14px; }
+button { border: 0; border-radius: 8px; padding: 11px 16px; background: #1e5eff; color: white; cursor: pointer; }
+footer { margin-top: 30px; color: #687385; font-size: 13px; }

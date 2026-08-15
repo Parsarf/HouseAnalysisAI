@@ -1,1 +1,3 @@
-"""WP-9 flags and verification boundary."""
+from .service import collect_flags
+
+__all__ = ["collect_flags"]

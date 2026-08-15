@@ -1,1 +1,3 @@
-"""WP-15 exports boundary."""
+from .csv import stream_properties
+
+__all__ = ["stream_properties"]
