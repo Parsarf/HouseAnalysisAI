@@ -1,1 +1,3 @@
-"""WP-8 scoring and ranking boundary."""
+from .engine import score
+
+__all__ = ["score"]

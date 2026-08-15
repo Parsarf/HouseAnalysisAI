@@ -1,1 +1,3 @@
-"""WP-4 extraction service boundary."""
+from .validation import grounded, validate_grounding
+
+__all__ = ["grounded", "validate_grounding"]

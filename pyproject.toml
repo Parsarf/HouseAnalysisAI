@@ -10,6 +10,8 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "alembic>=1.13,<2",
   "argon2-cffi>=23.1,<24",
+  "psycopg[binary]>=3.2,<4",
+  "python-multipart>=0.0.9,<1",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +24,9 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.setuptools]
+packages = ["api", "analyst", "auth", "calibration", "changes", "classification", "common", "contracts", "db", "exports", "extraction", "finance", "flags", "identity", "ingestion", "jobs", "normalization", "ops", "pipeline", "scoring", "strategies"]
 
 [build-system]
 requires = ["setuptools>=68"]

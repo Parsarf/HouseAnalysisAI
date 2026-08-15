@@ -11,6 +11,21 @@ class ErrorCode(StrEnum):
     CONFLICT = "conflict"
     LOCKED = "locked"
     INTERNAL = "internal"
+    ENCRYPTED = "encrypted"
+    CORRUPT = "corrupt"
+    NOT_PDF = "not_pdf"
+    PARTIAL_OCR = "partial_ocr"
+    UNCLASSIFIED = "unclassified"
+    SECTION_UNMATCHED = "section_unmatched"
+    IDENTITY_CONFLICT = "identity_conflict"
+    POSSIBLE_DUPLICATE = "possible_duplicate"
+    CONFLICTING_MORTGAGE = "conflicting_mortgage"
+    INVALID_GROUNDING = "invalid_grounding"
+    RETRY_EXHAUSTED = "retry_exhausted"
+    OCR_LOW_CONFIDENCE = "ocr_low_confidence"
+
+
+FailureCode = ErrorCode
 
 
 class AcqError(Exception):
