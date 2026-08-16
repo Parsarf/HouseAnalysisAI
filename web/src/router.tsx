@@ -33,27 +33,46 @@ export function replaceUrl(to: string): void {
   window.history.replaceState(null, "", to);
 }
 
-export function Link(props: { to: string; children: ReactNode; style?: CSSProperties }) {
+export function Link(props: { to: string; children: ReactNode; style?: CSSProperties; className?: string; onClick?: () => void }) {
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
+    props.onClick?.();
     navigate(props.to);
   };
   return (
-    <a href={props.to} onClick={onClick} style={props.style}>
+    <a href={props.to} onClick={onClick} style={props.style} className={props.className}>
       {props.children}
     </a>
   );
 }
 
 export type Route =
+  | { name: "login" }
   | { name: "properties" }
   | { name: "deal"; propertyId: string }
+  | { name: "dashboard" }
+  | { name: "rankings" }
+  | { name: "flags" }
+  | { name: "changes" }
+  | { name: "batches" }
+  | { name: "problems" }
+  | { name: "assumptions" }
+  | { name: "settings" }
   | { name: "not-found" };
 
 export function matchRoute(path: string): Route {
   const pathname = (path.split("?")[0] || "/").replace(/\/+$/, "") || "/";
+  if (pathname === "/login") return { name: "login" };
   if (pathname === "/" || pathname === "/properties") return { name: "properties" };
+  if (pathname === "/dashboard") return { name: "dashboard" };
+  if (pathname === "/rankings") return { name: "rankings" };
+  if (pathname === "/flags") return { name: "flags" };
+  if (pathname === "/changes") return { name: "changes" };
+  if (pathname === "/batches") return { name: "batches" };
+  if (pathname === "/problems") return { name: "problems" };
+  if (pathname === "/assumptions") return { name: "assumptions" };
+  if (pathname === "/settings") return { name: "settings" };
   const deal = /^\/properties\/([0-9a-fA-F-]{32,36})$/.exec(pathname);
   if (deal) return { name: "deal", propertyId: deal[1] };
   return { name: "not-found" };

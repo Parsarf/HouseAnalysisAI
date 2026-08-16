@@ -5,9 +5,9 @@
  * only arithmetic here is that interpolation; off-grid exact entry posts to
  * the API for an authoritative answer.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { postOffer, type OfferGrid, type OfferPoint, type Scenario } from "../api";
-import { formatDecimalString, formatPercentString } from "./Money";
+import { formatPercentString, MoneyText } from "./Money";
 import { ProceedsFigure } from "./ProceedsFigure";
 import { button, mutedText, palette } from "./ui";
 
@@ -82,6 +82,14 @@ export function OfferSimulator(props: { grid: OfferGrid; scenario: Scenario; pro
   const [exactResult, setExactResult] = useState<OfferPoint | null>(null);
   const [exactError, setExactError] = useState<string | null>(null);
 
+  const money = (value: string, estimated = false) => ({ value, confidence: 1, source_kind: estimated ? "derived" as const : "report" as const, is_estimated: estimated });
+
+  useEffect(() => {
+    if (points.length > 0) setOffer(Number(points[Math.floor(points.length / 2)].offer_price));
+    setExactResult(null);
+    setExactError(null);
+  }, [points]);
+
   if (points.length === 0 || min === max) {
     return <p style={mutedText}>No offer grid is available for this scenario yet.</p>;
   }
@@ -93,7 +101,7 @@ export function OfferSimulator(props: { grid: OfferGrid; scenario: Scenario; pro
     setExactError(null);
     setExactResult(null);
     try {
-      setExactResult(await postOffer(props.propertyId, exactInput.trim()));
+      setExactResult(await postOffer(props.propertyId, exactInput.trim(), props.scenario));
     } catch (error) {
       setExactError(error instanceof Error ? error.message : "offer evaluation failed");
     }
@@ -102,9 +110,21 @@ export function OfferSimulator(props: { grid: OfferGrid; scenario: Scenario; pro
   const figure = (label: string, value: string, cents = true) => (
     <div>
       <div style={{ fontSize: 12, color: palette.muted }}>{label}</div>
-      <div style={{ fontSize: 16, fontVariantNumeric: "tabular-nums" }}>{formatDecimalString(value, cents ? 2 : 0)}</div>
+      <div style={{ fontSize: 16, fontVariantNumeric: "tabular-nums" }}><MoneyText money={money(value, !cents)} cents={cents} /></div>
     </div>
   );
+
+  const reconcile = async () => {
+    if (!current) return;
+    try {
+      const server = await postOffer(props.propertyId, current.offer_price, props.scenario);
+      const delta = Math.abs(Number(server.proceeds_expected) - Number(current.proceeds_expected));
+      if (delta > 0.01) console.error("Offer interpolation mismatch", { client: current, server, delta });
+      setExactResult(server);
+    } catch (reason) {
+      setExactError(reason instanceof Error ? reason.message : "Unable to reconcile offer");
+    }
+  };
 
   return (
     <div>
@@ -120,7 +140,7 @@ export function OfferSimulator(props: { grid: OfferGrid; scenario: Scenario; pro
             onClick={() => setOffer(Number(point.offer_price))}
             title={point.label ?? undefined}
           >
-            {formatDecimalString(point.offer_price)}
+            <MoneyText money={money(point.offer_price)} />
           </button>
         ))}
       </div>
@@ -131,6 +151,8 @@ export function OfferSimulator(props: { grid: OfferGrid; scenario: Scenario; pro
         step={(max - min) / 1000}
         value={offer}
         onChange={(e) => setOffer(Number(e.target.value))}
+        onMouseUp={reconcile}
+        onTouchEnd={reconcile}
         style={{ width: "100%" }}
         aria-label="Offer price"
       />
@@ -188,9 +210,9 @@ export function OfferSimulator(props: { grid: OfferGrid; scenario: Scenario; pro
       {exactError && <p style={{ color: palette.bad, fontSize: 13 }}>{exactError}</p>}
       {exactResult && (
         <p style={{ fontSize: 13, marginTop: 8 }}>
-          Server: offer {formatDecimalString(exactResult.offer_price, 2)} → profit{" "}
-          {formatDecimalString(exactResult.profit, 2)} · ROI {formatPercentString(exactResult.roi)} · proceeds{" "}
-          {formatDecimalString(exactResult.proceeds_expected, 2)}
+          Server: offer <MoneyText money={money(exactResult.offer_price)} cents /> → profit{" "}
+          <MoneyText money={money(exactResult.profit, true)} cents /> · ROI {formatPercentString(exactResult.roi)} · proceeds{" "}
+          <MoneyText money={money(exactResult.proceeds_expected, true)} cents />
         </p>
       )}
     </div>

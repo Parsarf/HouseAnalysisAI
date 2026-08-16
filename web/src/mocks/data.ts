@@ -25,7 +25,7 @@ function tracked(value: string, confidence = 0.9, isEstimated = false): TrackedV
 const cleanNormalized: NormalizedProperty = {
   property_id: PROP_CLEAN,
   apn: "APN-001",
-  address: { line1: "1 Main St", city: "Testville", state: "CA", zip5: "90001" },
+  address: { line1: "1 Main St", city: "Los Angeles", state: "CA", zip5: "90001" },
   attributes: { sqft: tracked("1800", 0.95), beds: tracked("3"), baths: tracked("2") },
   valuation_candidates: [
     { valuation_type: "comp", value: tracked("500000", 0.9), weight_hint: "1" },
@@ -41,7 +41,7 @@ const cleanNormalized: NormalizedProperty = {
 
 const thinNormalized: NormalizedProperty = {
   property_id: PROP_THIN,
-  address: { line1: "5 Main St", city: "Testville", state: "CA", zip5: "90001" },
+  address: { line1: "5 Main St", city: "Pasadena", state: "CA", zip5: "91101" },
   attributes: { beds: tracked("3", 0.85), sqft: tracked("1500", 0.85) },
   valuation_candidates: [],
   mortgages: [],
@@ -114,8 +114,8 @@ const cleanScores: ScoreSet = {
 };
 
 export const properties: PropertyListItem[] = [
-  { id: PROP_CLEAN, address: "1 Main St", city: "Testville", state: "CA", zip5: "90001", status: "analyzed", tags: ["watchlist"], gut_rating: 4 },
-  { id: PROP_THIN, address: "5 Main St", city: "Testville", state: "CA", zip5: "90001", status: "new", tags: [], gut_rating: null },
+  { id: PROP_CLEAN, address: "1 Main St", address_line1: "1 Main St", apn: "APN-001", city: "Los Angeles", state: "CA", zip5: "90001", status: "pursue", pipeline_status: "pursue", tags: ["priority", "probate"], gut_rating: 4, is_watchlisted: true, next_action: "Call trustee", next_action_date: "2026-08-19", rank: 1, overall_score: "68", open_flags: 0 },
+  { id: PROP_THIN, address: "5 Main St", address_line1: "5 Main St", city: "Pasadena", state: "CA", zip5: "91101", status: "reviewing", pipeline_status: "reviewing", tags: ["title-review"], gut_rating: 3, is_watchlisted: false, next_action: "Verify APN", next_action_date: "2026-08-17", rank: 2, overall_score: "44", open_flags: 1 },
 ];
 
 export const analyses: Record<string, AnalysisResponse> = {
@@ -141,7 +141,14 @@ export const analyses: Record<string, AnalysisResponse> = {
     strategies: [],
     offers: null,
     scores: null,
-    flags: [{ type: "missing_apn", severity: "warning", is_gating: false }],
+    flags: [{
+      id: "00000000-0000-0000-0000-00000000f001",
+      property_id: PROP_THIN,
+      flag_type: "missing_apn",
+      payload: { address: "5 Main St", zip5: "90001" },
+      financial_impact_usd: null,
+      status: "open",
+    }],
     timeline: [],
   },
 };

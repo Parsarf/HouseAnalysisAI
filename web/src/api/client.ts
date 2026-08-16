@@ -2,30 +2,46 @@
 // {error: {code, message, details}} — surfaced as ApiError.
 import {
   AnalysisPayload,
+  AssumptionSetRecord,
   ApiError,
   ApiErrorBody,
+  BatchEstimate,
   BatchStatus,
+  ChangeEvent,
+  DashboardResponse,
   EvidenceResponse,
   FactSubmission,
   FilterClause,
   FlagListResponse,
   MeResponse,
   MergeRequest,
+  NoteRecord,
   OfferPoint,
   OfferRequest,
+  ProblemsResponse,
   PropertyListItem,
   PropertyListResponse,
   PropertyPatch,
   QuickAddRequest,
+  RankingsResponse,
+  ReportRecord,
   ResolveFlagRequest,
   ResolveFlagResponse,
+  SavedView,
   Scenario,
   TimelineEvent,
+  UnderwritingResult,
   UploadResponse,
 } from "./types";
 
 const API_ROOT = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const BASE = `${API_ROOT}/api`;
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { credentials: "include", ...init });
@@ -37,7 +53,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // Non-JSON error body; keep the fallback.
     }
-    throw new ApiError(response.status, body);
+    const apiError = new ApiError(response.status, body);
+    if (response.status === 401) unauthorizedHandler?.();
+    throw apiError;
   }
   return response.json() as Promise<T>;
 }
@@ -84,6 +102,18 @@ export function getBatch(batchId: string): Promise<BatchStatus> {
   return get(`/batches/${batchId}`);
 }
 
+export function estimateBatch(batchId: string): Promise<BatchEstimate> {
+  return json(`/batches/${encodeURIComponent(batchId)}/estimate`, "POST");
+}
+
+export function startBatch(batchId: string): Promise<BatchStatus> {
+  return json(`/batches/${encodeURIComponent(batchId)}/start`, "POST");
+}
+
+export function ingestPaste(text: string, batchName?: string): Promise<UploadResponse> {
+  return json("/ingest/paste", "POST", { text, batch_name: batchName ?? null });
+}
+
 export interface ListPropertiesParams {
   sort?: string;
   order?: "asc" | "desc";
@@ -94,8 +124,7 @@ export interface ListPropertiesParams {
 
 export function listProperties(params: ListPropertiesParams = {}): Promise<PropertyListResponse> {
   const search = new URLSearchParams();
-  if (params.sort) search.set("sort", params.sort);
-  if (params.order) search.set("order", params.order);
+  if (params.sort) search.set("sort", `${params.order === "desc" ? "-" : ""}${params.sort}`);
   if (params.limit !== undefined) search.set("limit", String(params.limit));
   if (params.cursor) search.set("cursor", params.cursor);
   if (params.filters && params.filters.length > 0) search.set("filters", JSON.stringify(params.filters));
@@ -156,6 +185,69 @@ export function listFlags(status: "open" | "resolved" = "open"): Promise<FlagLis
   return get(`/flags?status=${encodeURIComponent(status)}`);
 }
 
+export function listPropertyFlags(propertyId: string, status: "open" | "resolved" | "all" = "open"): Promise<FlagListResponse> {
+  return get(`/flags?status=${encodeURIComponent(status)}&property_id=${encodeURIComponent(propertyId)}`);
+}
+
 export function resolveFlag(flagId: string, resolution: ResolveFlagRequest): Promise<ResolveFlagResponse> {
   return json(`/flags/${encodeURIComponent(flagId)}/resolve`, "POST", resolution);
+}
+
+export function getDashboard(): Promise<DashboardResponse> { return get("/dashboard"); }
+export function getRankings(scopeType = "portfolio"): Promise<RankingsResponse> {
+  return get(`/rankings?scope_type=${encodeURIComponent(scopeType)}`);
+}
+export function getChanges(limit = 100): Promise<{ items: ChangeEvent[] }> { return get(`/changes?limit=${limit}`); }
+export function getProblems(): Promise<ProblemsResponse> { return get("/problems"); }
+export function listSavedViews(): Promise<{ items: SavedView[] }> { return get("/saved-views"); }
+export function createSavedView(name: string, filters: FilterClause[]): Promise<SavedView> {
+  return json("/saved-views", "POST", { name, filters, columns: {} });
+}
+export function deleteSavedView(id: string): Promise<{ deleted: string }> {
+  return request(`${BASE}/saved-views/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+export function listAssumptionSets(): Promise<{ items: AssumptionSetRecord[] }> { return get("/assumption-sets"); }
+export function previewAssumptionSet(name: string, params: Record<string, unknown>, propertyId?: string): Promise<{ valid: boolean; underwriting: UnderwritingResult | null }> {
+  return json("/assumption-sets/preview", "POST", { name, params, property_id: propertyId ?? null });
+}
+export function createAssumptionSet(name: string, params: Record<string, unknown>, isDefault: boolean): Promise<{ id: string; name: string; version: number }> {
+  return json("/assumption-sets", "POST", { name, params, is_default: isDefault });
+}
+export function listNotes(propertyId: string): Promise<{ items: NoteRecord[] }> { return get(`/properties/${encodeURIComponent(propertyId)}/notes`); }
+export function createNote(propertyId: string, body: string): Promise<NoteRecord> {
+  return json(`/properties/${encodeURIComponent(propertyId)}/notes`, "POST", { body });
+}
+export function listReports(propertyId: string): Promise<{ items: ReportRecord[] }> { return get(`/properties/${encodeURIComponent(propertyId)}/reports`); }
+export function createRealizedDeal(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return json("/realized-deals", "POST", payload);
+}
+export function exportCsvUrl(filters: FilterClause[], columns: string[]): string {
+  const search = new URLSearchParams();
+  if (filters.length) search.set("filters", JSON.stringify(filters));
+  if (columns.length) search.set("columns", columns.join(","));
+  return `${BASE}/exports/csv?${search.toString()}`;
+}
+
+async function openHtml(path: string, payload?: unknown): Promise<void> {
+  const response = await fetch(`${BASE}${path}`, {
+    method: "POST", credentials: "include",
+    headers: payload === undefined ? undefined : { "Content-Type": "application/json" },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let body: ApiErrorBody = { code: "internal", message: response.statusText };
+    try { const parsed = await response.json(); if (parsed?.error) body = parsed.error; } catch { /* HTML failure */ }
+    if (response.status === 401) unauthorizedHandler?.();
+    throw new ApiError(response.status, body);
+  }
+  const url = URL.createObjectURL(new Blob([await response.text()], { type: "text/html" }));
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function openDealSheet(propertyId: string): Promise<void> {
+  return openHtml(`/properties/${encodeURIComponent(propertyId)}/exports/deal-sheet`);
+}
+export function openNetSheet(propertyId: string, offerPrice: string, scenario: Scenario): Promise<void> {
+  return openHtml(`/properties/${encodeURIComponent(propertyId)}/exports/net-sheet`, { offer_price: offerPrice, scenario });
 }

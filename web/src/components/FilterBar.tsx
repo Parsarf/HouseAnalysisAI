@@ -1,148 +1,76 @@
-/**
- * Filter bar emitting the shared filter grammar: `{field, op, value}[]` with
- * the closed operator set from contracts.FilterClause. The allowlist below is
- * the client-side view of the API's allowlist of filterable fields (spec
- * §11.1); the server remains authoritative.
- */
 import { useState } from "react";
 import { FILTER_OPS, type FilterClause, type FilterOp } from "../api";
-import { button, mutedText, palette } from "./ui";
+
+export type FilterableField = "apn" | "address" | "city" | "state" | "zip5" | "pipeline_status" | "tags" | "next_action" | "next_action_date" | "gut_rating" | "is_watchlisted" | "lat" | "lng" | "created_at" | "updated_at";
 
 interface FilterFieldDef {
-  field: string;
+  field: FilterableField;
   label: string;
-  kind: "text" | "number" | "select";
+  kind: "text" | "number" | "select" | "date" | "boolean";
   options?: string[];
   defaultOp: FilterOp;
 }
 
 export const FILTERABLE_FIELDS: readonly FilterFieldDef[] = [
-  { field: "address.city", label: "City", kind: "text", defaultOp: "eq" },
-  { field: "address.zip5", label: "ZIP", kind: "text", defaultOp: "eq" },
-  { field: "address.county", label: "County", kind: "text", defaultOp: "eq" },
-  { field: "scores.overall", label: "Overall score", kind: "number", defaultOp: "gte" },
-  { field: "scores.distress", label: "Distress", kind: "number", defaultOp: "gte" },
-  { field: "underwriting.value.v_expected", label: "Est. value", kind: "number", defaultOp: "gte" },
-  { field: "underwriting.equity.adjusted", label: "Equity $", kind: "number", defaultOp: "gte" },
-  { field: "underwriting.equity.equity_pct", label: "Equity %", kind: "number", defaultOp: "gte" },
-  { field: "foreclosure.stage", label: "Foreclosure stage", kind: "text", defaultOp: "eq" },
-  { field: "foreclosure.current_sale_date", label: "Auction date", kind: "text", defaultOp: "gte" },
-  { field: "pipeline_status", label: "Status", kind: "select", options: ["new", "reviewing", "pursue", "offer_made", "under_contract", "dead"], defaultOp: "eq" },
+  { field: "address", label: "Address", kind: "text", defaultOp: "contains" },
+  { field: "apn", label: "APN", kind: "text", defaultOp: "eq" },
+  { field: "city", label: "City", kind: "text", defaultOp: "eq" },
+  { field: "state", label: "State", kind: "text", defaultOp: "eq" },
+  { field: "zip5", label: "ZIP", kind: "text", defaultOp: "eq" },
+  { field: "pipeline_status", label: "Pipeline status", kind: "select", options: ["new", "reviewing", "pursue", "offer_made", "under_contract", "dead"], defaultOp: "eq" },
   { field: "tags", label: "Tag", kind: "text", defaultOp: "contains" },
-];
+  { field: "next_action", label: "Next action", kind: "text", defaultOp: "contains" },
+  { field: "next_action_date", label: "Next action date", kind: "date", defaultOp: "eq" },
+  { field: "gut_rating", label: "Gut rating", kind: "number", defaultOp: "eq" },
+  { field: "is_watchlisted", label: "Watchlisted", kind: "boolean", defaultOp: "eq" },
+  { field: "lat", label: "Latitude", kind: "number", defaultOp: "between" },
+  { field: "lng", label: "Longitude", kind: "number", defaultOp: "between" },
+  { field: "created_at", label: "Created", kind: "date", defaultOp: "gte" },
+  { field: "updated_at", label: "Updated", kind: "date", defaultOp: "gte" },
+] as const;
 
-const OPS_REQUIRING_VALUE: readonly FilterOp[] = ["eq", "neq", "gt", "gte", "lt", "lte", "in", "between", "contains"];
+const VALUE_OPS: readonly FilterOp[] = ["eq", "neq", "gt", "gte", "lt", "lte", "in", "between", "contains"];
 
 export function describeClause(clause: FilterClause): string {
-  const label = FILTERABLE_FIELDS.find((f) => f.field === clause.field)?.label ?? clause.field;
+  const label = FILTERABLE_FIELDS.find((field) => field.field === clause.field)?.label ?? clause.field;
   if (clause.op === "is_null") return `${label} is empty`;
-  if (clause.op === "between" && Array.isArray(clause.value)) return `${label} between ${clause.value[0]} and ${clause.value[1]}`;
-  if (clause.op === "in" && Array.isArray(clause.value)) return `${label} in [${clause.value.join(", ")}]`;
-  return `${label} ${clause.op} ${String(clause.value ?? "")}`;
+  if (clause.op === "between" && Array.isArray(clause.value)) return `${label} ${clause.value[0]} – ${clause.value[1]}`;
+  if (clause.op === "in" && Array.isArray(clause.value)) return `${label}: ${clause.value.join(", ")}`;
+  return `${label} ${clause.op.replace("eq", "is")} ${String(clause.value ?? "")}`;
 }
 
 function parseValue(raw: string, op: FilterOp, kind: FilterFieldDef["kind"]): unknown {
   if (op === "is_null") return true;
   if (op === "in") return raw.split(",").map((part) => part.trim()).filter(Boolean);
-  if (op === "between") {
-    const [lo, hi] = raw.split(",").map((part) => part.trim());
-    return [kind === "number" ? Number(lo) : lo, kind === "number" ? Number(hi) : hi];
-  }
-  return kind === "number" ? Number(raw) : raw;
+  if (op === "between") return raw.split(",").slice(0, 2).map((part) => kind === "number" ? Number(part.trim()) : part.trim());
+  if (kind === "number") return Number(raw);
+  if (kind === "boolean") return raw === "true";
+  return raw;
 }
 
-export function FilterBar(props: { clauses: FilterClause[]; onChange: (clauses: FilterClause[]) => void }) {
-  const [field, setField] = useState<string>(FILTERABLE_FIELDS[0].field);
-  const def = FILTERABLE_FIELDS.find((f) => f.field === field) ?? FILTERABLE_FIELDS[0];
+export function FilterBar(props: { clauses: FilterClause[]; onChange: (clauses: FilterClause[]) => void; onApply?: (clauses: FilterClause[]) => Promise<void> | void }) {
+  const [field, setField] = useState<FilterableField>("address");
+  const def = FILTERABLE_FIELDS.find((item) => item.field === field) ?? FILTERABLE_FIELDS[0];
   const [op, setOp] = useState<FilterOp>(def.defaultOp);
-  const [rawValue, setRawValue] = useState("");
-
-  const addClause = () => {
-    if (OPS_REQUIRING_VALUE.includes(op) && rawValue.trim() === "") return;
-    props.onChange([...props.clauses, { field, op, value: parseValue(rawValue, op, def.kind) }]);
-    setRawValue("");
+  const [raw, setRaw] = useState("");
+  const add = async () => {
+    if (VALUE_OPS.includes(op) && !raw.trim()) return;
+    const next = [...props.clauses, { field, op, value: parseValue(raw, op, def.kind) }];
+    await props.onApply?.(next);
+    props.onChange(next);
+    setRaw("");
   };
-
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <select
-          value={field}
-          onChange={(e) => {
-            const next = FILTERABLE_FIELDS.find((f) => f.field === e.target.value) ?? FILTERABLE_FIELDS[0];
-            setField(next.field);
-            setOp(next.defaultOp);
-          }}
-          style={{ padding: "5px 8px" }}
-        >
-          {FILTERABLE_FIELDS.map((f) => (
-            <option key={f.field} value={f.field}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <select value={op} onChange={(e) => setOp(e.target.value as FilterOp)} style={{ padding: "5px 8px" }}>
-          {FILTER_OPS.map((candidate) => (
-            <option key={candidate} value={candidate}>
-              {candidate}
-            </option>
-          ))}
-        </select>
-        {op === "is_null" ? null : def.kind === "select" ? (
-          <select value={rawValue} onChange={(e) => setRawValue(e.target.value)} style={{ padding: "5px 8px" }}>
-            <option value="">—</option>
-            {(def.options ?? []).map((option) => (
-              <option key={option} value={option}>
-                {option.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            value={rawValue}
-            onChange={(e) => setRawValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addClause()}
-            placeholder={op === "between" ? "low, high" : op === "in" ? "a, b, c" : "value"}
-            type={def.kind === "number" && (op === "eq" || op === "neq" || op.startsWith("g") || op.startsWith("l")) ? "number" : "text"}
-            style={{ padding: "5px 8px", width: 160 }}
-          />
-        )}
-        <button style={button} onClick={addClause}>
-          Add filter
-        </button>
-      </div>
-      {props.clauses.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-          {props.clauses.map((clause, index) => (
-            <span
-              key={index}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                border: `1px solid ${palette.border}`,
-                borderRadius: 12,
-                padding: "2px 10px",
-                fontSize: 12,
-                background: palette.subtle,
-              }}
-            >
-              {describeClause(clause)}
-              <button
-                style={{ ...button, border: "none", background: "transparent", padding: 0, color: palette.muted }}
-                onClick={() => props.onChange(props.clauses.filter((_, i) => i !== index))}
-                aria-label={`Remove filter ${describeClause(clause)}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <button style={{ ...button, fontSize: 12 }} onClick={() => props.onChange([])}>
-            Clear all
-          </button>
-          <span style={mutedText}>filters are applied server-side</span>
-        </div>
-      )}
+  return <div className="filter-builder">
+    <div className="filter-controls">
+      <select className="select-input" aria-label="Filter field" value={field} onChange={(event) => { const next = FILTERABLE_FIELDS.find((item) => item.field === event.target.value) ?? FILTERABLE_FIELDS[0]; setField(next.field); setOp(next.defaultOp); setRaw(""); }}>
+        {FILTERABLE_FIELDS.map((item) => <option key={item.field} value={item.field}>{item.label}</option>)}
+      </select>
+      <select className="select-input" aria-label="Filter operator" value={op} onChange={(event) => setOp(event.target.value as FilterOp)}>
+        {FILTER_OPS.map((candidate) => <option key={candidate} value={candidate}>{candidate.replace("is_null", "is empty")}</option>)}
+      </select>
+      {op !== "is_null" && (def.kind === "select" ? <select className="select-input" aria-label="Filter value" value={raw} onChange={(event) => setRaw(event.target.value)}><option value="">Choose…</option>{def.options?.map((value) => <option key={value} value={value}>{value.replace(/_/g," ")}</option>)}</select> : def.kind === "boolean" ? <select className="select-input" aria-label="Filter value" value={raw} onChange={(event) => setRaw(event.target.value)}><option value="">Choose…</option><option value="true">Yes</option><option value="false">No</option></select> : <input className="text-input" aria-label="Filter value" type={def.kind === "date" ? "date" : def.kind === "number" && op !== "between" ? "number" : "text"} value={raw} onChange={(event) => setRaw(event.target.value)} onKeyDown={(event) => event.key === "Enter" && add()} placeholder={op === "between" ? "low, high" : op === "in" ? "one, two" : "Value"} />)}
+      <button className="btn btn-secondary" onClick={add}>Add filter</button>
     </div>
-  );
+    {props.clauses.length > 0 && <div className="active-filters">{props.clauses.map((clause, index) => <span key={`${clause.field}-${index}`}>{describeClause(clause)}<button aria-label={`Remove ${describeClause(clause)}`} onClick={() => props.onChange(props.clauses.filter((_, itemIndex) => itemIndex !== index))}>×</button></span>)}<button className="clear-filters" onClick={() => props.onChange([])}>Clear all</button></div>}
+  </div>;
 }

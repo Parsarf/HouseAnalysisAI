@@ -228,10 +228,13 @@ export interface ScoreSet {
 
 export interface TimelineEvent {
   date?: string | null;
-  kind: string;
+  kind?: string;
+  event_date?: string | null;
+  event_type?: string;
   label: string;
   amount?: TrackedValue | null;
   source?: string | null;
+  details?: Record<string, unknown>;
 }
 
 /** One round-trip payload for the deal page (spec §16, WP-11). */
@@ -243,7 +246,7 @@ export interface AnalysisPayload {
   strategies: StrategyResult[];
   offers: OfferGrid | null;
   scores: ScoreSet | null;
-  flags: FlagSummary[];
+  flags: FlagRecord[];
   timeline: TimelineEvent[];
 }
 
@@ -262,6 +265,7 @@ export interface EvidenceCandidate {
   snippet?: string | null;
   report_id?: string | null;
   is_resolved?: boolean;
+  is_winner?: boolean;
   score?: string | null;
 }
 
@@ -273,23 +277,42 @@ export interface EvidenceOverride {
 }
 
 export interface EvidenceResponse {
-  property_id: string;
+  property_id?: string;
   field_path: string;
-  resolved: TrackedValue | null;
+  resolved?: TrackedValue | null;
   method?: string | null;
+  resolution?: {
+    method?: string | null;
+    score?: string | null;
+    has_conflict?: boolean;
+    verification_state?: string | null;
+    winning_fact_id?: string | null;
+  } | null;
   candidates: EvidenceCandidate[];
-  overrides: EvidenceOverride[];
+  overrides?: EvidenceOverride[];
 }
 
 export interface PropertyListItem {
   id: string;
-  address: string | null;
+  address?: string | null;
+  address_line1?: string | null;
+  apn?: string | null;
   city?: string | null;
   state?: string | null;
   zip5?: string | null;
-  status: string;
+  status?: string;
+  pipeline_status?: string;
   tags?: string[];
   gut_rating?: number | null;
+  next_action?: string | null;
+  next_action_date?: string | null;
+  is_watchlisted?: boolean;
+  open_flags?: number;
+  lat?: string | null;
+  lng?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  latest_valuation?: TrackedValue | null;
   // Present once WP-11 serves ranking/underwriting rollups on the list endpoint.
   rank?: number | null;
   rank_total?: number | null;
@@ -334,11 +357,22 @@ export interface MeResponse {
 
 export interface BatchStatus {
   id: string;
+  name?: string | null;
   status: string;
   total: number;
   completed: number;
   failed: number;
   estimated_cost_usd: string | null;
+  actual_cost_usd?: string | null;
+  awaiting_confirmation?: boolean;
+}
+
+export interface BatchEstimate {
+  batch_id: string;
+  report_count: number;
+  total_tokens: number;
+  estimated_cost_usd: string;
+  awaiting_confirmation: boolean;
 }
 
 export interface UploadResponse {
@@ -366,11 +400,22 @@ export interface OfferRequest {
 export type OfferResponse = OfferPoint;
 
 export interface FactSubmission {
+  report_id: string;
+  extraction_unit_id: string;
+  entity_type: "property" | "mortgage" | "lien" | "foreclosure" | "listing" | "comparable" | "bankruptcy";
+  entity_local_id: string;
   field_path: string;
   value_raw?: string | null;
   value_parsed?: string | null;
   value_text?: string | null;
   value_date?: string | null;
+  value_bool?: boolean | null;
+  unit?: string | null;
+  as_of_date?: string | null;
+  page_number: number;
+  snippet: string;
+  extraction_confidence: number;
+  source_kind?: SourceKind;
   note?: string | null;
 }
 
@@ -378,13 +423,17 @@ export interface FlagRecord {
   id: string;
   property_id: string;
   flag_type: string;
-  severity: string;
-  is_gating: boolean;
+  severity?: string;
+  is_gating?: boolean;
   payload: Record<string, unknown>;
   financial_impact_usd: string | null;
-  raised_by: string;
+  raised_by?: string;
   status: "open" | "resolved";
-  created_at: string;
+  created_at?: string;
+  resolution?: string | null;
+  resolved_value?: Record<string, unknown> | null;
+  note?: string | null;
+  resolved_at?: string | null;
 }
 
 export interface FlagListResponse {
@@ -393,15 +442,18 @@ export interface FlagListResponse {
 }
 
 export interface ResolveFlagRequest {
-  resolution: "accept" | "reject";
+  resolution: "approve" | "reject" | "replace" | "dismiss";
   note?: string | null;
+  resolved_value?: Record<string, unknown> | null;
 }
 
 export interface ResolveFlagResponse {
-  id: string;
-  status: "resolved";
-  score_delta: string | null;
-  rank_delta: number | null;
+  flag?: FlagRecord;
+  recompute_enqueued?: boolean;
+  id?: string;
+  status?: "resolved";
+  score_delta?: string | null;
+  rank_delta?: number | null;
 }
 
 export interface QuickAddRequest {
@@ -415,4 +467,84 @@ export interface QuickAddRequest {
 export interface MergeRequest {
   source_id: string;
   target_id: string;
+}
+
+export interface DashboardResponse {
+  total_properties: number;
+  by_status: Record<string, number>;
+  open_flags: number;
+  failed_reports: number;
+  missing_valuation_count: number;
+  watchlisted: number;
+}
+
+export interface RankingEntry {
+  property_id: string;
+  rank: number;
+  prev_rank: number | null;
+  score: string | null;
+}
+
+export interface RankingsResponse {
+  items: RankingEntry[];
+  ranked_at: string | null;
+}
+
+export interface SavedView {
+  id: string;
+  name: string;
+  filters: FilterClause[];
+  columns: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface ChangeEvent {
+  id: string;
+  property_id: string;
+  change_type: string;
+  field_path?: string | null;
+  old_value?: unknown;
+  new_value?: unknown;
+  score_delta?: string | null;
+  detected_at?: string | null;
+}
+
+export interface FailedReport {
+  id: string;
+  batch_id?: string | null;
+  failure_reason?: string | null;
+  file_path?: string | null;
+}
+
+export interface ProblemsResponse {
+  gating_flags: FlagRecord[];
+  failed_reports: FailedReport[];
+}
+
+export interface AssumptionSetRecord {
+  id: string;
+  name: string;
+  version: number;
+  is_default: boolean;
+  effective_from?: string | null;
+  params: Record<string, unknown>;
+}
+
+export interface NoteRecord {
+  id: string;
+  property_id: string;
+  body: string;
+  created_at?: string | null;
+}
+
+export interface ReportRecord {
+  id: string;
+  report_type?: string | null;
+  vendor?: string | null;
+  generated_date?: string | null;
+  status: string;
+  failure_reason?: string | null;
+  page_count?: number | null;
+  ocr_applied: boolean;
+  created_at?: string | null;
 }

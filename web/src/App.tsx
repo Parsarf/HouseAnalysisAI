@@ -1,58 +1,88 @@
-/**
- * App shell (WP-12): header, route outlet, footer. Routes come from the
- * local mini-router; main.tsx (owned elsewhere) renders this component.
- */
+import { useEffect, useState } from "react";
+import { ApiError, me, setUnauthorizedHandler, type MeResponse } from "./api";
+import { AuthProvider } from "./auth";
 import { DealPage } from "./pages/DealPage";
+import { LoginPage } from "./pages/LoginPage";
+import {
+  AssumptionsPage,
+  BatchesPage,
+  ChangesPage,
+  DashboardPage,
+  FlagsPage,
+  ProblemsPage,
+  RankingsPage,
+  SettingsPage,
+} from "./pages/Operations";
 import { PropertiesPage } from "./pages/PropertiesPage";
-import { Link, matchRoute, usePath } from "./router";
-import { palette } from "./components/ui";
+import { Link, matchRoute, navigate, usePath } from "./router";
+
+const NAV = [
+  ["properties", "/", "Portfolio", "▦"],
+  ["dashboard", "/dashboard", "Dashboard", "◫"],
+  ["rankings", "/rankings", "Rankings", "↗"],
+  ["flags", "/flags", "Flags", "◇"],
+  ["changes", "/changes", "Changes", "◌"],
+  ["batches", "/batches", "Batches", "↑"],
+  ["problems", "/problems", "Problems", "!"],
+  ["assumptions", "/assumptions", "Assumptions", "≋"],
+  ["settings", "/settings", "Settings", "⚙"],
+] as const;
+
+function AppShell(props: { user: MeResponse; onSignOut: () => void }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const path = usePath();
+  const route = matchRoute(path);
+  useEffect(() => setMobileOpen(false), [path]);
+  return <AuthProvider value={{ user: props.user, signOut: props.onSignOut }}>
+    <div className="app-shell">
+      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+        <div className="sidebar-brand"><span className="brand-mark small">A</span><div><strong>ACQ</strong><small>Acquisition intelligence</small></div></div>
+        <nav aria-label="Primary navigation">
+          {NAV.map(([name, to, label, icon]) => <Link key={name} to={to} className={`nav-link ${route.name === name || (name === "properties" && route.name === "deal") ? "active" : ""}`}><span>{icon}</span>{label}</Link>)}
+        </nav>
+        <div className="sidebar-footer">
+          {props.user.read_only && <span className="readonly-chip">Read-only session</span>}
+          <div className="user-row"><span className="avatar">{props.user.id.slice(0,1).toUpperCase()}</span><div><strong>{props.user.id}</strong><small>{props.user.read_only ? "Reviewer" : "Workspace owner"}</small></div><button title="Log out" onClick={props.onSignOut}>↪</button></div>
+        </div>
+      </aside>
+      <div className="app-stage">
+        <header className="mobile-header"><button className="menu-button" onClick={() => setMobileOpen((value) => !value)} aria-label="Toggle navigation">☰</button><Link to="/" className="mobile-brand">ACQ</Link>{props.user.read_only && <span className="readonly-chip">Read only</span>}</header>
+        <main className="app-main">
+          {route.name === "properties" && <PropertiesPage />}
+          {route.name === "deal" && <DealPage propertyId={route.propertyId} />}
+          {route.name === "dashboard" && <DashboardPage />}
+          {route.name === "rankings" && <RankingsPage />}
+          {route.name === "flags" && <FlagsPage />}
+          {route.name === "changes" && <ChangesPage />}
+          {route.name === "batches" && <BatchesPage />}
+          {route.name === "problems" && <ProblemsPage />}
+          {route.name === "assumptions" && <AssumptionsPage />}
+          {route.name === "settings" && <SettingsPage />}
+          {route.name === "login" && <DashboardPage />}
+          {route.name === "not-found" && <div className="empty-state panel"><strong>Page not found</strong><Link to="/">Return to portfolio</Link></div>}
+        </main>
+      </div>
+      {mobileOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
+    </div>
+  </AuthProvider>;
+}
 
 export default function App() {
-  const route = matchRoute(usePath());
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", color: palette.text }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 12,
-          padding: "12px 24px",
-          borderBottom: `1px solid ${palette.border}`,
-          background: palette.surface,
-        }}
-      >
-        <Link to="/" style={{ fontSize: 20, fontWeight: 700, color: palette.text, textDecoration: "none" }}>
-          ACQ
-        </Link>
-        <span style={{ color: palette.muted, fontSize: 13 }}>Property acquisition analysis</span>
-        <nav style={{ marginLeft: "auto", fontSize: 14 }}>
-          <Link to="/properties" style={{ color: palette.accent }}>
-            Portfolio
-          </Link>
-        </nav>
-      </header>
-      <main style={{ flex: 1, padding: "20px 24px", maxWidth: 1200, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-        {route.name === "properties" && <PropertiesPage />}
-        {route.name === "deal" && <DealPage propertyId={route.propertyId} />}
-        {route.name === "not-found" && (
-          <p>
-            Page not found.{" "}
-            <Link to="/" style={{ color: palette.accent }}>
-              Back to the portfolio.
-            </Link>
-          </p>
-        )}
-      </main>
-      <footer
-        style={{
-          padding: "12px 24px",
-          borderTop: `1px solid ${palette.border}`,
-          color: palette.muted,
-          fontSize: 12,
-        }}
-      >
-        All financial values are deterministic and source-traced.
-      </footer>
-    </div>
-  );
+  const [user, setUser] = useState<MeResponse | null>(null);
+  const [booting, setBooting] = useState(true);
+  useEffect(() => {
+    setUnauthorizedHandler(() => { setUser(null); navigate("/login"); });
+    me().then((value) => { setUser(value); if (window.location.pathname === "/login") navigate("/"); })
+      .catch((error: ApiError | Error) => { if (!(error instanceof ApiError) || error.status !== 401) console.error(error); setUser(null); if (window.location.pathname !== "/login") navigate("/login"); })
+      .finally(() => setBooting(false));
+    return () => setUnauthorizedHandler(null);
+  }, []);
+  const signOut = () => {
+    // There is no logout endpoint; the HttpOnly session cookie remains valid until expiry.
+    setUser(null);
+    navigate("/login");
+  };
+  if (booting) return <div className="boot-splash"><span className="brand-mark">A</span><div className="boot-line"><i /></div><p>Opening your workspace</p></div>;
+  if (!user) return <LoginPage onAuthenticated={(value) => { setUser(value); navigate("/"); }} />;
+  return <AppShell user={user} onSignOut={signOut} />;
 }
