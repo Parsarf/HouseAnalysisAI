@@ -1,0 +1,1 @@
+{"property_id":"00000000-0000-0000-0000-000000000006","apn":"APN-006","address":{"line1":"6 Main St","city":"Testville","state":"CA","zip5":"90001"},"valuation_candidates":[{"valuation_type":"comp","value":{"value":"300000","confidence":0.9,"source_kind":"report","is_estimated":false},"weight_hint":"1"}],"resolution_version":"fixture-1"}
