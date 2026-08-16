@@ -203,6 +203,11 @@ class Pipeline:
                 batch_machine.unit_finished(store, outcome.batch_id)
         if outcome.property_id is not None and outcome.outstanding == 0:
             self.recompute(outcome.property_id, reason="extraction_complete")
+        if outcome.batch_id is not None:
+            with self._store_factory() as store:
+                batch = store.get_batch(outcome.batch_id)
+                if batch is not None and batch.get("status") == "computing":
+                    batch_machine.mark_complete(store, outcome.batch_id)
         return outcome
 
     # ------------------------------------------------------------- rank / changes / nightly

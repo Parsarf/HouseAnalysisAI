@@ -76,7 +76,10 @@ class LocalFilesystemStorage:
 
     @contextmanager
     def materialize(self, reference: str) -> Iterator[Path]:
-        yield Path(reference)
+        path = Path(reference)
+        if not path.is_file():
+            raise FileNotFoundError(f"stored document does not exist: {reference}")
+        yield path
 
 
 class S3Storage:
@@ -106,11 +109,19 @@ class S3Storage:
     def _ref(self, key: str) -> str:
         return f"s3://{self.bucket}/{key.lstrip('/')}"
 
+    def _key(self, key_or_reference: str) -> str:
+        if key_or_reference.startswith("s3://"):
+            _bucket, key = self._parse(key_or_reference)
+            return key
+        return key_or_reference.lstrip("/")
+
     def save_file(self, source: Path, key: str) -> str:
+        key = self._key(key)
         self.client.upload_file(str(source), self.bucket, key)
         return self._ref(key)
 
     def save_bytes(self, data: bytes, key: str) -> str:
+        key = self._key(key)
         self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
         return self._ref(key)
 

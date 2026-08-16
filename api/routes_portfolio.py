@@ -73,6 +73,15 @@ def batch_estimate(batch_id: UUID, session: Session = Depends(get_session),
     report_ids = [report.id for report in reports]
     units = (session.query(dbm.ExtractionUnit)
              .filter(dbm.ExtractionUnit.report_id.in_(report_ids)).all()) if report_ids else []
+    unit_report_ids = {unit.report_id for unit in units}
+    pending = [report for report in reports
+               if report.status in ("uploaded", "ocr_pending") and report.id not in unit_report_ids]
+    if pending:
+        raise AcqError(ErrorCode.CONFLICT, "batch ingestion is still running",
+                       {"pending_reports": len(pending)})
+    if not units:
+        raise AcqError(ErrorCode.CONFLICT, "batch has no extraction units",
+                       {"failed_reports": sum(report.status == "failed" for report in reports)})
     total_tokens = sum(unit.token_estimate or 0 for unit in units)
     estimated = (Decimal(total_tokens) / Decimal(1000) * PRICE_PER_1K_TOKENS).quantize(Decimal("0.01"))
     batch.estimated_cost_usd = estimated
@@ -88,12 +97,30 @@ def batch_estimate(batch_id: UUID, session: Session = Depends(get_session),
 def batch_start(batch_id: UUID, session: Session = Depends(get_session),
                 queue: PostgresJobQueue = Depends(get_queue), user: User = Depends(write_user)) -> dict:
     batch = _batch_or_404(session, batch_id)
+    if not batch.awaiting_confirmation:
+        raise AcqError(ErrorCode.CONFLICT, "batch is not awaiting confirmation",
+                       {"status": batch.status})
+    reports = session.query(dbm.Report).filter(dbm.Report.batch_id == batch_id).all()
+    report_ids = [report.id for report in reports]
+    units = (session.query(dbm.ExtractionUnit)
+             .filter(dbm.ExtractionUnit.report_id.in_(report_ids),
+                     dbm.ExtractionUnit.status == "queued").all()) if report_ids else []
+    if not units:
+        batch.status = "failed"
+        batch.awaiting_confirmation = False
+        session.flush()
+        return _batch_payload(batch)
     batch.awaiting_confirmation = False
     batch.status = "running"
-    reports = (session.query(dbm.Report)
-               .filter(dbm.Report.batch_id == batch_id, dbm.Report.status == "uploaded").all())
+    batch.total_count = len(units)
+    batch.completed_count = 0
+    batch.failed_count = 0
     for report in reports:
-        enqueue(session, queue, "ingest_document", {"report_id": str(report.id)}, f"ingest:{report.id}")
+        if report.status != "failed":
+            report.status = "extracting"
+    for unit in units:
+        enqueue(session, queue, "extract_unit", {"unit_id": str(unit.id)},
+                f"extract_unit:{unit.id}")
     session.flush()
     return _batch_payload(batch)
 

@@ -118,6 +118,26 @@ def test_register_pdf_dedupe_returns_existing(session, tmp_path):
     assert len(list((tmp_path / "docs").iterdir())) == 1  # zero new documents on disk
 
 
+def test_failed_duplicate_reupload_restores_storage_and_requeues(session, tmp_path):
+    source = make_digital_pdf(tmp_path / "a.pdf")
+    first, created = register_pdf(session, source, tmp_path / "docs", batch_id=uuid4())
+    assert created
+    Path(first.file_path).unlink()
+    first.status = "failed"
+    first.failure_reason = ErrorCode.EXTRACTION_FAILED.value
+    replacement_batch = uuid4()
+
+    again, created = register_pdf(
+        session, source, tmp_path / "docs", batch_id=replacement_batch)
+
+    assert created
+    assert again.id == first.id
+    assert again.batch_id == replacement_batch
+    assert again.status == "uploaded"
+    assert again.failure_reason is None
+    assert Path(again.file_path).exists()
+
+
 def test_register_pdf_rejects_non_pdf(session, tmp_path):
     source = tmp_path / "junk.pdf"
     source.write_bytes(b"not a pdf at all")
@@ -213,6 +233,18 @@ def test_corrupt_pdf_fails_without_raising(session, tmp_path, monkeypatch):
     run_job(monkeypatch, session, {"report_id": str(report.id)})  # must not raise
     assert report.status == "failed"
     assert report.failure_reason == ErrorCode.CORRUPT.value
+
+
+def test_missing_stored_pdf_raises_instead_of_being_mislabeled_corrupt(session, tmp_path):
+    missing = tmp_path / "missing.pdf"
+    report = add_report(session, missing)
+
+    with pytest.raises(AcqError) as excinfo:
+        run_ingest(session, report)
+
+    assert excinfo.value.code == ErrorCode.EXTRACTION_FAILED
+    assert excinfo.value.details["document_path"] == str(missing)
+    assert report.status == "uploaded"
 
 
 # --- OCR path -----------------------------------------------------------------

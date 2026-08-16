@@ -20,7 +20,7 @@ from common.errors import AcqError, ErrorCode
 
 BATCH_STATES = (
     "uploading", "ingesting", "estimating", "awaiting_confirmation",
-    "extracting", "computing", "complete", "paused_budget", "failed",
+    "extracting", "running", "computing", "complete", "paused_budget", "failed",
 )
 
 _ACTIVE_AFTER_PAUSE = "extracting"

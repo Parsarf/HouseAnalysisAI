@@ -135,7 +135,7 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
     root.mkdir(parents=True, exist_ok=True)
     storage = get_document_storage()
     batch = dbm.Batch(id=batch_id, name=batch_name, file_count=len(files),
-                      total_count=len(files), status="uploaded")
+                      total_count=len(files), status="ingesting")
     session.add(batch)
     reports = []
     for upload_file in files:
@@ -160,7 +160,7 @@ def paste(body: dict = Body(...), session: Session = Depends(get_session),
     if not text:
         raise AcqError(ErrorCode.INVALID_INPUT, "text is required")
     batch = dbm.Batch(id=uuid4(), name=body.get("batch_name") or "paste",
-                      file_count=1, total_count=1, status="uploaded")
+                      file_count=1, total_count=1, status="ingesting")
     session.add(batch)
     report, created = ingest_paste(session, text, settings.document_root, batch_id=batch.id,
                                    storage=get_document_storage())

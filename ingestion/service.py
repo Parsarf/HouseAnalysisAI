@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from common.errors import AcqError, ErrorCode
-from common.storage import DocumentStorage, LocalFilesystemStorage, document_key
+from common.storage import DocumentStorage, LocalFilesystemStorage, S3Storage, document_key
 from contracts import ReportStatus
 from db.models import Report
 
@@ -70,6 +70,19 @@ def register_pdf(
     digest = sha256_file(source)
     existing = find_by_sha256(session, digest)
     if existing is not None:
+        storage = storage or LocalFilesystemStorage(document_root)
+        backend_changed = isinstance(storage, S3Storage) != existing.file_path.startswith("s3://")
+        if existing.status == ReportStatus.FAILED.value or backend_changed:
+            _report_id, file_ref = store_pdf(source, document_root, report_id=existing.id,
+                                             storage=storage)
+            existing.batch_id = batch_id
+            existing.file_path = file_ref
+            existing.status = ReportStatus.UPLOADED.value
+            existing.failure_reason = None
+            existing.page_count = None
+            existing.is_scanned = False
+            existing.ocr_applied = False
+            return existing, True
         return existing, False
     report_id, file_ref = store_pdf(source, document_root, storage=storage)
     report = Report(

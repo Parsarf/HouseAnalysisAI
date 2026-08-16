@@ -47,6 +47,11 @@ _UNIT_OUTSTANDING_SQL = text("""
     WHERE r.property_id = :pid AND u.status IN ('queued', 'running')
 """)
 
+_REPORT_UNIT_OUTSTANDING_SQL = text("""
+    SELECT count(*) FROM extraction_units
+    WHERE report_id = :report_id AND status IN ('queued', 'running')
+""")
+
 _UNIT_SQL = text("""
     SELECT u.id, u.report_id, u.status, u.unit_type, u.page_start, u.page_end,
            u.text_path, u.token_estimate,
@@ -330,6 +335,12 @@ class SqlStore:
             for fact in facts:
                 self.session.execute(
                     _FACT_INSERT_SQL, _fact_row(property_id, unit["report_id"], unit_id, fact))
+            report_outstanding = int(self.session.execute(
+                _REPORT_UNIT_OUTSTANDING_SQL, {"report_id": unit["report_id"]}).scalar())
+            if report_outstanding == 0:
+                self.session.execute(
+                    text("UPDATE reports SET status = 'extracted', updated_at = now() WHERE id = :id"),
+                    {"id": unit["report_id"]})
         outstanding = None
         if property_id is not None:
             outstanding = int(self.session.execute(

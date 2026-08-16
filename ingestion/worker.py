@@ -79,7 +79,7 @@ def _queue_extraction_units(
 ) -> int:
     """Create typed extraction units and enqueue them once per report."""
     from sqlalchemy import select
-    if classifier is None or sectioner is None or match_rate is None or enqueue is None:
+    if classifier is None or sectioner is None or match_rate is None:
         # The standalone text/OCR path intentionally stops before classification;
         # the production pipeline always supplies all four composition hooks.
         return 0
@@ -102,7 +102,8 @@ def _queue_extraction_units(
             id=unit_id, report_id=report.id, unit_type=section.unit_type,
             page_start=section.page_start, page_end=section.page_end,
             text_path=unit_path, token_estimate=section.token_estimate, status="queued"))
-        enqueue(session, "extract_unit", {"unit_id": str(unit_id)}, f"extract_unit:{unit_id}")
+        if enqueue is not None:
+            enqueue(session, "extract_unit", {"unit_id": str(unit_id)}, f"extract_unit:{unit_id}")
     report.report_type = result.report_type
     report.vendor = result.vendor
     report.classification_confidence = result.confidence
@@ -134,6 +135,24 @@ def run_ingest(
     FailureCode instead of raising, so the job is not retried pointlessly.
     """
     storage = storage or get_document_storage()
+    if report.vendor == "pasted" or Path(report.file_path).suffix.lower() == ".txt":
+        try:
+            text = storage.read_text(report.file_path)
+        except FileNotFoundError as exc:
+            raise AcqError(
+                ErrorCode.EXTRACTION_FAILED,
+                "stored document is unavailable to the worker",
+                {"report_id": str(report.id), "document_path": report.file_path},
+            ) from exc
+        pages = text.split("\f")
+        report.page_count = len(pages)
+        report.status = ReportStatus.TEXT_EXTRACTED.value
+        _write_pages(storage, report.file_path, pages)
+        _resolve_identity(session, report, address, apn, fips, zip5, identity_resolver)
+        _queue_extraction_units(session, report, pages, classifier=classifier,
+                                sectioner=sectioner, match_rate=section_matcher,
+                                enqueue=enqueue, storage=storage)
+        return report
     try:
         import fitz
     except ImportError as exc:
@@ -150,6 +169,12 @@ def run_ingest(
                                         fips=fips, zip5=zip5, identity_resolver=identity_resolver,
                                         classifier=classifier, sectioner=sectioner,
                                         section_matcher=section_matcher, enqueue=enqueue)
+    except FileNotFoundError as exc:
+        raise AcqError(
+            ErrorCode.EXTRACTION_FAILED,
+            "stored document is unavailable to the worker",
+            {"report_id": str(report.id), "document_path": report.file_path},
+        ) from exc
     except AcqError:
         raise
     except OSError:
@@ -203,7 +228,7 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
     return report
 
 
-def ingest_document(payload: dict, **hooks) -> None:
+def ingest_document(payload: dict, **hooks) -> Report:
     if isinstance(payload, str):
         payload = json.loads(payload)
     report_id = payload["report_id"]
@@ -211,7 +236,7 @@ def ingest_document(payload: dict, **hooks) -> None:
         report = session.get(Report, UUID(str(report_id)))
         if report is None:
             raise ValueError("report not found")
-        run_ingest(
+        return run_ingest(
             session,
             report,
             address=payload.get("address"),

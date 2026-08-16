@@ -433,7 +433,7 @@ def test_fan_in_triggers_exactly_one_recompute_for_concurrent_units():
     assert all(outcome.transitioned for outcome in outcomes)
     assert all(unit["status"] == "extracted" for unit in factory.state.units.values())
     assert factory.state.batches[batch_id]["completed_count"] == 20
-    assert factory.state.batches[batch_id]["status"] == "computing"
+    assert factory.state.batches[batch_id]["status"] == "complete"
     assert len(factory.state.scores) == 1
 
 
@@ -712,6 +712,18 @@ def test_worker_requeues_failed_job_then_dead_letters():
     assert queue.jobs[0]["error"] == "boom"
     worker.run_once()
     assert queue.jobs[0]["status"] == "dead"
+
+
+def test_worker_logs_job_lifecycle(caplog):
+    queue = FakeQueue([_job("demo", {"value": 1})])
+    worker = Worker({"demo": lambda payload: None}, queue=queue,
+                    session_factory=lambda: nullcontext(None))
+
+    with caplog.at_level("INFO"):
+        worker.run_once()
+
+    assert "job found" in caplog.messages
+    assert "job completion" in caplog.messages
 
 
 # ------------------------------------------------------------------ pure compute core

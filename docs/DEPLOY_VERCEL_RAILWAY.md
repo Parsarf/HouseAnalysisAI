@@ -23,8 +23,12 @@ PostgreSQL and document storage are external services.
    ACQ_DATABASE_URL=<Railway PostgreSQL connection URL using psycopg>
    ACQ_SESSION_SECRET=<long random value>
    ACQ_AUTH_PASSWORD_HASH=<argon2 hash>
-   ACQ_STORAGE_BACKEND=filesystem
-   ACQ_DOCUMENT_ROOT=/data/documents
+   ACQ_STORAGE_BACKEND=s3
+   ACQ_S3_ENDPOINT=<S3-compatible endpoint>
+   ACQ_S3_REGION=<region>
+   ACQ_S3_BUCKET=<bucket>
+   ACQ_S3_ACCESS_KEY_ID=<access key>
+   ACQ_S3_SECRET_ACCESS_KEY=<secret key>
    ACQ_EXTRACTION_API_KEY=<provider key>
    ACQ_EXTRACTION_BASE_URL=<OpenAI-compatible provider URL>/v1
    ACQ_EXTRACTION_CHEAP_MODEL=<cheap model>
@@ -36,8 +40,24 @@ PostgreSQL and document storage are external services.
    `ACQ_S3_ACCESS_KEY_ID`, and `ACQ_S3_SECRET_ACCESS_KEY` instead of relying
    on a local volume.
 
-5. Attach a persistent volume to the API and worker at `/data` when using
-   filesystem storage. Both services must mount the same volume.
+5. Separate Railway services do not share their container filesystems. Do not
+   use `ACQ_STORAGE_BACKEND=filesystem` for a split API/worker deployment unless
+   your infrastructure provides a genuinely shared filesystem mounted at the
+   same path in both services. Railway volumes attach to an individual service,
+   so the recommended Railway configuration is S3-compatible object storage:
+
+   ```text
+   ACQ_STORAGE_BACKEND=s3
+   ACQ_S3_ENDPOINT=<S3-compatible endpoint>
+   ACQ_S3_REGION=<region>
+   ACQ_S3_BUCKET=<bucket>
+   ACQ_S3_ACCESS_KEY_ID=<access key>
+   ACQ_S3_SECRET_ACCESS_KEY=<secret key>
+   ```
+
+   Set the same values on both the API and Worker services. After changing an
+   existing filesystem deployment, re-upload failed documents so their stored
+   references are migrated to object storage.
 6. Run migrations once against PostgreSQL:
 
    ```sh

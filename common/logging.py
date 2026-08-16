@@ -12,9 +12,14 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for key in ("property_id", "report_id", "job_id", "batch_id"):
+        for key in (
+            "property_id", "report_id", "unit_id", "job_id", "job_name",
+            "batch_id", "document_path", "storage_backend",
+        ):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)
 
 

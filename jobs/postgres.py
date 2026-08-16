@@ -44,6 +44,16 @@ class PostgresJobQueue:
         row = session.execute(CLAIM_SQL).mappings().first()
         return dict(row) if row else None
 
+    def recover_stale(self, session: Session, *, minutes: int = 15) -> int:
+        """Release jobs orphaned by a worker crash or Railway redeploy."""
+        result = session.execute(text("""
+          UPDATE jobs SET status='queued', locked_at=NULL, run_after=now(),
+            last_error=COALESCE(last_error, 'worker lease expired; retrying')
+          WHERE status='running'
+            AND (locked_at IS NULL OR locked_at < now() - (:minutes * interval '1 minute'))
+        """), {"minutes": minutes})
+        return int(result.rowcount or 0)
+
     def fail(self, session: Session, job_id: UUID, attempts: int, max_attempts: int, error: str) -> None:
         dead = attempts >= max_attempts
         delay = min(3600, 2 ** attempts)

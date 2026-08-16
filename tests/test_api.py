@@ -627,9 +627,9 @@ def test_batch_estimate_and_start(client, session, queue):
     session.add(report1)
     session.add(report2)
     session.add(dbm.ExtractionUnit(id=uuid4(), report_id=report1.id, unit_type="lien",
-                                   page_start=1, page_end=5, token_estimate=10000))
+                                   page_start=1, page_end=5, token_estimate=10000, status="queued"))
     session.add(dbm.ExtractionUnit(id=uuid4(), report_id=report2.id, unit_type="mortgages",
-                                   page_start=6, page_end=9, token_estimate=4000))
+                                   page_start=6, page_end=9, token_estimate=4000, status="queued"))
 
     estimate = client.post(f"/api/batches/{BATCH_ID}/estimate").json()
     assert estimate["report_count"] == 2
@@ -641,7 +641,7 @@ def test_batch_estimate_and_start(client, session, queue):
     started = client.post(f"/api/batches/{BATCH_ID}/start").json()
     assert started["status"] == "running"
     assert started["awaiting_confirmation"] is False
-    assert [job["name"] for job in queue.jobs] == ["ingest_document", "ingest_document"]
+    assert [job["name"] for job in queue.jobs] == ["extract_unit", "extract_unit"]
 
     status = client.get(f"/api/batches/{BATCH_ID}").json()
     assert status["status"] == "running" and status["total"] == 2
