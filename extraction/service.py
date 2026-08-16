@@ -9,13 +9,13 @@ failed (spec §19).
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from common.errors import AcqError, ErrorCode
+from common.storage import get_document_storage
 from db.models import ExtractedFact, ExtractionUnit
 from ops import reserve_budget
 
@@ -191,7 +191,7 @@ class ExtractionService:
         for row in units:
             if not row.text_path:
                 continue
-            text = Path(row.text_path).read_text()
+            text = get_document_storage().read_text(row.text_path)
             unit = UnitInput(
                 id=row.id, report_id=row.report_id, unit_type=row.unit_type, text=text,
                 page_start=row.page_start, page_end=row.page_end,

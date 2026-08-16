@@ -1,10 +1,15 @@
 from pathlib import Path
 
+from common.storage import get_document_storage
+
 
 def get_page_text(report_path: str | Path, page: int) -> str:
-    return (Path(report_path).parent / "pages" / f"{page}.txt").read_text()
+    reference = str(report_path)
+    storage = get_document_storage()
+    return storage.read_text(storage.child(reference, f"pages/{page}.txt"))
 
 
 def get_all_page_text(report_path: str | Path) -> list[str]:
-    directory = Path(report_path).parent / "pages"
-    return [path.read_text() for path in sorted(directory.glob("[0-9]*.txt"), key=lambda item: int(item.stem))]
+    storage = get_document_storage()
+    references = storage.list_children(str(report_path), "pages")
+    return [storage.read_text(reference) for reference in references]

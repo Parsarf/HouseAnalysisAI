@@ -24,10 +24,11 @@ import {
   UploadResponse,
 } from "./types";
 
-const BASE = "/api";
+const API_ROOT = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const BASE = `${API_ROOT}/api`;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { credentials: "same-origin", ...init });
+  const response = await fetch(path, { credentials: "include", ...init });
   if (!response.ok) {
     let body: ApiErrorBody = { code: "internal", message: response.statusText };
     try {
@@ -54,7 +55,7 @@ function get<T>(path: string): Promise<T> {
 }
 
 export function healthz(): Promise<{ status: string }> {
-  return request("/healthz");
+  return request(`${API_ROOT}/healthz`);
 }
 
 export function login(password: string, readOnly = false): Promise<{ ok: boolean }> {

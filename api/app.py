@@ -13,13 +13,16 @@ from fastapi import Body, Depends, FastAPI, File, Form, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException
+from starlette.middleware.cors import CORSMiddleware
 
 from auth.dependencies import User, current_user, make_session, write_user
 from auth.service import verify_password
 from common.errors import AcqError, ErrorCode
 from common.settings import settings
+from common.storage import get_document_storage
 from contracts import ErrorDetail, ErrorEnvelope, FilterClause
 from db import models as dbm
 from ingestion import ingest_paste, register_pdf
@@ -32,6 +35,14 @@ from .routes_properties import router as properties_router
 from .serializers import dump
 
 app = FastAPI(title="ACQ", version="0.1.0")
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 _STATUS_BY_CODE = {
     ErrorCode.INVALID_INPUT: 400,
@@ -87,13 +98,19 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/readyz")
+def readyz(session: Session = Depends(get_session)) -> dict[str, str]:
+    session.execute(text("SELECT 1"))
+    return {"status": "ready"}
+
+
 @app.post("/api/auth/login")
 def login(password: str = Form(...), read_only: bool = Form(default=False)):
     if settings.auth_password_hash is None or not verify_password(password, settings.auth_password_hash):
         return JSONResponse(status_code=401, content=_envelope("invalid_input", "invalid credentials"))
     response = JSONResponse({"ok": True})
     response.set_cookie("session_cookie", make_session("owner", read_only, settings.session_secret),
-                        httponly=True, samesite="lax", secure=settings.secure_cookie)
+                        httponly=True, samesite=settings.cookie_samesite, secure=settings.secure_cookie)
     return response
 
 
@@ -116,6 +133,7 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
     batch_id = uuid4()
     root = settings.document_root
     root.mkdir(parents=True, exist_ok=True)
+    storage = get_document_storage()
     batch = dbm.Batch(id=batch_id, name=batch_name, file_count=len(files),
                       total_count=len(files), status="uploaded")
     session.add(batch)
@@ -126,7 +144,7 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
                 tmp.write(chunk)
             temp_path = Path(tmp.name)
         try:
-            report, created = register_pdf(session, temp_path, root, batch_id=batch_id)
+            report, created = register_pdf(session, temp_path, root, batch_id=batch_id, storage=storage)
         finally:
             temp_path.unlink(missing_ok=True)
         reports.append(str(report.id))
@@ -144,7 +162,8 @@ def paste(body: dict = Body(...), session: Session = Depends(get_session),
     batch = dbm.Batch(id=uuid4(), name=body.get("batch_name") or "paste",
                       file_count=1, total_count=1, status="uploaded")
     session.add(batch)
-    report, created = ingest_paste(session, text, settings.document_root, batch_id=batch.id)
+    report, created = ingest_paste(session, text, settings.document_root, batch_id=batch.id,
+                                   storage=get_document_storage())
     if created:
         enqueue(session, queue, "ingest_document", {"report_id": str(report.id)}, f"ingest:{report.id}")
     return {"batch_id": str(batch.id), "report_ids": [str(report.id)], "count": 1}

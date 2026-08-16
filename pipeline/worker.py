@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from classification import classify, section_match_rate, section_pages
 from common.db import db_session
+from common.storage import get_document_storage
 from extraction import ExtractionService, ProviderClient, UnitInput
 from identity.service import attach_report
 from ingestion.worker import ingest_document
@@ -31,11 +32,11 @@ def _pipeline(**kwargs) -> Pipeline:
 
 
 def _extractor(unit: dict):
-    from pathlib import Path
     from uuid import UUID
 
     unit_id = UUID(str(unit["id"]))
-    text = Path(unit["text_path"]).read_text()
+    with get_document_storage().materialize(unit["text_path"]) as text_path:
+        text = text_path.read_text()
     request = UnitInput(
         id=unit_id,
         report_id=UUID(str(unit["report_id"])),

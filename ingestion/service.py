@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from common.errors import AcqError, ErrorCode
+from common.storage import DocumentStorage, LocalFilesystemStorage, document_key
 from contracts import ReportStatus
 from db.models import Report
 
@@ -21,16 +22,15 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def store_pdf(source: Path, document_root: Path, report_id: UUID | None = None) -> tuple[UUID, str]:
+def store_pdf(source: Path, document_root: Path, report_id: UUID | None = None,
+              storage: DocumentStorage | None = None) -> tuple[UUID, str]:
     with source.open("rb") as stream:
         magic = stream.read(5)
     if magic != b"%PDF-":
         raise AcqError(ErrorCode.NOT_PDF, f"not a PDF: {source.name}")
     report_id = report_id or uuid4()
-    target = document_root / str(report_id)
-    target.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, target / "original.pdf")
-    return report_id, sha256_file(source)
+    storage = storage or LocalFilesystemStorage(document_root)
+    return report_id, storage.save_file(source, document_key(report_id, "original.pdf"))
 
 
 def extract_text_pages(text: str, output_dir: Path) -> list[Path]:
@@ -59,7 +59,8 @@ def find_by_sha256(session: Session, digest: str) -> Report | None:
 
 
 def register_pdf(
-    session: Session, source: Path, document_root: Path, batch_id: UUID | None = None
+    session: Session, source: Path, document_root: Path, batch_id: UUID | None = None,
+    storage: DocumentStorage | None = None,
 ) -> tuple[Report, bool]:
     """Store a PDF and insert its report row. Returns ``(report, created)``.
 
@@ -70,11 +71,11 @@ def register_pdf(
     existing = find_by_sha256(session, digest)
     if existing is not None:
         return existing, False
-    report_id, _ = store_pdf(source, document_root)
+    report_id, file_ref = store_pdf(source, document_root, storage=storage)
     report = Report(
         id=report_id,
         batch_id=batch_id,
-        file_path=str(document_root / str(report_id) / "original.pdf"),
+        file_path=file_ref,
         sha256=digest,
         status=ReportStatus.UPLOADED.value,
     )
@@ -92,7 +93,8 @@ def register_pdf(
 
 
 def ingest_paste(
-    session: Session, text: str, document_root: Path, batch_id: UUID | None = None
+    session: Session, text: str, document_root: Path, batch_id: UUID | None = None,
+    storage: DocumentStorage | None = None,
 ) -> tuple[Report, bool]:
     """Pasted text becomes a single-page pseudo-report with vendor='pasted' (spec §4.7)."""
     digest = hashlib.sha256(text.encode()).hexdigest()
@@ -100,15 +102,14 @@ def ingest_paste(
     if existing is not None:
         return existing, False
     report_id = uuid4()
-    target = document_root / str(report_id)
-    target.mkdir(parents=True, exist_ok=True)
-    original = target / "original.txt"
-    original.write_text(text)
-    extract_text_pages(text, target / "pages")
+    storage = storage or LocalFilesystemStorage(document_root)
+    original = storage.save_text(text, document_key(report_id, "original.txt"))
+    for page, page_text in enumerate(text.split("\f"), 1):
+        storage.save_text(page_text, document_key(report_id, f"pages/{page}.txt"))
     report = Report(
         id=report_id,
         batch_id=batch_id,
-        file_path=str(original),
+        file_path=original,
         sha256=digest,
         vendor="pasted",
         status=ReportStatus.TEXT_EXTRACTED.value,
@@ -127,7 +128,8 @@ def ingest_paste(
 
 
 def scan_inbox(
-    session: Session, inbox: Path, document_root: Path, batch_id: UUID | None = None
+    session: Session, inbox: Path, document_root: Path, batch_id: UUID | None = None,
+    storage: DocumentStorage | None = None,
 ) -> list[Report]:
     """Watched folder (spec §4.1): ingest every PDF dropped into the inbox directory.
 
@@ -139,7 +141,8 @@ def scan_inbox(
     reports = []
     for source in sorted(inbox.glob("*.pdf")):
         try:
-            report, _created = register_pdf(session, source, document_root, batch_id=batch_id)
+            report, _created = register_pdf(session, source, document_root, batch_id=batch_id,
+                                            storage=storage)
         except AcqError:
             failed.mkdir(exist_ok=True)
             shutil.move(str(source), failed / source.name)

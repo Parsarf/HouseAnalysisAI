@@ -68,18 +68,40 @@ class Batch(Base):
 
 class Property(Base):
     __tablename__ = "properties"
+    __table_args__ = (
+        Index(
+            "properties_address_active_uq",
+            "address_hash",
+            unique=True,
+            postgresql_where="merged_into_id IS NULL AND address_hash IS NOT NULL",
+        ),
+        Index(
+            "properties_apn_active_uq",
+            "apn_key",
+            unique=True,
+            postgresql_where="merged_into_id IS NULL AND apn_key IS NOT NULL",
+        ),
+        Index("properties_address_trgm_idx", "address_key"),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     apn: Mapped[str | None] = mapped_column(String(120))
-    apn_key: Mapped[str | None] = mapped_column(String(120), index=True)
+    apn_key: Mapped[str | None] = mapped_column(String(120))
     fips_county: Mapped[str | None] = mapped_column(String(10))
     address_line1: Mapped[str | None] = mapped_column(String(255))
     city: Mapped[str | None] = mapped_column(String(120))
     state: Mapped[str | None] = mapped_column(String(2))
-    zip5: Mapped[str | None] = mapped_column(String(5), index=True)
-    address_key: Mapped[str | None] = mapped_column(String(255), index=True)
-    address_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    zip5: Mapped[str | None] = mapped_column(String(5))
+    address_key: Mapped[str | None] = mapped_column(String(255))
+    address_hash: Mapped[str | None] = mapped_column(String(64))
     lat: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     lng: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    property_type: Mapped[str | None] = mapped_column(Text)
+    beds: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    baths: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    sqft: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    lot_sqft: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    year_built: Mapped[int | None] = mapped_column(Integer)
+    units: Mapped[int | None] = mapped_column(Integer)
     pipeline_status: Mapped[str] = mapped_column(String(30), default="new")
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     next_action: Mapped[str | None] = mapped_column(String(255))
@@ -87,6 +109,8 @@ class Property(Base):
     gut_rating: Mapped[int | None] = mapped_column(Integer)
     is_watchlisted: Mapped[bool] = mapped_column(Boolean, default=False)
     merged_into_id: Mapped[UUID | None] = mapped_column(ForeignKey("properties.id"))
+    underwriting_status: Mapped[str | None] = mapped_column(Text)
+    last_recomputed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -150,7 +174,7 @@ class Owner(Base):
     __tablename__ = "owners"
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     full_name: Mapped[str] = mapped_column(String(255))
-    name_normalized: Mapped[str] = mapped_column(String(255), index=True)
+    name_normalized: Mapped[str] = mapped_column(String(255))
     entity_type: Mapped[str | None] = mapped_column(String(30))
     mailing_address: Mapped[str | None] = mapped_column(Text)
     is_absentee: Mapped[bool | None] = mapped_column(Boolean)

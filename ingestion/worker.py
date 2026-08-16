@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from common.db import db_session
 from common.errors import AcqError, ErrorCode
+from common.storage import DocumentStorage, get_document_storage
 from contracts import ReportStatus
 from db.models import ExtractionUnit, Report
 from ingestion.ocr import OcrBackend, get_backend
@@ -41,11 +42,9 @@ def is_scanned(pages: list[str]) -> bool:
     return median < 100 or empty > len(pages) * 0.4
 
 
-def _write_pages(pdf: Path, pages: list[str]) -> None:
-    page_dir = pdf.parent / "pages"
-    page_dir.mkdir(parents=True, exist_ok=True)
+def _write_pages(storage: DocumentStorage, report_ref: str, pages: list[str]) -> None:
     for number, page_text in enumerate(pages, 1):
-        (page_dir / f"{number}.txt").write_text(page_text)
+        storage.save_text(page_text, storage.child(report_ref, f"pages/{number}.txt"))
 
 
 def _resolve_identity(
@@ -76,6 +75,7 @@ def _queue_extraction_units(
     sectioner: Callable | None = None,
     match_rate: Callable | None = None,
     enqueue: Callable | None = None,
+    storage: DocumentStorage | None = None,
 ) -> int:
     """Create typed extraction units and enqueue them once per report."""
     from sqlalchemy import select
@@ -93,16 +93,15 @@ def _queue_extraction_units(
     units = sectioner(pages)
     if not units:
         return 0
-    unit_dir = Path(report.file_path).parent / "units"
-    unit_dir.mkdir(parents=True, exist_ok=True)
+    storage = storage or get_document_storage()
     for index, section in enumerate(units):
         unit_id = uuid4()
-        unit_path = unit_dir / f"{index + 1:04d}.txt"
-        unit_path.write_text(section.text)
+        unit_path = storage.save_text(section.text,
+                                      storage.child(report.file_path, f"units/{index + 1:04d}.txt"))
         session.add(ExtractionUnit(
             id=unit_id, report_id=report.id, unit_type=section.unit_type,
             page_start=section.page_start, page_end=section.page_end,
-            text_path=str(unit_path), token_estimate=section.token_estimate, status="queued"))
+            text_path=unit_path, token_estimate=section.token_estimate, status="queued"))
         enqueue(session, "extract_unit", {"unit_id": str(unit_id)}, f"extract_unit:{unit_id}")
     report.report_type = result.report_type
     report.vendor = result.vendor
@@ -127,22 +126,43 @@ def run_ingest(
     sectioner: Callable | None = None,
     section_matcher: Callable | None = None,
     enqueue: Callable | None = None,
+    storage: DocumentStorage | None = None,
 ) -> Report:
     """Extract per-page text, OCR scanned documents, and resolve property identity.
 
     Permanent failures (encrypted/corrupt) mark the report failed with a
     FailureCode instead of raising, so the job is not retried pointlessly.
     """
-    pdf = Path(report.file_path)
+    storage = storage or get_document_storage()
     try:
         import fitz
     except ImportError as exc:
         raise RuntimeError("PyMuPDF is required for document ingestion") from exc
     try:
-        document = fitz.open(pdf)
-    except Exception:  # noqa: BLE001 — PyMuPDF raises several types for malformed files; all map to CORRUPT
+        with storage.materialize(report.file_path) as pdf:
+            try:
+                document = fitz.open(pdf)
+            except Exception:  # noqa: BLE001 — PyMuPDF raises several types for malformed files
+                _fail(report, ErrorCode.CORRUPT)
+                return report
+            return _run_document_ingest(session, report, document, pdf, storage,
+                                        ocr_backend=ocr_backend, address=address, apn=apn,
+                                        fips=fips, zip5=zip5, identity_resolver=identity_resolver,
+                                        classifier=classifier, sectioner=sectioner,
+                                        section_matcher=section_matcher, enqueue=enqueue)
+    except AcqError:
+        raise
+    except OSError:
         _fail(report, ErrorCode.CORRUPT)
         return report
+
+
+def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
+                         storage: DocumentStorage, *, ocr_backend: OcrBackend | None,
+                         address: str | None, apn: str | None, fips: str | None,
+                         zip5: str | None, identity_resolver: Callable | None,
+                         classifier: Callable | None, sectioner: Callable | None,
+                         section_matcher: Callable | None, enqueue: Callable | None) -> Report:
     try:
         if document.needs_pass:
             _fail(report, ErrorCode.ENCRYPTED)
@@ -160,17 +180,18 @@ def run_ingest(
                 # No OCR tooling installed: keep what little text exists and
                 # leave the report queued for OCR rather than failing it.
                 report.status = ReportStatus.OCR_PENDING.value
-                _write_pages(pdf, pages)
+                _write_pages(storage, report.file_path, pages)
                 return report
             result = backend.ocr_pdf(pdf, pdf.parent)
             report.ocr_applied = True
             if result.ocr_path is not None:
-                report.ocr_path = str(result.ocr_path)
+                report.ocr_path = storage.save_file(result.ocr_path,
+                                                    storage.child(report.file_path, "ocr.pdf"))
             if result.partial:
                 _mark_failure_reason(report, ErrorCode.PARTIAL_OCR)
             merged = [ocr if ocr.strip() else original for original, ocr in zip(pages, result.page_texts)]
             pages = merged + pages[len(result.page_texts) :]
-        _write_pages(pdf, pages)
+        _write_pages(storage, report.file_path, pages)
         report.status = ReportStatus.TEXT_EXTRACTED.value
     finally:
         document.close()
@@ -178,7 +199,7 @@ def run_ingest(
     if report.status == ReportStatus.TEXT_EXTRACTED.value:
         _queue_extraction_units(session, report, pages, classifier=classifier,
                                 sectioner=sectioner, match_rate=section_matcher,
-                                enqueue=enqueue)
+                                enqueue=enqueue, storage=storage)
     return report
 
 
@@ -197,5 +218,6 @@ def ingest_document(payload: dict, **hooks) -> None:
             apn=payload.get("apn"),
             fips=payload.get("fips"),
             zip5=payload.get("zip5"),
+            storage=get_document_storage(),
             **hooks,
         )

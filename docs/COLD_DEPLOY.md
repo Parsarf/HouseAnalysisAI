@@ -13,10 +13,10 @@ local build artifacts.
 
 3. Copy `.env.example` to `.env`, replace the session secret and password hash,
    and set the extraction provider key, base URL, and model names deliberately.
-4. Start Postgres, Redis, and MinIO:
+4. Start Postgres for local validation:
 
    ```sh
-   docker compose up -d db redis minio
+   docker compose up -d db
    ```
 
 5. Install Python dependencies and apply migrations:
