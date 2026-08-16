@@ -22,7 +22,8 @@ class FlagType(StrEnum):
     IDENTITY_CONFLICT="identity_conflict"; LIEN_ATTACHMENT="lien_attachment"; CONFLICTING_MORTGAGE="conflicting_mortgage"; FORECLOSURE_UNCLEAR="foreclosure_unclear"; MISSING_LIEN_AMOUNT="missing_lien_amount"; VALUATION_DISPERSION="valuation_dispersion"; MISSING_APN="missing_apn"; LOW_EXTRACTION_CONFIDENCE="low_extraction_confidence"; BID_MISMATCH="bid_mismatch"; RANGE_VIOLATION="range_violation"; POSSIBLE_DUPLICATE="possible_duplicate"; SHORT_SALE_CANDIDATE="short_sale_candidate"
 class FailureCode(StrEnum):
     ENCRYPTED="encrypted"; CORRUPT="corrupt"; NOT_PDF="not_pdf"; PARTIAL_OCR="partial_ocr"; OCR_TIMEOUT="ocr_timeout"; EXTRACTION_FAILED="extraction_failed"; GROUNDING_FAILED="grounding_failed"; UNCLASSIFIED="unclassified"; STUCK_JOB="stuck_job"; BUDGET_PAUSED="budget_paused"
-class ReportStatus(StrEnum): UPLOADED="uploaded"; TEXT_EXTRACTED="text_extracted"; OCR_PENDING="ocr_pending"; READY="ready"; FAILED="failed"; ENCRYPTED="encrypted"; CORRUPT="corrupt"
+class ReportStatus(StrEnum):
+    UPLOADED="uploaded"; TEXT_EXTRACTED="text_extracted"; OCR_PENDING="ocr_pending"; CLASSIFIED="classified"; EXTRACTING="extracting"; EXTRACTED="extracted"; READY="ready"; FAILED="failed"; ENCRYPTED="encrypted"; CORRUPT="corrupt"
 
 class ContractModel(BaseModel):
     model_config=ConfigDict(extra="forbid")

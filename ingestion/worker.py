@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from common.db import db_session
-from common.errors import ErrorCode
+from common.errors import AcqError, ErrorCode
+from contracts import ReportStatus
 from db.models import ExtractionUnit, Report
 from ingestion.ocr import OcrBackend, get_backend
 
@@ -26,7 +27,7 @@ def _mark_failure_reason(report: Report, code: ErrorCode) -> None:
 
 
 def _fail(report: Report, code: ErrorCode) -> None:
-    report.status = "failed"
+    report.status = ReportStatus.FAILED.value
     _mark_failure_reason(report, code)
 
 
@@ -78,17 +79,15 @@ def _queue_extraction_units(
 ) -> int:
     """Create typed extraction units and enqueue them once per report."""
     from sqlalchemy import select
+    if classifier is None or sectioner is None or match_rate is None or enqueue is None:
+        # The standalone text/OCR path intentionally stops before classification;
+        # the production pipeline always supplies all four composition hooks.
+        return 0
     connection = session.connection()
     if not session.get_bind().dialect.has_table(connection, "extraction_units"):
-        # Lightweight ORM-only test databases and older deployments may not
-        # have the extraction tables yet; ingestion remains usable and the
-        # next migration/ingest run can materialize units.
-        if enqueue is None:
-            return 0
-        raise RuntimeError("extraction_units table is unavailable")
+        raise AcqError(ErrorCode.INTERNAL, "extraction_units table is unavailable",
+                       {"report_id": str(report.id), "required_migration": "extraction_units"})
     if session.scalar(select(ExtractionUnit.id).where(ExtractionUnit.report_id == report.id).limit(1)):
-        return 0
-    if classifier is None or sectioner is None or match_rate is None or enqueue is None:
         return 0
     result = classifier("\n\f\n".join(pages), filename=Path(report.file_path).name, pages=pages)
     units = sectioner(pages)
@@ -109,7 +108,7 @@ def _queue_extraction_units(
     report.vendor = result.vendor
     report.classification_confidence = result.confidence
     report.section_match_rate = match_rate(units)
-    report.status = "classified"
+    report.status = ReportStatus.CLASSIFIED.value
     session.flush()
     return len(units)
 
@@ -160,7 +159,7 @@ def run_ingest(
             if not backend.available():
                 # No OCR tooling installed: keep what little text exists and
                 # leave the report queued for OCR rather than failing it.
-                report.status = "ocr_pending"
+                report.status = ReportStatus.OCR_PENDING.value
                 _write_pages(pdf, pages)
                 return report
             result = backend.ocr_pdf(pdf, pdf.parent)
@@ -172,11 +171,11 @@ def run_ingest(
             merged = [ocr if ocr.strip() else original for original, ocr in zip(pages, result.page_texts)]
             pages = merged + pages[len(result.page_texts) :]
         _write_pages(pdf, pages)
-        report.status = "text_extracted"
+        report.status = ReportStatus.TEXT_EXTRACTED.value
     finally:
         document.close()
     _resolve_identity(session, report, address, apn, fips, zip5, identity_resolver)
-    if report.status == "text_extracted":
+    if report.status == ReportStatus.TEXT_EXTRACTED.value:
         _queue_extraction_units(session, report, pages, classifier=classifier,
                                 sectioner=sectioner, match_rate=section_matcher,
                                 enqueue=enqueue)

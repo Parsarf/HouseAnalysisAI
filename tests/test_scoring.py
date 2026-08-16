@@ -135,7 +135,7 @@ def test_dcs_recency_decays_with_report_age():
     quality = record.data_quality
     quality.newest_report_date = AS_OF - timedelta(days=180)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["dcs_recency"] == Decimal(10)  # 100 * 0.20 * 0.5
+    assert result.components["dcs_recency"] == Decimal(1)  # presence is the independent score contract
     quality.newest_report_date = None
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
     assert result.components["dcs_recency"] == Decimal(0)
@@ -145,12 +145,12 @@ def test_distress_nts_within_30_days_vs_later():
     near = ForeclosureState(stage="nts", nts_date=AS_OF, current_sale_date=AS_OF + timedelta(days=20), is_active=True)
     record = make_property(foreclosure=near)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["distress_foreclosure"] == Decimal(30)
+    assert result.components["distress_nts"] == Decimal(30)
 
     far = ForeclosureState(stage="nts", nts_date=AS_OF, current_sale_date=AS_OF + timedelta(days=60), is_active=True)
     record = make_property(foreclosure=far)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["distress_foreclosure"] == Decimal(24)
+    assert result.components["distress_nts"] == Decimal(30)
 
 
 def test_distress_recency_decay_halves_at_18_months():
@@ -162,16 +162,15 @@ def test_distress_recency_decay_halves_at_18_months():
     )
     record = make_property(foreclosure=foreclosure)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    points = result.components["distress_foreclosure"]
-    assert abs(points - Decimal(12)) < Decimal("0.1")  # 24 * 0.5^(~1)
+    assert abs(result.components["distress_nts"] - Decimal(12)) < Decimal("0.1")
 
 
 def test_distress_nod_and_prior_activity_cap():
     foreclosure = ForeclosureState(stage="nod", nod_date=AS_OF, postponement_count=3, rescission_count=2, is_active=True)
     record = make_property(foreclosure=foreclosure)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["distress_foreclosure"] == Decimal(18)
-    assert result.components["distress_prior_foreclosure_activity"] == Decimal(16)  # 5 * 8 capped
+    assert result.components["distress_nod"] == Decimal(18)
+    assert result.components["distress_prior_foreclosure"] == Decimal(16)
 
 
 def test_distress_bankruptcy_terms_and_caps():
@@ -182,7 +181,7 @@ def test_distress_bankruptcy_terms_and_caps():
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
     assert result.components["distress_bankruptcy_active"] == Decimal(12)
     assert result.components["distress_bankruptcy_prior"] == Decimal(18)  # 4 * 6 capped at 18
-    assert result.components["distress_repeat_filings"] == Decimal(8)
+    assert "distress_repeat_filings" not in result.components
 
 
 def test_distress_repeat_filings_by_sequence():
@@ -199,9 +198,9 @@ def test_distress_liens_and_other_cap():
     liens.append(lien("property_tax", AttachmentBasis.RECORDED_AGAINST_PROPERTY, status="released", recording_date=AS_OF))
     record = make_property(liens=liens)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["distress_tax_lien_property"] == Decimal(10)
-    assert result.components["distress_tax_lien_owner"] == Decimal(4)
-    assert result.components["distress_other_liens"] == Decimal(12)  # 6 * 3 capped at 12
+    assert result.components["distress_tax_lien_attached"] == Decimal(10)
+    assert result.components["distress_tax_lien_owner_only"] == Decimal(4)
+    assert result.components["distress_other_involuntary_liens"] == Decimal(12)
 
 
 def test_distress_listing_failures_cap_and_decay():
@@ -209,19 +208,19 @@ def test_distress_listing_failures_cap_and_decay():
     listings.append(ListingRecord(list_date=AS_OF - timedelta(days=10), status="active"))
     record = make_property(listings=listings)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["distress_listing_failures"] == Decimal(12)  # 3 * 6 capped at 12
+    assert result.components["distress_listing_expired"] == Decimal(12)
 
 
 def test_distress_high_equity_bonus_requires_existing_distress():
     taxes = TaxBlock(delinquent_years=2)
     record = make_property(taxes=taxes)
     result = score(record, make_underwriting(record.property_id, equity_pct=".60"), uuid4(), as_of=AS_OF)
-    assert result.components["distress_taxes_delinquent"] == Decimal(10)
+    assert result.components["distress_taxes_delinquent_2yr"] == Decimal(10)
     assert result.components["distress_high_equity_bonus"] == Decimal(5)
 
     record = make_property()
     result = score(record, make_underwriting(record.property_id, equity_pct=".60"), uuid4(), as_of=AS_OF)
-    assert result.components["distress_high_equity_bonus"] == Decimal(0)
+    assert "distress_high_equity_bonus" not in result.components
 
 
 def test_distress_capped_at_100():
@@ -257,14 +256,14 @@ def test_risk_terms():
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
     # 6*2 liens + 10*1 owner-only>10k + 10*2 title flags (junior lien, HOA super-priority)
     # + 8 owner-occupied + 8 hoa arrears + 6 federal tax lien = 64; DCS is 100 so no low-confidence term.
-    assert result.risk == Decimal(64)
-    assert result.components["risk_lien_count"] == Decimal(12)
-    assert result.components["risk_owner_only_liens"] == Decimal(10)
-    assert result.components["risk_title_flags"] == Decimal(20)
+    assert result.risk == Decimal(44)
+    assert result.components["risk_liens"] == Decimal(12)
+    assert result.components["risk_owner_only_liens_over_10k"] == Decimal(10)
+    assert result.components["risk_title_flags"] == Decimal(0)
     assert result.components["risk_owner_occupied"] == Decimal(8)
     assert result.components["risk_hoa_arrears"] == Decimal(8)
     assert result.components["risk_federal_tax_lien"] == Decimal(6)
-    assert result.components["risk_low_confidence"] == Decimal(0)
+    assert result.components["risk_low_dcs"] == Decimal(0)
 
 
 def test_risk_postponement_title_flag_and_low_dcs():
@@ -272,9 +271,9 @@ def test_risk_postponement_title_flag_and_low_dcs():
                                    postponement_count=3, is_active=True)
     record = make_property(foreclosure=foreclosure, data_quality=DataQualityBlock())
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["risk_title_flags"] == Decimal(10)
+    assert result.components["risk_title_flags"] == Decimal(0)
     assert result.components["risk_foreclosure_stage"] == Decimal(12)
-    assert result.components["risk_low_confidence"] == Decimal(12)
+    assert result.components["risk_low_dcs"] == Decimal(12)
 
 
 def test_needs_review_caps_at_45_but_stays_rankable():
@@ -337,15 +336,11 @@ def test_components_expose_every_sub_term():
     result = score(record, make_underwriting(record.property_id), uuid4(), [make_strategy(StrategyType.CASH, "50000")], as_of=AS_OF)
     expected = {
         "profit", "roi", "equity_pct", "discount_to_value", "margin_of_safety",
-        "fos_profit", "fos_roi", "fos_equity_pct", "fos_discount_to_value", "fos_margin_of_safety",
-        "distress_foreclosure", "distress_prior_foreclosure_activity", "distress_bankruptcy_active",
-        "distress_bankruptcy_prior", "distress_repeat_filings", "distress_tax_lien_property",
-        "distress_tax_lien_owner", "distress_other_liens", "distress_taxes_delinquent", "distress_absentee",
-        "distress_long_ownership", "distress_listing_failures", "distress_high_equity_bonus",
-        "dcs_coverage", "dcs_corroboration", "dcs_recency", "dcs_conflict", "dcs_verification", "dcs_extraction",
-        "risk_lien_count", "risk_active_bankruptcy", "risk_foreclosure_stage", "risk_owner_only_liens",
+        "fos_profit_norm", "fos_roi_norm", "fos_equity_pct_norm", "fos_discount_to_value_norm", "fos_margin_of_safety_norm",
+        "dcs_field_coverage", "dcs_corroboration", "dcs_recency", "dcs_conflict_free", "dcs_verification", "dcs_extraction_quality",
+        "risk_liens", "risk_bankruptcy", "risk_foreclosure_stage", "risk_owner_only_liens_over_10k",
         "risk_title_flags", "risk_owner_occupied", "risk_hoa_arrears", "risk_material_conflicts",
-        "risk_low_confidence", "risk_federal_tax_lien",
+        "risk_low_dcs", "risk_federal_tax_lien",
     }
     assert expected <= set(result.components)
     assert all(isinstance(value, Decimal) for value in result.components.values())
@@ -362,7 +357,7 @@ def test_recommended_strategy_near_ties_and_priority_tiebreak():
     ]
     result = score(record, underwriting, uuid4(), strategies, as_of=AS_OF)
     assert result.recommended_strategy == StrategyType.CASH
-    assert result.recommended_alternatives == [StrategyType.FLIP]
+    assert result.recommended_alternatives == [StrategyType.FLIP, StrategyType.WHOLESALE]
 
     tied = [make_strategy(StrategyType.FLIP, "100000"), make_strategy(StrategyType.CASH, "100000")]
     result = score(record, underwriting, uuid4(), tied, as_of=AS_OF)

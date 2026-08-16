@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from common.errors import AcqError, ErrorCode
+from contracts import ReportStatus
 from db.models import Report
 
 
@@ -75,7 +76,7 @@ def register_pdf(
         batch_id=batch_id,
         file_path=str(document_root / str(report_id) / "original.pdf"),
         sha256=digest,
-        status="uploaded",
+        status=ReportStatus.UPLOADED.value,
     )
     session.add(report)
     try:
@@ -110,7 +111,7 @@ def ingest_paste(
         file_path=str(original),
         sha256=digest,
         vendor="pasted",
-        status="text_extracted",
+        status=ReportStatus.TEXT_EXTRACTED.value,
         page_count=1,
     )
     session.add(report)
