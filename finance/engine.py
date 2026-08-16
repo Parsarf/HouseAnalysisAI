@@ -2,18 +2,18 @@ from decimal import Decimal
 from uuid import UUID
 
 from common.money import money
-from contracts import (AssumptionSet, EquityBlock, FullNormalizedProperty, LiabilityBlock,
+from contracts import (AssumptionSet, EquityBlock, NormalizedProperty, LiabilityBlock,
                         Scenario, UnderwritingResult, ValueBlock)
 
 
 ENGINE_VERSION = "finance-1"
 
 
-def _candidate_values(property: FullNormalizedProperty) -> list[Decimal]:
+def _candidate_values(property: NormalizedProperty) -> list[Decimal]:
     return [item.value.value for item in property.valuation_candidates if item.value.value is not None]
 
 
-def underwrite(property: FullNormalizedProperty, assumptions: AssumptionSet) -> UnderwritingResult:
+def underwrite(property: NormalizedProperty, assumptions: AssumptionSet) -> UnderwritingResult:
     values = sorted(_candidate_values(property))
     if not values:
         return UnderwritingResult(property_id=property.property_id, assumption_set_id=assumptions.id,

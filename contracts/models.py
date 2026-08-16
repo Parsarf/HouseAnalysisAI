@@ -23,7 +23,7 @@ class FailureCode(StrEnum):
 class ReportStatus(StrEnum): UPLOADED="uploaded"; TEXT_EXTRACTED="text_extracted"; OCR_PENDING="ocr_pending"; READY="ready"; FAILED="failed"; ENCRYPTED="encrypted"; CORRUPT="corrupt"
 
 class ContractModel(BaseModel):
-    model_config=ConfigDict(use_enum_values=True, extra="forbid")
+    model_config=ConfigDict(extra="forbid")
 class TrackedValue(ContractModel):
     value: Decimal|None; confidence: float=Field(ge=0,le=1); source_kind: SourceKind; is_estimated: bool; fact_id: UUID|None=None; as_of: date|None=None; null_reason: NullReason|None=None
     @model_validator(mode="after")
@@ -69,3 +69,10 @@ class FlagRequest(ContractModel): property_id: UUID; flag_type: FlagType; payloa
 class FilterClause(ContractModel): field: str; op: Literal["eq","neq","gt","gte","lt","lte","in","between","contains","is_null"]; value: Any=None
 class MoneyResponse(ContractModel): value: Decimal|None; confidence: float=Field(ge=0,le=1); source_kind: SourceKind; is_estimated: bool; null_reason: NullReason|None=None
 class JobPayload(ContractModel): name: str; payload: dict[str,Any]={}; dedupe_key: str|None=None
+
+class RecordedResponse(ContractModel):
+    response_id: str
+    model: str
+    prompt_version: str
+    input_hash: str
+    response: dict[str, Any]

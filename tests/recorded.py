@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from contracts.extended import RecordedResponse
+from contracts import RecordedResponse
 
 
 ROOT = Path(__file__).parents[1] / "fixtures" / "recorded_responses"

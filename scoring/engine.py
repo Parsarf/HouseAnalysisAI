@@ -1,10 +1,10 @@
 from decimal import Decimal
 from uuid import UUID
 
-from contracts import FullNormalizedProperty, ScoreSet, StrategyType, UnderwritingResult
+from contracts import NormalizedProperty, ScoreSet, StrategyType, UnderwritingResult
 
 
-def score(property: FullNormalizedProperty, underwriting: UnderwritingResult, scoring_config_id: UUID) -> ScoreSet:
+def score(property: NormalizedProperty, underwriting: UnderwritingResult, scoring_config_id: UUID) -> ScoreSet:
     coverage = max(Decimal("0"), min(Decimal("100"), property.data_quality.critical_field_coverage * 100))
     distress = Decimal("60") if property.foreclosure and property.foreclosure.is_active else Decimal("0")
     risk = min(Decimal("100"), Decimal(property.data_quality.material_conflict_count * 15) + (Decimal("20") if underwriting.liabilities.potential else Decimal("0")))

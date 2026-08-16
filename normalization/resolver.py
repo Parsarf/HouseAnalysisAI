@@ -2,10 +2,10 @@ from collections import defaultdict
 from decimal import Decimal
 from uuid import uuid4
 
-from contracts import AddressBlock, ExtractedFactDraft, FullNormalizedProperty, PropertyAttributes, SourceKind
+from contracts import AddressBlock, ExtractedFactDraft, NormalizedProperty, SourceKind
 
 
-def resolve_facts(property_id, facts: list[ExtractedFactDraft]) -> FullNormalizedProperty:
+def resolve_facts(property_id, facts: list[ExtractedFactDraft]) -> NormalizedProperty:
     grouped = defaultdict(list)
     for fact in facts:
         grouped[fact.field_path].append(fact)
@@ -13,7 +13,7 @@ def resolve_facts(property_id, facts: list[ExtractedFactDraft]) -> FullNormalize
         values = grouped.get(path, [])
         return max(values, key=lambda item: item.extraction_confidence) if values else None
     address = AddressBlock(line1=(latest("property.address") or ExtractedFactDraft.model_construct(value_text=None)).value_text)
-    return FullNormalizedProperty(property_id=property_id, apn=(latest("property.apn").value_text if latest("property.apn") else None), address=address, resolution_version="resolver-1")
+    return NormalizedProperty(property_id=property_id, apn=(latest("property.apn").value_text if latest("property.apn") else None), address=address, resolution_version="resolver-1")
 
 
 def normalize_source_kind(source_kind: SourceKind, ocr_applied: bool = False) -> float:

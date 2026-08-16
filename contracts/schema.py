@@ -1,6 +1,6 @@
 from .models import (ExtractedFactDraft, FilterClause, FlagRequest, JobPayload,
                       MoneyResponse, NormalizedProperty, TrackedValue)
-from .extended import AssumptionSet, OfferGrid, ScoreSet, StrategyResult, UnderwritingResult
+from .models import AssumptionSet, OfferGrid, ScoreSet, StrategyResult, UnderwritingResult
 
 
 def export_schemas() -> dict[str, dict]:

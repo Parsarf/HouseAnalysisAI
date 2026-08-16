@@ -34,7 +34,7 @@ def login(password: str = Form(...), read_only: bool = Form(default=False)):
     if settings.auth_password_hash is None or not verify_password(password, settings.auth_password_hash):
         return JSONResponse(status_code=401, content={"error": {"code": "invalid_input", "message": "invalid credentials"}})
     response = JSONResponse({"ok": True})
-    response.set_cookie("session_cookie", make_session("owner", read_only, settings.session_secret), httponly=True, samesite="lax", secure=False)
+    response.set_cookie("session_cookie", make_session("owner", read_only, settings.session_secret), httponly=True, samesite="lax", secure=settings.secure_cookie)
     return response
 
 
@@ -64,7 +64,8 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
         session.add(batch)
         for upload_file in files:
             with NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp.write(await upload_file.read())
+                while chunk := await upload_file.read(1024 * 1024):
+                    tmp.write(chunk)
                 temp_path = Path(tmp.name)
             try:
                 report_id, digest = store_pdf(temp_path, root)

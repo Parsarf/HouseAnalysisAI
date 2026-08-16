@@ -16,7 +16,9 @@ def sha256_file(path: Path) -> str:
 
 
 def store_pdf(source: Path, document_root: Path, report_id: UUID | None = None) -> tuple[UUID, str]:
-    if source.read_bytes()[:5] != b"%PDF-":
+    with source.open("rb") as stream:
+        magic = stream.read(5)
+    if magic != b"%PDF-":
         raise AcqError(ErrorCode.NOT_PDF, f"not a PDF: {source.name}")
     report_id = report_id or uuid4()
     target = document_root / str(report_id)

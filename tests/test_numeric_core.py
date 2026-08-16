@@ -1,14 +1,14 @@
 from decimal import Decimal
 from uuid import uuid4
 
-from contracts import AddressBlock, AssumptionSet, DataQualityBlock, FullNormalizedProperty, PropertyAttributes, Scenario, TrackedValue, SourceKind, ValuationCandidate
+from contracts import AddressBlock, AssumptionSet, DataQualityBlock, NormalizedProperty, PropertyAttributes, Scenario, TrackedValue, SourceKind, ValuationCandidate
 from finance import underwrite
 from strategies import flip, offer_grid
 
 
-def sample_property() -> FullNormalizedProperty:
+def sample_property() -> NormalizedProperty:
     value = TrackedValue(value=Decimal("300000"), confidence=Decimal(".9"), source_kind=SourceKind.REPORT, is_estimated=False)
-    return FullNormalizedProperty(property_id=uuid4(), address=AddressBlock(line1="1 Main St"), attributes=PropertyAttributes(),
+    return NormalizedProperty(property_id=uuid4(), address=AddressBlock(line1="1 Main St"), attributes=PropertyAttributes(),
                                   valuation_candidates=[ValuationCandidate(valuation_type="manual", value=value)],
                                   data_quality=DataQualityBlock(critical_field_coverage=Decimal(".9"), mean_extraction_confidence=Decimal(".9")), resolution_version="test")
 

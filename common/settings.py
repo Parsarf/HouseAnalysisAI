@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     session_secret: str = "development-only-secret"
     auth_password_hash: str | None = None
     read_only: bool = False
+    secure_cookie: bool = True
 
 
 settings = Settings()
