@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://acq:acq@localhost:5432/acq"
     document_root: Path = Path("documents")
     session_secret: str = "development-only-secret"
+    auth_password_hash: str | None = None
     read_only: bool = False
 
 

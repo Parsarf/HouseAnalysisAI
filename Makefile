@@ -22,3 +22,12 @@ migrate:
 
 up:
 	docker compose up -d
+
+worker:
+	python -m pipeline.run_worker
+
+backup:
+	bash scripts/backup.sh
+
+restore:
+	bash scripts/restore.sh $(BACKUP_DIR)

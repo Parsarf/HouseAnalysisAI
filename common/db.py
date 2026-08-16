@@ -15,6 +15,12 @@ engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
+def create_schema() -> None:
+    # Import models before create_all so the metadata is populated.
+    from db import models  # noqa: F401
+    Base.metadata.create_all(engine)
+
+
 @contextmanager
 def db_session() -> Iterator[Session]:
     session = SessionLocal()
