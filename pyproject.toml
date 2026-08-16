@@ -22,6 +22,7 @@ dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "import-linter>=2.1"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["integration: requires Postgres and supplied product fixtures"]
 
 [tool.ruff]
 line-length = 100

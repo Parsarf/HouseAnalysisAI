@@ -19,7 +19,7 @@ from common.db import db_session
 from common.settings import settings
 from ingestion import store_pdf
 from jobs.postgres import PostgresJobQueue
-from db.models import Batch, Report
+from db.models import Batch, Property, Report
 
 app = FastAPI(title="ACQ", version="0.1.0")
 
@@ -84,6 +84,29 @@ def batch_status(batch_id: UUID, user: User = Depends(current_user)) -> dict:
         if batch is None:
             return JSONResponse(status_code=404, content={"error": {"code": "not_found", "message": "batch not found"}})
         return {"id": str(batch.id), "status": batch.status, "total": batch.total_count, "completed": batch.completed_count, "failed": batch.failed_count, "estimated_cost_usd": json_safe(batch.estimated_cost_usd)}
+
+
+@app.get("/api/properties")
+def properties(limit: int = 50, user: User = Depends(current_user)) -> dict:
+    limit = max(1, min(limit, 500))
+    with db_session() as session:
+        rows = session.query(Property).filter(Property.merged_into_id.is_(None)).limit(limit).all()
+        return {"items": [{"id": str(row.id), "address": row.address_line1, "city": row.city, "state": row.state, "zip5": row.zip5, "status": row.pipeline_status, "tags": row.tags, "gut_rating": row.gut_rating} for row in rows], "next_cursor": None}
+
+
+@app.patch("/api/properties/{property_id}")
+def update_property(property_id: UUID, changes: dict, user: User = Depends(current_user)) -> dict:
+    if user.read_only:
+        return JSONResponse(status_code=403, content={"error": {"code": "read_only", "message": "read-only user cannot mutate"}})
+    allowed = {"pipeline_status", "tags", "next_action", "next_action_date", "gut_rating", "is_watchlisted"}
+    with db_session() as session:
+        row = session.get(Property, property_id)
+        if row is None:
+            return JSONResponse(status_code=404, content={"error": {"code": "not_found", "message": "property not found"}})
+        for key, value in changes.items():
+            if key in allowed:
+                setattr(row, key, value)
+        return {"id": str(row.id), "status": row.pipeline_status, "tags": row.tags, "next_action": row.next_action, "gut_rating": row.gut_rating}
 
 
 @app.get("/api/properties/{property_id}/analysis")
