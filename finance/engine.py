@@ -24,27 +24,37 @@ ratios/weights 6dp, holding months 4dp; downstream steps consume quantized value
 All arithmetic runs at decimal precision 40, matching the golden generator.
 """
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP, localcontext
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from common.money import money
-from contracts import (AssumptionSet, AttachmentBasis, CostBlock, EquityBlock, FlagRequest,
-                       FlagType, LiabilityBlock, NormalizedProperty, Scenario, UnderwritingResult,
-                       ValueBlock)
+from contracts import (
+    AssumptionSet,
+    AttachmentBasis,
+    CostBlock,
+    EquityBlock,
+    FlagRequest,
+    FlagType,
+    LiabilityBlock,
+    NormalizedProperty,
+    Scenario,
+    UnderwritingResult,
+    ValueBlock,
+)
 
 from .rates import historical_rate
 from .transfer_tax import transfer_tax_rate
 
 ENGINE_VERSION = "finance-3"
-ZERO = Decimal("0")
-ONE = Decimal("1")
+ZERO = Decimal(0)
+ONE = Decimal(1)
 
 Q4 = Decimal("0.0001")
 Q6 = Decimal("0.000001")
 
 DEFAULT_TERM_MONTHS = 360
-AVM_HALF_LIFE_DAYS = Decimal("90")    # vendor AVM recency decay half-life (spec §7.2)
-DAYS_PER_MONTH = Decimal("30")
-MONTHS_PER_YEAR = Decimal("12")
+AVM_HALF_LIFE_DAYS = Decimal(90)    # vendor AVM recency decay half-life (spec §7.2)
+DAYS_PER_MONTH = Decimal(30)
+MONTHS_PER_YEAR = Decimal(12)
 
 # Spec §7.2 candidate weight table; assumption-set valuation_weights override it.
 SPEC_TYPE_WEIGHT = {
@@ -330,7 +340,7 @@ def _holding_months_base(record: NormalizedProperty, assumptions: AssumptionSet)
     """acquisition_months + repair duration by condition + market time (spec §7.5)."""
     condition = record.condition.condition if record.condition else "moderate"
     repair_months = assumptions.holding.repair_months_by_condition.get(
-        condition, assumptions.holding.repair_months_by_condition.get("moderate", Decimal("3")))
+        condition, assumptions.holding.repair_months_by_condition.get("moderate", Decimal(3)))
     return assumptions.holding.acquisition_months + repair_months + Decimal(assumptions.holding.market_days_default) / DAYS_PER_MONTH
 
 

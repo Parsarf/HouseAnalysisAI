@@ -10,10 +10,12 @@ import logging
 from collections.abc import Callable
 from decimal import Decimal
 
+from classification import classify, section_match_rate, section_pages
 from common.db import db_session
-from jobs.postgres import PostgresJobQueue
-from ingestion.worker import ingest_document
 from extraction import ExtractionService, ProviderClient, UnitInput
+from identity.service import attach_report
+from ingestion.worker import ingest_document
+from jobs.postgres import PostgresJobQueue
 
 from .orchestrator import Pipeline
 
@@ -49,6 +51,17 @@ def _extractor(unit: dict):
     return ExtractionService(ProviderClient()).extract_unit(request)
 
 
+def _handle_ingest_document(payload) -> None:
+    queue = PostgresJobQueue()
+
+    def enqueue(session, name, job_payload, dedupe_key):
+        return queue.enqueue(session, name, json.dumps(job_payload), dedupe_key)
+
+    ingest_document(_payload(payload), identity_resolver=attach_report,
+                    classifier=classify, sectioner=section_pages,
+                    section_matcher=section_match_rate, enqueue=enqueue)
+
+
 def _handle_extract_unit(payload) -> None:
     _pipeline(extractor=_extractor).extract_unit(_payload(payload)["unit_id"])
 
@@ -73,13 +86,13 @@ def _handle_detect_changes(payload) -> None:
                                source_report_id=data.get("source_report_id"))
 
 
-def _handle_nightly(payload) -> None:  # noqa: ARG001 - no payload
+def _handle_nightly(payload) -> None:
     _pipeline().nightly()
 
 
 def default_handlers() -> dict[str, Callable[[dict], None]]:
     return {
-        "ingest_document": ingest_document,
+        "ingest_document": _handle_ingest_document,
         "extract_unit": _handle_extract_unit,
         "recompute_property": _handle_recompute_property,
         "rank_scope": _handle_rank_scope,

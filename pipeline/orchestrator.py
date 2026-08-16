@@ -20,15 +20,21 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import AbstractContextManager
-from decimal import Decimal
 from dataclasses import dataclass
+from decimal import Decimal
 from uuid import UUID, uuid4
 
-from contracts import (AssumptionSet, NormalizedProperty, OfferGrid, ScoreSet,
-                       StrategyResult, UnderwritingResult)
 from common.errors import AcqError, ErrorCode
+from contracts import (
+    AssumptionSet,
+    NormalizedProperty,
+    OfferGrid,
+    ScoreSet,
+    StrategyResult,
+    UnderwritingResult,
+)
 from finance import underwrite
 from normalization import resolve_facts
 from scoring import score
@@ -89,7 +95,7 @@ def _purchase_price(record: NormalizedProperty, explicit: Decimal | None) -> Dec
     tracked = record.ownership.purchase_price
     if tracked is not None and tracked.value is not None:
         return tracked.value
-    return Decimal("0")
+    return Decimal(0)
 
 
 def _flag_requests(record: NormalizedProperty, assumptions: AssumptionSet,
@@ -278,5 +284,10 @@ class Pipeline:
             return PostgresJobQueue().enqueue(session, name, json.dumps(payload), dedupe_key)
 
 
-__all__ = ["Computation", "Pipeline", "UnitOutcome", "DEFAULT_SCORING_CONFIG_ID",
-           "recompute_property"]
+__all__ = [
+    "DEFAULT_SCORING_CONFIG_ID",
+    "Computation",
+    "Pipeline",
+    "UnitOutcome",
+    "recompute_property",
+]

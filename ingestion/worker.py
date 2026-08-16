@@ -1,20 +1,22 @@
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
 from common.db import db_session
 from common.errors import ErrorCode
 from db.models import ExtractionUnit, Report
-from identity.service import attach_report
 from ingestion.ocr import OcrBackend, get_backend
-from classification import classify, section_match_rate, section_pages
-from jobs.postgres import PostgresJobQueue
-from uuid import uuid4
 
 log = logging.getLogger(__name__)
+
+# Test and embedding hook. Production composition injects the identity
+# resolver from ``pipeline.worker``; keeping this nullable avoids a reverse
+# package dependency while preserving the historical injection seam.
+attach_report = None
 
 
 def _mark_failure_reason(report: Report, code: ErrorCode) -> None:
@@ -52,17 +54,28 @@ def _resolve_identity(
     apn: str | None,
     fips: str | None,
     zip5: str | None,
+    resolver: Callable | None = None,
 ) -> None:
-    if not address:
+    resolver = resolver or attach_report
+    if not address or resolver is None:
         return
     try:
-        attach_report(session, report, address, apn=apn, fips=fips, zip5=zip5)
+        resolver(session, report, address, apn=apn, fips=fips, zip5=zip5)
     except ValueError:
         # identity_conflict: leave the report unattached rather than risking a bad merge.
         log.warning("identity conflict; report %s left unattached", report.id)
 
 
-def _queue_extraction_units(session: Session, report: Report, pages: list[str]) -> int:
+def _queue_extraction_units(
+    session: Session,
+    report: Report,
+    pages: list[str],
+    *,
+    classifier: Callable | None = None,
+    sectioner: Callable | None = None,
+    match_rate: Callable | None = None,
+    enqueue: Callable | None = None,
+) -> int:
     """Create typed extraction units and enqueue them once per report."""
     from sqlalchemy import select
     connection = session.connection()
@@ -70,16 +83,19 @@ def _queue_extraction_units(session: Session, report: Report, pages: list[str]) 
         # Lightweight ORM-only test databases and older deployments may not
         # have the extraction tables yet; ingestion remains usable and the
         # next migration/ingest run can materialize units.
-        return 0
+        if enqueue is None:
+            return 0
+        raise RuntimeError("extraction_units table is unavailable")
     if session.scalar(select(ExtractionUnit.id).where(ExtractionUnit.report_id == report.id).limit(1)):
         return 0
-    result = classify("\n\f\n".join(pages), filename=Path(report.file_path).name, pages=pages)
-    units = section_pages(pages)
+    if classifier is None or sectioner is None or match_rate is None or enqueue is None:
+        return 0
+    result = classifier("\n\f\n".join(pages), filename=Path(report.file_path).name, pages=pages)
+    units = sectioner(pages)
     if not units:
         return 0
     unit_dir = Path(report.file_path).parent / "units"
     unit_dir.mkdir(parents=True, exist_ok=True)
-    queue = PostgresJobQueue()
     for index, section in enumerate(units):
         unit_id = uuid4()
         unit_path = unit_dir / f"{index + 1:04d}.txt"
@@ -88,12 +104,11 @@ def _queue_extraction_units(session: Session, report: Report, pages: list[str]) 
             id=unit_id, report_id=report.id, unit_type=section.unit_type,
             page_start=section.page_start, page_end=section.page_end,
             text_path=str(unit_path), token_estimate=section.token_estimate, status="queued"))
-        queue.enqueue(session, "extract_unit", json.dumps({"unit_id": str(unit_id)}),
-                      f"extract_unit:{unit_id}")
+        enqueue(session, "extract_unit", {"unit_id": str(unit_id)}, f"extract_unit:{unit_id}")
     report.report_type = result.report_type
     report.vendor = result.vendor
     report.classification_confidence = result.confidence
-    report.section_match_rate = section_match_rate(units)
+    report.section_match_rate = match_rate(units)
     report.status = "classified"
     session.flush()
     return len(units)
@@ -108,6 +123,11 @@ def run_ingest(
     apn: str | None = None,
     fips: str | None = None,
     zip5: str | None = None,
+    identity_resolver: Callable | None = None,
+    classifier: Callable | None = None,
+    sectioner: Callable | None = None,
+    section_matcher: Callable | None = None,
+    enqueue: Callable | None = None,
 ) -> Report:
     """Extract per-page text, OCR scanned documents, and resolve property identity.
 
@@ -155,13 +175,15 @@ def run_ingest(
         report.status = "text_extracted"
     finally:
         document.close()
-    _resolve_identity(session, report, address, apn, fips, zip5)
+    _resolve_identity(session, report, address, apn, fips, zip5, identity_resolver)
     if report.status == "text_extracted":
-        _queue_extraction_units(session, report, pages)
+        _queue_extraction_units(session, report, pages, classifier=classifier,
+                                sectioner=sectioner, match_rate=section_matcher,
+                                enqueue=enqueue)
     return report
 
 
-def ingest_document(payload: dict) -> None:
+def ingest_document(payload: dict, **hooks) -> None:
     if isinstance(payload, str):
         payload = json.loads(payload)
     report_id = payload["report_id"]
@@ -176,4 +198,5 @@ def ingest_document(payload: dict) -> None:
             apn=payload.get("apn"),
             fips=payload.get("fips"),
             zip5=payload.get("zip5"),
+            **hooks,
         )

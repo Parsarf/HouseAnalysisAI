@@ -2,19 +2,23 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy.sql import operators
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from sqlalchemy.sql.selectable import Select
 
 from contracts import FlagType
 from db.models import Property, Report
 from identity import (
-    attach_report, merge, normalize_address, normalize_apn, resolve_property,
-    trigram_similarity, unmerge,
+    attach_report,
+    merge,
+    normalize_address,
+    normalize_apn,
+    resolve_property,
+    trigram_similarity,
+    unmerge,
 )
 from identity.models import MergeReportMove
-
 
 # --- Offline store -------------------------------------------------------------
 # Property.tags is a Postgres ARRAY, so the mapped tables cannot be created on

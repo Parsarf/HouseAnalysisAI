@@ -37,5 +37,5 @@ def open_flags(session: Session, property_id) -> list[Flag]:
     """Open flags for a property, sorted by financial impact descending (spec §12)."""
     rows = session.scalars(
         select(Flag).where(Flag.property_id == property_id, Flag.status == "open")).all()
-    return sorted(rows, key=lambda flag: flag.financial_impact_usd if flag.financial_impact_usd is not None else Decimal("-1"),
+    return sorted(rows, key=lambda flag: flag.financial_impact_usd if flag.financial_impact_usd is not None else Decimal(-1),
                   reverse=True)

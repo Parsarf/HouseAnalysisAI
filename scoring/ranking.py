@@ -7,9 +7,10 @@ so no ORM models are required.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Iterable, Mapping
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text

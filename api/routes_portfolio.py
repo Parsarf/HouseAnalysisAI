@@ -1,17 +1,21 @@
 """Portfolio-level endpoints: batches, flags, saved views, rankings, dashboard,
 problems, changes, assumption sets, exports, realized deals (WP-11, spec §16)."""
+import tempfile
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from uuid import UUID, uuid4
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Body, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from auth.dependencies import User, current_user, write_user
 from common.errors import AcqError, ErrorCode
 from common.serializers import json_safe
+from common.settings import settings
 from contracts import (
     AssumptionSet,
     BatchEstimate,
@@ -22,7 +26,7 @@ from contracts import (
     SavedViewRecord,
 )
 from db import models as dbm
-from exports import stream_properties
+from exports import full_export, stream_properties
 from flags import is_gating
 from jobs.postgres import PostgresJobQueue
 
@@ -70,7 +74,7 @@ def batch_estimate(batch_id: UUID, session: Session = Depends(get_session),
     units = (session.query(dbm.ExtractionUnit)
              .filter(dbm.ExtractionUnit.report_id.in_(report_ids)).all()) if report_ids else []
     total_tokens = sum(unit.token_estimate or 0 for unit in units)
-    estimated = (Decimal(total_tokens) / Decimal("1000") * PRICE_PER_1K_TOKENS).quantize(Decimal("0.01"))
+    estimated = (Decimal(total_tokens) / Decimal(1000) * PRICE_PER_1K_TOKENS).quantize(Decimal("0.01"))
     batch.estimated_cost_usd = estimated
     batch.awaiting_confirmation = True
     batch.status = "awaiting_confirmation"
@@ -120,7 +124,7 @@ def resolve_flag(flag_id: UUID, body: FlagResolution, session: Session = Depends
     row.resolution = body.resolution
     row.note = body.note
     row.resolved_value = body.resolved_value
-    row.resolved_at = datetime.now(timezone.utc)
+    row.resolved_at = datetime.now(UTC)
     session.flush()
     enqueue(session, queue, "recompute_property",
             {"property_id": str(row.property_id), "reason": f"flag_resolved:{flag_id}"},
@@ -243,7 +247,7 @@ def create_assumption_set(body: dict = Body(...), session: Session = Depends(get
     _validate_params(name, params)
     row = dbm.AssumptionSet(id=uuid4(), name=name, params=params,
                             is_default=bool(body.get("is_default", False)), version=1,
-                            effective_from=datetime.now(timezone.utc).date())
+                            effective_from=datetime.now(UTC).date())
     session.add(row)
     session.flush()
     return {"id": str(row.id), "name": row.name, "version": row.version}
@@ -282,6 +286,32 @@ def export_csv(filters: str | None = Query(default=None), columns: str | None = 
     stream = stream_properties(records, selected)
     return StreamingResponse(stream, media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=properties.csv"})
+
+
+@router.get("/exports/full")
+def export_full(session: Session = Depends(get_session),
+                user: User = Depends(current_user)) -> FileResponse:
+    """Create the complete flat export and documents archive."""
+    root = Path(tempfile.mkdtemp(prefix="acq-export-"))
+    output = root / "acq-export"
+    full_export(session.connection(), output, settings.document_root)
+    archive = root / "acq-export.zip"
+    with ZipFile(archive, "w", ZIP_DEFLATED) as bundle:
+        for path in output.rglob("*"):
+            if path.is_file():
+                bundle.write(path, path.relative_to(output))
+    return FileResponse(archive, media_type="application/zip", filename="acq-export.zip")
+
+
+@router.get("/calibration")
+def calibration_summary(session: Session = Depends(get_session),
+                        user: User = Depends(current_user)) -> dict:
+    rows = session.query(dbm.RealizedDeal).order_by(dbm.RealizedDeal.created_at.desc()).all()
+    return {"count": len(rows), "items": [json_safe({
+        "id": str(row.id), "property_id": str(row.property_id), "outcome": row.outcome,
+        "purchase_price": row.purchase_price, "sale_price": row.sale_price,
+        "actual_repairs": row.actual_repairs, "actual_costs": row.actual_costs,
+    }) for row in rows]}
 
 
 @router.post("/realized-deals")

@@ -3,42 +3,68 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
-from contracts import (AcquisitionCosts, AddressBlock, AssumptionSet, AttachmentBasis,
-                       ConditionSignal, DataQualityBlock, FlagType, ForeclosureState, HoaBlock,
-                       HoldingAssumptions, LienRecord, MortgageRecord, NormalizedProperty,
-                       PropertyAttributes, RepairAssumptions, ResaleAssumptions, Scenario, SourceKind,
-                       StrategyAssumptions, TaxBlock, TrackedValue, ValuationCandidate)
+from contracts import (
+    AcquisitionCosts,
+    AddressBlock,
+    AssumptionSet,
+    AttachmentBasis,
+    ConditionSignal,
+    DataQualityBlock,
+    FlagType,
+    ForeclosureState,
+    HoaBlock,
+    HoldingAssumptions,
+    LienRecord,
+    MortgageRecord,
+    NormalizedProperty,
+    PropertyAttributes,
+    RepairAssumptions,
+    ResaleAssumptions,
+    Scenario,
+    SourceKind,
+    StrategyAssumptions,
+    TaxBlock,
+    TrackedValue,
+    ValuationCandidate,
+)
 from contracts.models import ComparableSale  # not yet re-exported by contracts/__init__
-from finance import ENGINE_VERSION, estimate_balance, finance_flags, historical_rate, transfer_tax_rate, underwrite
+from finance import (
+    ENGINE_VERSION,
+    estimate_balance,
+    finance_flags,
+    historical_rate,
+    transfer_tax_rate,
+    underwrite,
+)
 
 AS_OF = date(2020, 6, 15)
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 def assumptions(**overrides) -> AssumptionSet:
     acq = overrides.get("acquisition") or AcquisitionCosts(
-        closing_pct=Decimal(".01"), title_pct=Decimal(".005"), escrow_flat=Decimal("1500"),
+        closing_pct=Decimal(".01"), title_pct=Decimal(".005"), escrow_flat=Decimal(1500),
         transfer_tax_lookup_key=overrides.get("transfer_tax_lookup_key"),
-        financing_points=Decimal(".02"), financing_flat=Decimal("1200"), inspection_flat=Decimal("600"),
-        legal_flat=Decimal("1500"), acq_fee_pct=Decimal(".01"))
+        financing_points=Decimal(".02"), financing_flat=Decimal(1200), inspection_flat=Decimal(600),
+        legal_flat=Decimal(1500), acq_fee_pct=Decimal(".01"))
     return AssumptionSet(
         id=uuid4(), version=1, name="test", acquisition=acq,
-        repairs=RepairAssumptions(psf_by_condition={"cosmetic": Decimal("18"), "moderate": Decimal("42"),
-                                                    "heavy": Decimal("78"), "gut": Decimal("135")},
-                                  low_multiplier=Decimal(".75"), high_multiplier=Decimal("1.4"), regional_index=Decimal("1")),
-        holding=HoldingAssumptions(insurance_pct_yr=Decimal(".0035"), utilities_monthly=Decimal("180"),
-                                   maintenance_pct_yr=Decimal(".005"), acquisition_months=Decimal("2"),
-                                   repair_months_by_condition={"moderate": Decimal("4")}, market_days_default=60),
+        repairs=RepairAssumptions(psf_by_condition={"cosmetic": Decimal(18), "moderate": Decimal(42),
+                                                    "heavy": Decimal(78), "gut": Decimal(135)},
+                                  low_multiplier=Decimal(".75"), high_multiplier=Decimal("1.4"), regional_index=Decimal(1)),
+        holding=HoldingAssumptions(insurance_pct_yr=Decimal(".0035"), utilities_monthly=Decimal(180),
+                                   maintenance_pct_yr=Decimal(".005"), acquisition_months=Decimal(2),
+                                   repair_months_by_condition={"moderate": Decimal(4)}, market_days_default=60),
         resale=ResaleAssumptions(commission_pct=Decimal(".05"), seller_closing_pct=Decimal(".01"),
-                                 concessions_pct=Decimal(".01"), staging_flat=Decimal("3500"), misc_pct=Decimal(".0025")),
+                                 concessions_pct=Decimal(".01"), staging_flat=Decimal(3500), misc_pct=Decimal(".0025")),
         strategy=StrategyAssumptions(cash_target_margin=Decimal(".2"),
                                      flip_target_margin_by_arv_band={"default": Decimal(".2")},
-                                     wholesale_investor_pct=Decimal(".7"), min_assignment_spread=Decimal("15000"),
+                                     wholesale_investor_pct=Decimal(".7"), min_assignment_spread=Decimal(15000),
                                      hard_money={"rate": Decimal(".1"), "points": Decimal(".02"), "ltv": Decimal(".85")},
                                      rental={"vacancy": Decimal(".06")}),
         attachment_probability={AttachmentBasis.OWNER_NAMED_ONLY: Decimal(".35"), AttachmentBasis.UNKNOWN: Decimal(".5")},
-        unknown_lien_medians={"hoa": Decimal("4500"), "mechanics": Decimal("12000"), "judgment": Decimal("18000")},
-        valuation_weights=overrides.get("valuation_weights", {"manual": Decimal("1")}))
+        unknown_lien_medians={"hoa": Decimal(4500), "mechanics": Decimal(12000), "judgment": Decimal(18000)},
+        valuation_weights=overrides.get("valuation_weights", {"manual": Decimal(1)}))
 
 
 def tracked(value, **kw) -> TrackedValue:
@@ -72,7 +98,7 @@ def test_scenario_weighting_uses_attachment_probability():
     result = underwrite(prop, assumptions())
     assert result.status == "ok"
     assert result.liabilities.confirmed == ZERO
-    assert result.liabilities.potential == Decimal("20000")
+    assert result.liabilities.potential == Decimal(20000)
     # expected: 10000×0.35 + 10000×0.50 = 8500; conservative: full; optimistic: excluded
     # scenario values: single candidate → disp 0.15 → 255000 / 300000 / 345000
     assert result.equity[Scenario.EXPECTED].adjusted == Decimal("291500.00")
@@ -134,19 +160,19 @@ def test_resale_uses_full_pct_on_value_staging_is_flip_only():
 
 def test_estimate_balance_amortization():
     # hand-verified: 100k @ 6%, 360-month term, 120 months elapsed
-    balance = estimate_balance(Decimal("100000"), Decimal("0.06"), 360, date(2010, 6, 15), AS_OF)
+    balance = estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(2010, 6, 15), AS_OF)
     assert balance == Decimal("83685.72")
-    assert estimate_balance(Decimal("100000"), Decimal("0.06"), 360, date(2025, 1, 1), AS_OF) == Decimal("100000.00")
-    assert estimate_balance(Decimal("100000"), Decimal("0.06"), 360, date(1980, 1, 1), AS_OF) == ZERO
+    assert estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(2025, 1, 1), AS_OF) == Decimal("100000.00")
+    assert estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(1980, 1, 1), AS_OF) == ZERO
     assert estimate_balance(None, Decimal("0.06"), 360, date(2010, 1, 1), AS_OF) is None
 
 
 def test_estimate_balance_historical_rate_fallback():
     assert historical_rate(2005) == Decimal("0.0587")
     assert historical_rate(2005, "heloc") == Decimal("0.0787")
-    balance = estimate_balance(Decimal("100000"), None, None, date(2005, 6, 15), AS_OF)
+    balance = estimate_balance(Decimal(100000), None, None, date(2005, 6, 15), AS_OF)
     assert balance is not None
-    assert ZERO < balance < Decimal("100000")
+    assert ZERO < balance < Decimal(100000)
 
 
 def test_derived_balance_feeds_liabilities():
@@ -166,7 +192,7 @@ def test_fallback_rate_still_derives_balance():
     result = underwrite(prop, assumptions())
     # rate fell back to the historical index (2005 conventional = 5.87%)
     assert result.liabilities.breakdown[0]["basis"] == "amortization_v1"
-    assert ZERO < result.liabilities.confirmed < Decimal("200000")
+    assert ZERO < result.liabilities.confirmed < Decimal(200000)
     # confirmed debt is constant across scenarios (spec §7.1 scenario vectors do not
     # vary debt; the §6.5 ±150bps band is a rendering concern, golden formula set v1)
     confirmed_by_scenario = {Scenario.CONSERVATIVE: result.value.v_low - result.equity[Scenario.CONSERVATIVE].gross,
@@ -202,9 +228,9 @@ def test_undrawn_heloc_is_potential_not_confirmed():
     prop = make_property(mortgages=[
         MortgageRecord(position="heloc", original_amount=tracked("50000"), estimated_balance=tracked("20000"))])
     result = underwrite(prop, assumptions())
-    assert result.liabilities.confirmed == Decimal("20000")
-    assert result.liabilities.potential == Decimal("30000")
-    assert result.liabilities.maximum == Decimal("50000")
+    assert result.liabilities.confirmed == Decimal(20000)
+    assert result.liabilities.potential == Decimal(30000)
+    assert result.liabilities.maximum == Decimal(50000)
 
 
 # --- item 8: missing sqft → unavailable/flagged, never silent $0 repairs ---
@@ -242,7 +268,7 @@ def test_valuation_weights_and_avm_recency_decay():
         ValuationCandidate(valuation_type="avm", value=tracked("300000"), reported_confidence=1.0,
                            as_of=date(2020, 3, 17)),  # 90 days before AS_OF → decay 0.5
         ValuationCandidate(valuation_type="manual", value=tracked("330000"), as_of=AS_OF)])
-    result = underwrite(prop, assumptions(valuation_weights={"avm": Decimal("0.3"), "manual": Decimal("1")}))
+    result = underwrite(prop, assumptions(valuation_weights={"avm": Decimal("0.3"), "manual": Decimal(1)}))
     # weights: avm 0.3 × reported_confidence 1.0 × decay 0.5 = 0.15 ; manual 1.0
     # expected = (300000×0.15 + 330000×1.0) / 1.15
     assert result.value.v_expected == Decimal("326086.96")
@@ -255,11 +281,11 @@ def test_comp_quality_adjusts_comp_candidate_weight():
                          comparables=[ComparableSale(address="2 Main St", price=tracked("300000"))])
     strong = make_property(value=None, valuation_candidates=[comp_candidate],
                            comparables=[ComparableSale(address=f"{i} Main St", price=tracked("300000")) for i in range(2, 8)])
-    weights = {"comp_estimate": Decimal("1")}
+    weights = {"comp_estimate": Decimal(1)}
     weak_weight = underwrite(weak, assumptions(valuation_weights=weights)).value.candidates_used[0]["weight"]
     strong_weight = underwrite(strong, assumptions(valuation_weights=weights)).value.candidates_used[0]["weight"]
     assert weak_weight == Decimal("0.7")      # 1 comp → count factor 0.7
-    assert strong_weight == Decimal("1")      # ≥5 comps → no discount
+    assert strong_weight == Decimal(1)      # ≥5 comps → no discount
     assert weak_weight < strong_weight
 
 
@@ -296,7 +322,7 @@ def test_missing_lien_amount_uses_median_and_flags():
         LienRecord(lien_type="judgment", amount=None,
                    attachment_basis=AttachmentBasis.OWNER_NAMED_ONLY, attachment_confidence=.9)])
     result = underwrite(prop, assumptions())
-    assert result.liabilities.potential == Decimal("18000")  # judgment median
+    assert result.liabilities.potential == Decimal(18000)  # judgment median
     assert result.liabilities.breakdown[0]["is_estimated"] is True
     flags = finance_flags(prop)
     assert [f.flag_type for f in flags] == [FlagType.MISSING_LIEN_AMOUNT]

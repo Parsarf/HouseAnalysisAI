@@ -6,25 +6,43 @@ byte-identical record. Scoring follows §6.2, conflicts §6.3, entity dedupe
 """
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from common.dates import months_between
 from common.money import money
-from contracts import (AddressBlock, AttachmentBasis, BankruptcyRecord,
-                       ConditionSignal, DataQualityBlock, EntityType, ExtractedFactDraft,
-                       FlagSummary, FlagType, ForeclosureState, HoaBlock, LienRecord,
-                       ListingRecord, MortgageRecord, NormalizedProperty, OwnershipBlock,
-                       PropertyAttributes, RentalBlock, SourceKind, TaxBlock, TrackedValue,
-                       ValuationCandidate)
+from contracts import (
+    AddressBlock,
+    AttachmentBasis,
+    BankruptcyRecord,
+    ConditionSignal,
+    DataQualityBlock,
+    EntityType,
+    ExtractedFactDraft,
+    FlagSummary,
+    FlagType,
+    ForeclosureState,
+    HoaBlock,
+    LienRecord,
+    ListingRecord,
+    MortgageRecord,
+    NormalizedProperty,
+    OwnershipBlock,
+    PropertyAttributes,
+    RentalBlock,
+    SourceKind,
+    TaxBlock,
+    TrackedValue,
+    ValuationCandidate,
+)
 from contracts.models import ComparableSale  # not yet re-exported by contracts/__init__
 
 RESOLVER_VERSION = "resolver-2"
 
 CONDITION_LADDER = ("pristine", "cosmetic", "moderate", "heavy", "gut")
 
-_MATERIAL_THRESHOLD = Decimal("10000")
+_MATERIAL_THRESHOLD = Decimal(10000)
 _MORTGAGE_BALANCE_TOLERANCE_PCT = Decimal("0.05")
-_MORTGAGE_BALANCE_TOLERANCE_USD = Decimal("10000")
+_MORTGAGE_BALANCE_TOLERANCE_USD = Decimal(10000)
 _VALUATION_DISPERSION_RATIO = Decimal("1.5")
 _BID_MISMATCH_PCT = Decimal("0.20")
 _LOW_CONFIDENCE_THRESHOLD = 0.65
@@ -348,10 +366,8 @@ def _same_mortgage(a_facts: list[ExtractedFactDraft], b_facts: list[ExtractedFac
     if date_a and date_b and abs((date_a - date_b).days) > 30:
         return False
     amount_a, amount_b = _num(_winner(a, "original_amount")), _num(_winner(b, "original_amount"))
-    if amount_a is not None and amount_b is not None:
-        if abs(amount_a - amount_b) > Decimal("0.01") * max(abs(amount_a), abs(amount_b)):
-            return False
-    return True
+    return not (amount_a is not None and amount_b is not None
+                and abs(amount_a - amount_b) > Decimal("0.01") * max(abs(amount_a), abs(amount_b)))
 
 
 def _same_lien(a_facts: list[ExtractedFactDraft], b_facts: list[ExtractedFactDraft],
@@ -370,9 +386,7 @@ def _same_lien(a_facts: list[ExtractedFactDraft], b_facts: list[ExtractedFactDra
     if amount_a is not None and amount_b is not None and abs(amount_a - amount_b) > 1:
         return False
     date_a, date_b = _date_of(_winner(a, "recording_date")), _date_of(_winner(b, "recording_date"))
-    if date_a and date_b and abs((date_a - date_b).days) > 7:
-        return False
-    return True
+    return not (date_a and date_b and abs((date_a - date_b).days) > 7)
 
 
 # ---------------------------------------------------------------- derived balances (§6.5)
@@ -383,7 +397,7 @@ def _amortized_balance(original: Decimal, rate: Decimal, term_months: int,
     if n <= 0:
         return money(original)
     if n >= term_months:
-        return Decimal("0")
+        return Decimal(0)
     if rate == 0:
         return money(original * (term_months - n) / term_months)
     r = rate / 12
@@ -488,7 +502,7 @@ def _build_lien(facts: list[ExtractedFactDraft],
     resolved = _resolve_leaves(facts, _LIEN_ALIASES, ctx)
     winners = {"type": _winner(resolved, "lien_type"), "amount": _winner(resolved, "amount")}
     if winners["amount"] is not None:  # doc-matched liens with genuinely different amounts (§6.3)
-        _money_conflict(winners["amount"], resolved["amount"][1], Decimal("1"), ctx)
+        _money_conflict(winners["amount"], resolved["amount"][1], Decimal(1), ctx)
     status = (_text(_winner(resolved, "status")) or "unknown").casefold()
     basis_text = (_text(_winner(resolved, "attachment_basis")) or "").casefold()
     try:
@@ -513,7 +527,7 @@ def _build_lien(facts: list[ExtractedFactDraft],
 
 def _lien_key(record: LienRecord):
     return (record.recording_date or date.min, record.lien_type,
-            record.amount.value if record.amount and record.amount.value is not None else Decimal("0"))
+            record.amount.value if record.amount and record.amount.value is not None else Decimal(0))
 
 
 def _build_valuation(facts: list[ExtractedFactDraft],
@@ -707,7 +721,7 @@ def _data_quality(presence: dict[str, bool], facts: list[ExtractedFactDraft],
         mean = Decimal(str(sum(f.extraction_confidence for f in facts) / len(facts)))
         mean = mean.quantize(_FOUR_PLACES, rounding=ROUND_HALF_UP)
     else:
-        mean = Decimal("0")
+        mean = Decimal(0)
     return DataQualityBlock(critical_field_coverage=coverage,
                             source_counts_by_field={field: len(reports) for field, reports
                                                     in sorted(ctx.contributions.items())},
@@ -746,7 +760,7 @@ def resolve_facts(property_id, facts: list[ExtractedFactDraft], *, as_of: date |
     if len(valuation_values) > 1 and valuation_values[-1] > _VALUATION_DISPERSION_RATIO * valuation_values[0]:
         ctx.conflict(impact=valuation_values[-1] - valuation_values[0],
                      flag_type=FlagType.VALUATION_DISPERSION)
-    valuations.sort(key=lambda c: (c.valuation_type, c.value.value or Decimal("0")))
+    valuations.sort(key=lambda c: (c.valuation_type, c.value.value or Decimal(0)))
     for candidate, value_fact in valuation_winners:
         if "avm" in candidate.valuation_type:
             ctx.register("avm", value_fact)
@@ -843,7 +857,7 @@ def resolve_facts(property_id, facts: list[ExtractedFactDraft], *, as_of: date |
         ctx.flag(FlagType.LOW_EXTRACTION_CONFIDENCE)
 
     ctx.flags.sort(key=lambda f: (f.financial_impact is None,
-                                  -(f.financial_impact or Decimal("0")), f.type.value))
+                                  -(f.financial_impact or Decimal(0)), f.type.value))
     presence = _critical_presence(apn, address, attributes, ownership, taxes, rental, valuations,
                                   mortgages, liens, foreclosure)
     return NormalizedProperty(property_id=property_id, apn=apn, address=address, attributes=attributes,

@@ -1,5 +1,6 @@
 """Initial ACQ schema."""
 from pathlib import Path
+
 from alembic import op
 
 revision = "0001_initial"

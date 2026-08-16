@@ -135,13 +135,13 @@ def _diff_bankruptcies(before, after, score_delta) -> list[ChangeEvent]:
 
 
 def _representative_value(candidates) -> Decimal | None:
-    total_weight = Decimal("0")
-    weighted = Decimal("0")
+    total_weight = Decimal(0)
+    weighted = Decimal(0)
     for candidate in candidates:
         value = candidate.value.value
         if value is None:
             continue
-        weight = (candidate.weight_hint or Decimal("1")) * Decimal(str(candidate.value.confidence))
+        weight = (candidate.weight_hint or Decimal(1)) * Decimal(str(candidate.value.confidence))
         weighted += value * weight
         total_weight += weight
     return None if total_weight == 0 else weighted / total_weight

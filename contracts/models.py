@@ -4,7 +4,9 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 
 class SourceKind(StrEnum):
     REPORT="report"; DERIVED="derived"; HUMAN="human"; API="api"; PASTED="pasted"
@@ -47,7 +49,7 @@ class ListingRecord(ContractModel): list_date: date; delist_date: date|None=None
 class ComparableSale(ContractModel): address: str; sale_date: date|None=None; price: TrackedValue|None=None; sqft: Decimal|None=None; distance: Decimal|None=None; similarity: Decimal|None=None; included: bool=True
 class ConditionSignal(ContractModel): condition: Literal["pristine","cosmetic","moderate","heavy","gut"]; evidence: str|None=None
 class FlagSummary(ContractModel): type: FlagType; severity: str="warning"; is_gating: bool=False; financial_impact: Decimal|None=None
-class DataQualityBlock(ContractModel): critical_field_coverage: Decimal=Decimal("0"); source_counts_by_field: dict[str,int]={}; conflict_count: int=0; material_conflict_count: int=0; verified_field_count: int=0; ocr_applied: bool=False; newest_report_date: date|None=None; mean_extraction_confidence: Decimal=Decimal("0")
+class DataQualityBlock(ContractModel): critical_field_coverage: Decimal=Decimal(0); source_counts_by_field: dict[str,int]={}; conflict_count: int=0; material_conflict_count: int=0; verified_field_count: int=0; ocr_applied: bool=False; newest_report_date: date|None=None; mean_extraction_confidence: Decimal=Decimal(0)
 class NormalizedProperty(ContractModel):
     property_id: UUID; apn: str|None=None; address: AddressBlock; attributes: PropertyAttributes=Field(default_factory=PropertyAttributes); ownership: OwnershipBlock=Field(default_factory=OwnershipBlock); valuation_candidates: list[ValuationCandidate]=[]; mortgages: list[MortgageRecord]=[]; liens: list[LienRecord]=[]; foreclosure: ForeclosureState|None=None; bankruptcies: list[BankruptcyRecord]=[]; taxes: TaxBlock=Field(default_factory=TaxBlock); hoa: HoaBlock=Field(default_factory=HoaBlock); rental: RentalBlock=Field(default_factory=RentalBlock); listings: list[ListingRecord]=[]; comparables: list[ComparableSale]=[]; condition: ConditionSignal|None=None; data_quality: DataQualityBlock=Field(default_factory=DataQualityBlock); open_flags: list[FlagSummary]=[]; resolution_version: str
 class AcquisitionCosts(ContractModel): closing_pct: Decimal; title_pct: Decimal; escrow_flat: Decimal; transfer_tax_lookup_key: str|None=None; financing_points: Decimal; financing_flat: Decimal; inspection_flat: Decimal; legal_flat: Decimal; acq_fee_pct: Decimal
@@ -57,10 +59,10 @@ class ResaleAssumptions(ContractModel): commission_pct: Decimal; seller_closing_
 class StrategyAssumptions(ContractModel): cash_target_margin: Decimal; flip_target_margin_by_arv_band: dict[str,Decimal]; wholesale_investor_pct: Decimal; min_assignment_spread: Decimal; hard_money: dict[str,Decimal]; rental: dict[str,Decimal]
 class AssumptionSet(ContractModel): id: UUID; version: int; name: str; acquisition: AcquisitionCosts; repairs: RepairAssumptions; holding: HoldingAssumptions; resale: ResaleAssumptions; strategy: StrategyAssumptions; attachment_probability: dict[AttachmentBasis,Decimal]; unknown_lien_medians: dict[str,Decimal]; valuation_weights: dict[str,Decimal]
 class ValueBlock(ContractModel): v_low: Decimal|None=None; v_expected: Decimal|None=None; v_high: Decimal|None=None; dispersion: Decimal|None=None; arv_by_scenario: dict[Scenario,Decimal|None]={}; candidates_used: list[dict[str,Any]]=[]; valuation_confidence: Decimal|None=None
-class LiabilityBlock(ContractModel): confirmed: Decimal=Decimal("0"); potential: Decimal=Decimal("0"); maximum: Decimal=Decimal("0"); breakdown: list[dict[str,Any]]=[]
+class LiabilityBlock(ContractModel): confirmed: Decimal=Decimal(0); potential: Decimal=Decimal(0); maximum: Decimal=Decimal(0); breakdown: list[dict[str,Any]]=[]
 class EquityBlock(ContractModel): gross: Decimal|None=None; adjusted: Decimal|None=None; net_realizable: Decimal|None=None; equity_pct: Decimal|None=None
-class CostBlock(ContractModel): acquisition: Decimal=Decimal("0"); repairs: Decimal=Decimal("0"); holding: Decimal=Decimal("0"); resale: Decimal=Decimal("0"); financing: Decimal=Decimal("0")
-class UnderwritingResult(ContractModel): property_id: UUID; assumption_set_id: UUID; engine_version: str; status: Literal["ok","insufficient_data"]; unavailable_reason: str|None=None; value: ValueBlock=Field(default_factory=ValueBlock); liabilities: LiabilityBlock=Field(default_factory=LiabilityBlock); equity: dict[Scenario,EquityBlock]={}; costs: dict[Scenario,CostBlock]={}; debt_data_present: bool=False; confidence: Decimal=Decimal("0")
+class CostBlock(ContractModel): acquisition: Decimal=Decimal(0); repairs: Decimal=Decimal(0); holding: Decimal=Decimal(0); resale: Decimal=Decimal(0); financing: Decimal=Decimal(0)
+class UnderwritingResult(ContractModel): property_id: UUID; assumption_set_id: UUID; engine_version: str; status: Literal["ok","insufficient_data"]; unavailable_reason: str|None=None; value: ValueBlock=Field(default_factory=ValueBlock); liabilities: LiabilityBlock=Field(default_factory=LiabilityBlock); equity: dict[Scenario,EquityBlock]={}; costs: dict[Scenario,CostBlock]={}; debt_data_present: bool=False; confidence: Decimal=Decimal(0)
 class StrategyResult(ContractModel): strategy: StrategyType; scenario: Scenario; status: Literal["viable","not_viable","unavailable","requires_human_review"]; unavailable_reason: str|None=None; mao: Decimal|None=None; all_in_basis: Decimal|None=None; profit: Decimal|None=None; roi: Decimal|None=None; margin_of_safety: Decimal|None=None; metrics: dict[str,Decimal|None]={}; inputs_echo: dict[str,Decimal]={}; notices: list[str]=[]
 class OfferPoint(ContractModel): offer_price: Decimal; scenario: Scenario; confirmed_payoffs: Decimal; potential_payoffs: Decimal; closing_costs: Decimal; proceeds_low: Decimal; proceeds_expected: Decimal; proceeds_high: Decimal; buyer_basis: Decimal; profit: Decimal; roi: Decimal|None=None; is_short_sale: bool; label: str|None=None
 class OfferGrid(ContractModel): property_id: UUID; points: list[OfferPoint]; interpolatable: bool=True

@@ -111,7 +111,7 @@ def test_strategies_and_offer_grid_reproduce_golden(slug: str):
     golden = load_json(FIXTURES / "strategies" / f"{slug}.json")
     record = NORMALIZED[slug]
     assumptions = ASSUMPTIONS[golden["assumption_set"]]
-    price = Decimal(golden["purchase_price"]) if golden["purchase_price"] is not None else Decimal("0")
+    price = Decimal(golden["purchase_price"]) if golden["purchase_price"] is not None else Decimal(0)
     underwriting = underwrite(record, assumptions)
     results = all_strategies(record, underwriting, assumptions, price)
     grid = offer_grid(underwriting, record.property_id, assumptions, price)
@@ -129,7 +129,7 @@ def test_scores_reproduce_golden(slug: str):
     record = NORMALIZED[slug]
     assumptions = ASSUMPTIONS[strategy_golden["assumption_set"]]
     price = (Decimal(strategy_golden["purchase_price"])
-             if strategy_golden["purchase_price"] is not None else Decimal("0"))
+             if strategy_golden["purchase_price"] is not None else Decimal(0))
     underwriting = underwrite(record, assumptions)
     results = all_strategies(record, underwriting, assumptions, price)
     actual = score(record, underwriting, SCORING_CONFIG_ID, results).model_dump(mode="json")
@@ -149,8 +149,8 @@ def test_fixture_01_remains_the_reproducible_worked_example():
     """Fixture #1 is the worked-example anchor: single comp candidate at
     $500,000 on 1,800 sqft, no debt, and a fact ledger that produces it."""
     record = NORMALIZED["01_clean_high_equity"]
-    assert record.valuation_candidates[0].value.value == Decimal("500000")
-    assert record.attributes.sqft.value == Decimal("1800")
+    assert record.valuation_candidates[0].value.value == Decimal(500000)
+    assert record.attributes.sqft.value == Decimal(1800)
     assert not record.mortgages and not record.liens
     facts_path = FIXTURES / "facts" / "01_clean_high_equity.jsonl"
     facts = [json.loads(line) for line in facts_path.read_text().splitlines() if line.strip()]

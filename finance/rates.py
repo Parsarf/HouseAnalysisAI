@@ -7,7 +7,7 @@ this module once it ships; until then this is the offline source of truth.
 """
 from decimal import Decimal
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 _CONVENTIONAL_30YR: dict[int, Decimal] = {
     1971: Decimal("0.0754"), 1972: Decimal("0.0738"), 1973: Decimal("0.0796"),

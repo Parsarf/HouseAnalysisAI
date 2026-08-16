@@ -8,7 +8,7 @@ so filter/pagination tests exercise real translation, not echoes.
 """
 import contextlib
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -36,7 +36,7 @@ PID = UUID("00000000-0000-0000-0000-0000000000a1")
 PID2 = UUID("00000000-0000-0000-0000-0000000000a2")
 PID3 = UUID("00000000-0000-0000-0000-0000000000a3")
 BATCH_ID = UUID("00000000-0000-0000-0000-0000000000b1")
-NOW = datetime(2026, 2, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 2, 1, tzinfo=UTC)
 
 DEFAULT_PARAMS = {key: value for key, value in
                   json.loads(Path("fixtures/assumptions/default.json").read_text()).items()
@@ -198,11 +198,11 @@ def fact_row(pid, entity_type, local_id, field_path, *, parsed=None, text=None, 
 def seed_rows():
     props = [
         prop(PID, "100 Main St", "Oakland", "CA", "94601", tags=["watch"], gut=4,
-             created=datetime(2026, 1, 5, tzinfo=timezone.utc)),
+             created=datetime(2026, 1, 5, tzinfo=UTC)),
         prop(PID2, "200 Elm St", "Berkeley", "CA", "94702", gut=2,
-             created=datetime(2026, 1, 3, tzinfo=timezone.utc)),
+             created=datetime(2026, 1, 3, tzinfo=UTC)),
         prop(PID3, "300 Oak Ave", "Austin", "TX", "78701", status="analyzed", watchlisted=True,
-             created=datetime(2026, 1, 1, tzinfo=timezone.utc)),
+             created=datetime(2026, 1, 1, tzinfo=UTC)),
     ]
     facts = [
         fact_row(PID, EntityType.PROPERTY, "p1", "property.apn", text="APN-94601"),
@@ -210,11 +210,11 @@ def seed_rows():
         fact_row(PID, EntityType.PROPERTY, "p1", "property.address.city", text="Oakland"),
         fact_row(PID, EntityType.PROPERTY, "p1", "property.address.state", text="CA"),
         fact_row(PID, EntityType.PROPERTY, "p1", "property.address.zip5", text="94601"),
-        fact_row(PID, EntityType.PROPERTY, "p1", "property.sqft", parsed=Decimal("1812")),
+        fact_row(PID, EntityType.PROPERTY, "p1", "property.sqft", parsed=Decimal(1812)),
         fact_row(PID, EntityType.VALUATION, "v1", "valuation.type", text="comp"),
-        fact_row(PID, EntityType.VALUATION, "v1", "valuation.value", parsed=Decimal("500000")),
+        fact_row(PID, EntityType.VALUATION, "v1", "valuation.value", parsed=Decimal(500000)),
         fact_row(PID, EntityType.MORTGAGE, "m1", "mortgage.position", text="first"),
-        fact_row(PID, EntityType.MORTGAGE, "m1", "mortgage.estimated_balance", parsed=Decimal("320000")),
+        fact_row(PID, EntityType.MORTGAGE, "m1", "mortgage.estimated_balance", parsed=Decimal(320000)),
     ]
     scenarios = [
         dbm.DealScenario(id=uuid4(), property_id=PID, strategy="cash", scenario="expected",
@@ -226,13 +226,13 @@ def seed_rows():
     ]
     offers = [
         dbm.OfferScenario(id=uuid4(), property_id=PID, offer_price=Decimal("300000.00"), scenario="expected",
-                          confirmed_payoffs=Decimal("320000.00"), potential_payoffs=Decimal("0"),
+                          confirmed_payoffs=Decimal("320000.00"), potential_payoffs=Decimal(0),
                           closing_costs=Decimal("3000.00"), proceeds_low=Decimal("-23000.00"),
                           proceeds_expected=Decimal("-23000.00"), proceeds_high=Decimal("-23000.00"),
                           buyer_basis=Decimal("330000.00"), profit=Decimal("20000.00"),
                           roi=Decimal("0.06"), is_short_sale=True),
         dbm.OfferScenario(id=uuid4(), property_id=PID, offer_price=Decimal("350000.00"), scenario="expected",
-                          confirmed_payoffs=Decimal("320000.00"), potential_payoffs=Decimal("0"),
+                          confirmed_payoffs=Decimal("320000.00"), potential_payoffs=Decimal(0),
                           closing_costs=Decimal("3500.00"), proceeds_low=Decimal("26500.00"),
                           proceeds_expected=Decimal("26500.00"), proceeds_high=Decimal("26500.00"),
                           buyer_basis=Decimal("380000.00"), profit=Decimal("-30000.00"),
@@ -257,7 +257,7 @@ def seed_rows():
                  amount=Decimal("4000.00"), recording_date=date(2025, 12, 15), status="active",
                  attachment_basis="recorded_against_property", attachment_confidence=Decimal("0.9")),
         dbm.ChangeEvent(id=uuid4(), property_id=PID, change_type="value_change", field_path="valuation.value",
-                        old_value={}, new_value={}, detected_at=datetime(2026, 1, 20, tzinfo=timezone.utc)),
+                        old_value={}, new_value={}, detected_at=datetime(2026, 1, 20, tzinfo=UTC)),
     ]
     return {
         dbm.Property: props, dbm.ExtractedFact: facts, dbm.DealScenario: scenarios,
@@ -424,7 +424,7 @@ def test_cursor_pagination_walks_all_rows(client, session):
     for index in range(4, 8):
         pid = UUID(f"00000000-0000-0000-0000-00000000000{index}")
         session.add(prop(pid, f"{index} Page St", "Oakland", "CA", "94601",
-                         created=datetime(2026, 1, index, tzinfo=timezone.utc)))
+                         created=datetime(2026, 1, index, tzinfo=UTC)))
     seen, cursor = [], None
     for _ in range(10):
         params = {"limit": 2, "sort": "-created_at"}
@@ -716,11 +716,11 @@ def test_deal_sheet_and_net_sheet(client):
 # --- portfolio views ------------------------------------------------------------------------
 
 def test_rankings_dashboard_problems_changes(client, session):
-    ranked_at = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    ranked_at = datetime(2026, 2, 1, tzinfo=UTC)
     session.add(dbm.Ranking(id=uuid4(), scope_type="portfolio", property_id=PID, rank=1, score=Decimal("0.83"), ranked_at=ranked_at))
     session.add(dbm.Ranking(id=uuid4(), scope_type="portfolio", property_id=PID2, rank=2, score=Decimal("0.5"), ranked_at=ranked_at))
     session.add(dbm.Ranking(id=uuid4(), scope_type="portfolio", property_id=PID2, rank=9, score=Decimal("0.4"),
-                            ranked_at=datetime(2026, 1, 1, tzinfo=timezone.utc)))
+                            ranked_at=datetime(2026, 1, 1, tzinfo=UTC)))
     body = client.get("/api/rankings").json()
     assert [item["property_id"] for item in body["items"]] == [str(PID), str(PID2)]
     assert body["items"][0]["score"] == "0.83"
@@ -832,11 +832,17 @@ def test_flag_resolve_requires_write(readonly_client):
 # --- SPA ---------------------------------------------------------------------------------------
 
 def test_spa_serving(client):
+    from pathlib import Path
+
     index = client.get("/")
     assert index.status_code == 200 and "text/html" in index.headers["content-type"]
     deep = client.get("/properties/some-id")
     assert deep.status_code == 200 and "text/html" in deep.headers["content-type"]
-    asset = client.get("/assets/index-BJTxLtWA.css")
+    assets = sorted((Path(__file__).parent.parent / "web" / "dist" / "assets").glob("*")
+                    if (Path(__file__).parent.parent / "web" / "dist" / "assets").exists() else [])
+    if not assets:
+        pytest.skip("web/dist is absent; run the frontend build before SPA asset verification")
+    asset = client.get(f"/assets/{assets[0].name}")
     assert asset.status_code == 200
     missing_api = client.get("/api/definitely-not-a-route")
     assert missing_api.status_code == 404

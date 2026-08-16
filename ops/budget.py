@@ -12,7 +12,7 @@ class BudgetDecision:
 class Budget:
     def __init__(self, limit: Decimal):
         self.limit = limit
-        self.reserved = Decimal("0")
+        self.reserved = Decimal(0)
 
     def check_and_reserve(self, estimated_cost: Decimal) -> BudgetDecision:
         remaining = self.limit - self.reserved
@@ -22,4 +22,4 @@ class Budget:
         return BudgetDecision(True, self.limit - self.reserved)
 
     def release(self, actual_cost: Decimal, reserved_cost: Decimal) -> None:
-        self.reserved -= max(Decimal("0"), reserved_cost - actual_cost)
+        self.reserved -= max(Decimal(0), reserved_cost - actual_cost)

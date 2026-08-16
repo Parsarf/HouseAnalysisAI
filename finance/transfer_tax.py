@@ -7,7 +7,7 @@ module once it ships; unknown keys conservatively resolve to 0.
 """
 from decimal import Decimal
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 TRANSFER_TAX_RATES: dict[str, Decimal] = {
     "CA": Decimal("0.0011"),   # $1.10 per $1,000 statewide documentary tax

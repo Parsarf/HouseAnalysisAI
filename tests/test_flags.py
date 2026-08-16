@@ -9,13 +9,31 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from common.errors import AcqError
-from contracts import (AddressBlock, AssumptionSet, AttachmentBasis, DataQualityBlock,
-                       ExtractedFactDraft, FlagType, ForeclosureState, LienRecord,
-                       MortgageRecord, NormalizedProperty, SourceKind, TrackedValue,
-                       ValuationCandidate)
+from contracts import (
+    AddressBlock,
+    AssumptionSet,
+    AttachmentBasis,
+    DataQualityBlock,
+    ExtractedFactDraft,
+    FlagType,
+    ForeclosureState,
+    LienRecord,
+    MortgageRecord,
+    NormalizedProperty,
+    SourceKind,
+    TrackedValue,
+    ValuationCandidate,
+)
 from db.models import Flag
-from flags import (apply_override, collect_flags, flag_summaries, is_gating, open_flags,
-                   persist_flags, resolve_flag)
+from flags import (
+    apply_override,
+    collect_flags,
+    flag_summaries,
+    is_gating,
+    open_flags,
+    persist_flags,
+    resolve_flag,
+)
 from flags.service import GATING_FLAG_TYPES
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
@@ -29,7 +47,7 @@ def tracked(value, confidence=0.9):
 def base_property(**overrides) -> NormalizedProperty:
     property = NormalizedProperty(
         property_id=uuid4(), apn="APN-1", address=AddressBlock(line1="1 Main St"),
-        valuation_candidates=[ValuationCandidate(valuation_type="manual", value=tracked(Decimal("300000")))],
+        valuation_candidates=[ValuationCandidate(valuation_type="manual", value=tracked(Decimal(300000)))],
         data_quality=DataQualityBlock(critical_field_coverage=Decimal(".9"),
                                       mean_extraction_confidence=Decimal(".9")),
         resolution_version="test")
@@ -62,28 +80,28 @@ def test_identity_conflict_trigger():
 
 
 def test_lien_attachment_trigger():
-    flags = collect_flags(base_property(liens=[lien(Decimal("128000"), AttachmentBasis.OWNER_NAMED_ONLY)]))
+    flags = collect_flags(base_property(liens=[lien(Decimal(128000), AttachmentBasis.OWNER_NAMED_ONLY)]))
     matches = [flag for flag in flags if flag.flag_type == FlagType.LIEN_ATTACHMENT]
     assert len(matches) == 1
     assert matches[0].payload["basis"] == "owner_named_only"
 
 
 def test_lien_attachment_not_raised_below_threshold_or_when_recorded():
-    property = base_property(liens=[lien(Decimal("9999"), AttachmentBasis.UNKNOWN),
-                                    lien(Decimal("50000"), AttachmentBasis.RECORDED_AGAINST_PROPERTY),
-                                    lien(Decimal("50000"), AttachmentBasis.OWNER_NAMED_ONLY, status="released")])
+    property = base_property(liens=[lien(Decimal(9999), AttachmentBasis.UNKNOWN),
+                                    lien(Decimal(50000), AttachmentBasis.RECORDED_AGAINST_PROPERTY),
+                                    lien(Decimal(50000), AttachmentBasis.OWNER_NAMED_ONLY, status="released")])
     assert not [flag for flag in collect_flags(property) if flag.flag_type == FlagType.LIEN_ATTACHMENT]
 
 
 def test_conflicting_mortgage_trigger():
-    flags = collect_flags(base_property(mortgages=[mortgage(Decimal("100000")), mortgage(Decimal("120000"))]))
+    flags = collect_flags(base_property(mortgages=[mortgage(Decimal(100000)), mortgage(Decimal(120000))]))
     matches = [flag for flag in flags if flag.flag_type == FlagType.CONFLICTING_MORTGAGE]
     assert len(matches) == 1
     assert matches[0].payload["balances"] == ["100000", "120000"]
 
 
 def test_conflicting_mortgage_not_raised_within_tolerance():
-    property = base_property(mortgages=[mortgage(Decimal("100000")), mortgage(Decimal("104000"))])
+    property = base_property(mortgages=[mortgage(Decimal(100000)), mortgage(Decimal(104000))])
     assert not [flag for flag in collect_flags(property) if flag.flag_type == FlagType.CONFLICTING_MORTGAGE]
 
 
@@ -109,16 +127,16 @@ def test_missing_lien_amount_trigger():
 
 
 def test_valuation_dispersion_trigger():
-    candidates = [ValuationCandidate(valuation_type="avm", value=tracked(Decimal("100000"))),
-                  ValuationCandidate(valuation_type="comp", value=tracked(Decimal("200000")))]
+    candidates = [ValuationCandidate(valuation_type="avm", value=tracked(Decimal(100000))),
+                  ValuationCandidate(valuation_type="comp", value=tracked(Decimal(200000)))]
     flags = collect_flags(base_property(valuation_candidates=candidates))
     matches = [flag for flag in flags if flag.flag_type == FlagType.VALUATION_DISPERSION]
     assert len(matches) == 1
 
 
 def test_valuation_dispersion_not_raised_within_ratio():
-    candidates = [ValuationCandidate(valuation_type="avm", value=tracked(Decimal("100000"))),
-                  ValuationCandidate(valuation_type="comp", value=tracked(Decimal("140000")))]
+    candidates = [ValuationCandidate(valuation_type="avm", value=tracked(Decimal(100000))),
+                  ValuationCandidate(valuation_type="comp", value=tracked(Decimal(140000)))]
     assert not [flag for flag in collect_flags(base_property(valuation_candidates=candidates))
                 if flag.flag_type == FlagType.VALUATION_DISPERSION]
 
@@ -129,7 +147,7 @@ def test_missing_apn_trigger():
 
 
 def test_low_extraction_confidence_trigger():
-    candidates = [ValuationCandidate(valuation_type="manual", value=tracked(Decimal("300000"), confidence=0.5))]
+    candidates = [ValuationCandidate(valuation_type="manual", value=tracked(Decimal(300000), confidence=0.5))]
     flags = collect_flags(base_property(valuation_candidates=candidates))
     matches = [flag for flag in flags if flag.flag_type == FlagType.LOW_EXTRACTION_CONFIDENCE]
     assert len(matches) == 1
@@ -137,21 +155,21 @@ def test_low_extraction_confidence_trigger():
 
 
 def test_bid_mismatch_trigger():
-    foreclosure = ForeclosureState(stage="nts", published_bid=tracked(Decimal("100000")), is_active=True)
-    flags = collect_flags(base_property(foreclosure=foreclosure, mortgages=[mortgage(Decimal("150000"))]))
+    foreclosure = ForeclosureState(stage="nts", published_bid=tracked(Decimal(100000)), is_active=True)
+    flags = collect_flags(base_property(foreclosure=foreclosure, mortgages=[mortgage(Decimal(150000))]))
     matches = [flag for flag in flags if flag.flag_type == FlagType.BID_MISMATCH]
     assert len(matches) == 1
 
 
 def test_bid_mismatch_not_raised_within_20_pct():
-    foreclosure = ForeclosureState(stage="nts", published_bid=tracked(Decimal("100000")), is_active=True)
-    property = base_property(foreclosure=foreclosure, mortgages=[mortgage(Decimal("115000"))])
+    foreclosure = ForeclosureState(stage="nts", published_bid=tracked(Decimal(100000)), is_active=True)
+    property = base_property(foreclosure=foreclosure, mortgages=[mortgage(Decimal(115000))])
     assert not [flag for flag in collect_flags(property) if flag.flag_type == FlagType.BID_MISMATCH]
 
 
 def test_range_violation_trigger():
     from contracts import PropertyAttributes
-    attributes = PropertyAttributes(sqft=tracked(Decimal("50")))
+    attributes = PropertyAttributes(sqft=tracked(Decimal(50)))
     flags = collect_flags(base_property(attributes=attributes))
     matches = [flag for flag in flags if flag.flag_type == FlagType.RANGE_VIOLATION]
     assert len(matches) == 1
@@ -170,38 +188,38 @@ def test_lien_attachment_impact_is_equity_delta_for_128k_fixture():
     flags = collect_flags(property, load_assumptions())
     matches = [flag for flag in flags if flag.flag_type == FlagType.LIEN_ATTACHMENT]
     assert len(matches) == 1
-    assert matches[0].financial_impact_usd == Decimal("128000")
+    assert matches[0].financial_impact_usd == Decimal(128000)
 
 
 def test_impact_differs_from_raw_amount_when_engine_discounts_potential():
     # A $20k owner-only lien over the threshold: rejecting it entirely vs accepting it as
     # attached is the full $20k, but the expected-scenario delta vs. *leaving it potential*
     # would be $10k — the flag must measure accept vs. reject, not copy the raw amount.
-    property = base_property(liens=[lien(Decimal("20000"), AttachmentBasis.OWNER_NAMED_ONLY)])
+    property = base_property(liens=[lien(Decimal(20000), AttachmentBasis.OWNER_NAMED_ONLY)])
     (flag,) = [flag for flag in collect_flags(property, load_assumptions())
                if flag.flag_type == FlagType.LIEN_ATTACHMENT]
-    assert flag.financial_impact_usd == Decimal("20000")
+    assert flag.financial_impact_usd == Decimal(20000)
     assert flag.payload["amount"] == "20000"
 
 
 def test_bid_mismatch_impact_is_payoff_delta():
-    foreclosure = ForeclosureState(stage="nts", published_bid=tracked(Decimal("100000")), is_active=True)
-    property = base_property(foreclosure=foreclosure, mortgages=[mortgage(Decimal("150000"))])
+    foreclosure = ForeclosureState(stage="nts", published_bid=tracked(Decimal(100000)), is_active=True)
+    property = base_property(foreclosure=foreclosure, mortgages=[mortgage(Decimal(150000))])
     (flag,) = [flag for flag in collect_flags(property, load_assumptions())
                if flag.flag_type == FlagType.BID_MISMATCH]
-    assert flag.financial_impact_usd == Decimal("50000")
+    assert flag.financial_impact_usd == Decimal(50000)
 
 
 def test_valuation_dispersion_impact_is_candidate_delta():
-    candidates = [ValuationCandidate(valuation_type="avm", value=tracked(Decimal("100000"))),
-                  ValuationCandidate(valuation_type="comp", value=tracked(Decimal("200000")))]
+    candidates = [ValuationCandidate(valuation_type="avm", value=tracked(Decimal(100000))),
+                  ValuationCandidate(valuation_type="comp", value=tracked(Decimal(200000)))]
     (flag,) = [flag for flag in collect_flags(base_property(valuation_candidates=candidates), load_assumptions())
                if flag.flag_type == FlagType.VALUATION_DISPERSION]
-    assert flag.financial_impact_usd == Decimal("100000")
+    assert flag.financial_impact_usd == Decimal(100000)
 
 
 def test_impact_is_none_without_assumptions():
-    property = base_property(liens=[lien(Decimal("128000"), AttachmentBasis.OWNER_NAMED_ONLY)])
+    property = base_property(liens=[lien(Decimal(128000), AttachmentBasis.OWNER_NAMED_ONLY)])
     (flag,) = [flag for flag in collect_flags(property) if flag.flag_type == FlagType.LIEN_ATTACHMENT]
     assert flag.financial_impact_usd is None
 
@@ -209,7 +227,7 @@ def test_impact_is_none_without_assumptions():
 def test_missing_lien_amount_impact_uses_median():
     (flag,) = [flag for flag in collect_flags(base_property(liens=[lien(None)]), load_assumptions())
                if flag.flag_type == FlagType.MISSING_LIEN_AMOUNT]
-    assert flag.financial_impact_usd == Decimal("18000")
+    assert flag.financial_impact_usd == Decimal(18000)
 
 
 # --- persistence (offline, sqlite) ---
@@ -247,7 +265,7 @@ def record_hook(calls):
 
 
 def test_persist_flags_inserts_rows(session):
-    property = base_property(liens=[lien(Decimal("128000"), AttachmentBasis.OWNER_NAMED_ONLY)])
+    property = base_property(liens=[lien(Decimal(128000), AttachmentBasis.OWNER_NAMED_ONLY)])
     created = persist_flags(session, collect_flags(property))
     session.commit()
     assert len(created) == 1
@@ -258,7 +276,7 @@ def test_persist_flags_inserts_rows(session):
 
 
 def test_persist_flags_dedupes_on_rerun(session):
-    property = base_property(liens=[lien(Decimal("128000"), AttachmentBasis.OWNER_NAMED_ONLY)])
+    property = base_property(liens=[lien(Decimal(128000), AttachmentBasis.OWNER_NAMED_ONLY)])
     first = persist_flags(session, collect_flags(property))
     session.commit()
     second = persist_flags(session, collect_flags(property))
@@ -270,14 +288,14 @@ def test_persist_flags_dedupes_on_rerun(session):
 
 def test_open_flags_sorted_by_financial_impact(session):
     property = base_property(
-        liens=[lien(Decimal("128000"), AttachmentBasis.OWNER_NAMED_ONLY),
-               lien(Decimal("20000"), AttachmentBasis.UNKNOWN, lien_type="mechanics")],
-        mortgages=[mortgage(Decimal("100000")), mortgage(Decimal("120000"))])
+        liens=[lien(Decimal(128000), AttachmentBasis.OWNER_NAMED_ONLY),
+               lien(Decimal(20000), AttachmentBasis.UNKNOWN, lien_type="mechanics")],
+        mortgages=[mortgage(Decimal(100000)), mortgage(Decimal(120000))])
     persist_flags(session, collect_flags(property, load_assumptions()))
     session.commit()
     impacts = [flag.financial_impact_usd for flag in open_flags(session, property.property_id)]
     assert impacts == sorted(impacts, reverse=True)
-    assert impacts[0] == Decimal("128000")
+    assert impacts[0] == Decimal(128000)
 
 
 # --- resolution workflow ---
@@ -290,7 +308,7 @@ ALL_TEN_TYPES = [FlagType.IDENTITY_CONFLICT, FlagType.LIEN_ATTACHMENT, FlagType.
 
 def add_flag(session, flag_type=FlagType.LIEN_ATTACHMENT, payload=None) -> Flag:
     flag = Flag(id=uuid4(), property_id=uuid4(), flag_type=flag_type.value,
-                payload=payload or {}, financial_impact_usd=Decimal("1000"),
+                payload=payload or {}, financial_impact_usd=Decimal(1000),
                 status="open", dedupe_key=f"test:{uuid4()}")
     session.add(flag)
     session.flush()
@@ -382,7 +400,7 @@ def test_resolve_already_resolved_conflicts(session):
 def test_apply_override_writes_human_fact_and_enqueues_recompute(session):
     property_id = uuid4()
     calls = []
-    fact_id = apply_override(property_id, "mortgages.first.estimated_balance", Decimal("97500"),
+    fact_id = apply_override(property_id, "mortgages.first.estimated_balance", Decimal(97500),
                              "payoff statement", "analyst", session=session,
                              recompute_hook=record_hook(calls))
     session.commit()
@@ -392,7 +410,7 @@ def test_apply_override_writes_human_fact_and_enqueues_recompute(session):
         "FROM extracted_facts WHERE id=:id"), {"id": str(fact_id)}).one()
     assert row[0] == "mortgage"
     assert row[1] == "mortgages.first.estimated_balance"
-    assert Decimal(str(row[2])) == Decimal("97500")
+    assert Decimal(str(row[2])) == Decimal(97500)
     assert row[3] == "human"
     assert float(row[4]) == 1.0
     assert calls == [(property_id, "apply_override:mortgages.first.estimated_balance")]

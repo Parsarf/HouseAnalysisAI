@@ -59,29 +59,29 @@ def sample_underwriting(prop):
     return UnderwritingResult(
         property_id=prop.property_id, assumption_set_id=uuid4(), engine_version="test",
         status="ok",
-        value=ValueBlock(v_low=Decimal("360000"), v_expected=Decimal("400000"),
-                         v_high=Decimal("440000")),
-        liabilities=LiabilityBlock(confirmed=Decimal("150000"), potential=Decimal("12800"),
-                                   maximum=Decimal("162800")),
-        equity={Scenario.EXPECTED: EquityBlock(gross=Decimal("250000"))},
+        value=ValueBlock(v_low=Decimal(360000), v_expected=Decimal(400000),
+                         v_high=Decimal(440000)),
+        liabilities=LiabilityBlock(confirmed=Decimal(150000), potential=Decimal(12800),
+                                   maximum=Decimal(162800)),
+        equity={Scenario.EXPECTED: EquityBlock(gross=Decimal(250000))},
     )
 
 
 def sample_scores(prop):
     return ScoreSet(property_id=prop.property_id, scoring_config_id=uuid4(),
-                    fos=Decimal("62"), distress=Decimal("48"), data_confidence=Decimal("71"),
-                    risk=Decimal("30"), overall=Decimal("55"), components={}, gates_applied=[],
+                    fos=Decimal(62), distress=Decimal(48), data_confidence=Decimal(71),
+                    risk=Decimal(30), overall=Decimal(55), components={}, gates_applied=[],
                     is_rankable=True)
 
 
-def offer_point(potential=Decimal("12800"), short_sale=False):
+def offer_point(potential=Decimal(12800), short_sale=False):
     return OfferPoint(
-        offer_price=Decimal("240000"), scenario=Scenario.EXPECTED,
-        confirmed_payoffs=Decimal("151200"), potential_payoffs=potential,
-        closing_costs=Decimal("3600"),
+        offer_price=Decimal(240000), scenario=Scenario.EXPECTED,
+        confirmed_payoffs=Decimal(151200), potential_payoffs=potential,
+        closing_costs=Decimal(3600),
         proceeds_low=Decimal("72400" if not short_sale else "-5000"),
-        proceeds_expected=Decimal("85200"), proceeds_high=Decimal("98000"),
-        buyer_basis=Decimal("260000"), profit=Decimal("140000"), roi=Decimal("0.53"),
+        proceeds_expected=Decimal(85200), proceeds_high=Decimal(98000),
+        buyer_basis=Decimal(260000), profit=Decimal(140000), roi=Decimal("0.53"),
         is_short_sale=short_sale,
     )
 
@@ -106,8 +106,8 @@ def test_deal_sheet_renders_full_payload():
     sheet = deal_sheet_html(prop, sample_underwriting(prop),
                             strategies=[StrategyResult(strategy=StrategyType.CASH,
                                                        scenario=Scenario.EXPECTED,
-                                                       status="viable", mao=Decimal("210000"),
-                                                       profit=Decimal("90000"))],
+                                                       status="viable", mao=Decimal(210000),
+                                                       profit=Decimal(90000))],
                             scores=sample_scores(prop))
     assert "1 Main St" in sheet
     assert "$400,000" in sheet  # expected value
@@ -152,7 +152,7 @@ def test_net_sheet_short_sale_banner():
 def test_net_sheet_single_proceeds_when_no_potential_obligations():
     prop = sample_property()
     prop.liens = []
-    sheet = net_sheet_html(prop, offer_point(potential=Decimal("0")))
+    sheet = net_sheet_html(prop, offer_point(potential=Decimal(0)))
     assert "$85,200" in sheet
     assert "Unverified obligations" not in sheet
 

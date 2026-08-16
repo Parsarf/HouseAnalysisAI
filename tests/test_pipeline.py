@@ -9,7 +9,7 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -24,7 +24,7 @@ from pipeline import batch as batch_machine
 from pipeline.store import DEFAULT_SCORING_CONFIG_ID, UnitOutcome
 from pipeline.worker import Worker, default_handlers
 
-NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
 AS_OF = date(2026, 1, 1)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -196,7 +196,7 @@ class FakeStore:
     def reserve_batch_budget(self, batch_id, amount):
         batch = self.state.batches[UUID(str(batch_id))]
         limit = batch.get("budget_limit_usd")
-        spent = batch.get("spent_usd", Decimal("0"))
+        spent = batch.get("spent_usd", Decimal(0))
         if limit is not None and spent + amount > limit:
             return False
         batch["spent_usd"] = spent + amount
@@ -273,24 +273,24 @@ def property_facts(property_id, unit_id, report_id):
     return [
         make_fact(property_id, unit_id, report_id, EntityType.PROPERTY, "p", "property.address", value_text="1 Main St"),
         make_fact(property_id, unit_id, report_id, EntityType.PROPERTY, "p", "property.apn", value_text="123-456"),
-        make_fact(property_id, unit_id, report_id, EntityType.PROPERTY, "p", "property.sqft", value_parsed=Decimal("1800")),
+        make_fact(property_id, unit_id, report_id, EntityType.PROPERTY, "p", "property.sqft", value_parsed=Decimal(1800)),
         make_fact(property_id, unit_id, report_id, EntityType.VALUATION, "avm1", "valuation.type", value_text="avm"),
-        make_fact(property_id, unit_id, report_id, EntityType.VALUATION, "avm1", "valuation.value", value_parsed=Decimal("300000")),
+        make_fact(property_id, unit_id, report_id, EntityType.VALUATION, "avm1", "valuation.value", value_parsed=Decimal(300000)),
         make_fact(property_id, unit_id, report_id, EntityType.VALUATION, "comp1", "valuation.type", value_text="comp"),
-        make_fact(property_id, unit_id, report_id, EntityType.VALUATION, "comp1", "valuation.value", value_parsed=Decimal("320000")),
+        make_fact(property_id, unit_id, report_id, EntityType.VALUATION, "comp1", "valuation.value", value_parsed=Decimal(320000)),
         make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.position", value_text="first"),
-        make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.original_amount", value_parsed=Decimal("200000")),
-        make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.balance", value_parsed=Decimal("150000")),
+        make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.original_amount", value_parsed=Decimal(200000)),
+        make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.balance", value_parsed=Decimal(150000)),
         make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.rate", value_parsed=Decimal("0.05")),
         make_fact(property_id, unit_id, report_id, EntityType.MORTGAGE, "m1", "mortgage.origination_date", value_date=date(2020, 6, 1)),
         make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l1", "lien.type", value_text="judgment"),
-        make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l1", "lien.amount", value_parsed=Decimal("25000")),
+        make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l1", "lien.amount", value_parsed=Decimal(25000)),
         make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l1", "lien.attachment_basis", value_text="recorded_against_property"),
         make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l2", "lien.type", value_text="judgment"),
-        make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l2", "lien.amount", value_parsed=Decimal("40000")),
+        make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l2", "lien.amount", value_parsed=Decimal(40000)),
         make_fact(property_id, unit_id, report_id, EntityType.LIEN, "l2", "lien.attachment_basis", value_text="owner_named_only"),
-        make_fact(property_id, unit_id, report_id, EntityType.RENTAL, "r1", "rental.rent_estimate", value_parsed=Decimal("2000")),
-        make_fact(property_id, unit_id, report_id, EntityType.TAX, "t1", "tax.annual_taxes", value_parsed=Decimal("3000")),
+        make_fact(property_id, unit_id, report_id, EntityType.RENTAL, "r1", "rental.rent_estimate", value_parsed=Decimal(2000)),
+        make_fact(property_id, unit_id, report_id, EntityType.TAX, "t1", "tax.annual_taxes", value_parsed=Decimal(3000)),
     ]
 
 
@@ -413,7 +413,7 @@ def test_fan_in_triggers_exactly_one_recompute_for_concurrent_units():
     factory.state.batches[batch_id] = {"id": batch_id, "status": "extracting",
                                        "total_count": 20, "completed_count": 0,
                                        "failed_count": 0, "awaiting_confirmation": False,
-                                       "spent_usd": Decimal("0"), "budget_limit_usd": None}
+                                       "spent_usd": Decimal(0), "budget_limit_usd": None}
     unit_ids = _seed_units(factory.state, property_id, 20, batch=batch_id)
 
     recompute_calls = []
@@ -475,13 +475,13 @@ def test_extract_unit_budget_pause_and_resume():
     batch_id = uuid4()
     state.batches[batch_id] = {"id": batch_id, "status": "extracting", "total_count": 1,
                                "completed_count": 0, "failed_count": 0,
-                               "awaiting_confirmation": False, "spent_usd": Decimal("0"),
-                               "budget_limit_usd": Decimal("100")}
+                               "awaiting_confirmation": False, "spent_usd": Decimal(0),
+                               "budget_limit_usd": Decimal(100)}
     (unit_id,) = _seed_units(state, property_id, 1, batch=batch_id)
 
     class CostlyResult:
         facts = []
-        cost_usd = Decimal("200")
+        cost_usd = Decimal(200)
 
     with pytest.raises(AcqError) as excinfo:
         pipeline.extract_unit(unit_id, extractor=lambda unit: CostlyResult())
@@ -493,13 +493,13 @@ def test_extract_unit_budget_pause_and_resume():
     with pytest.raises(AcqError):
         pipeline.extract_unit(unit_id, extractor=lambda unit: [])
 
-    batch_machine.resume_batch(_store(factory), batch_id, new_budget_limit_usd=Decimal("1000"))
+    batch_machine.resume_batch(_store(factory), batch_id, new_budget_limit_usd=Decimal(1000))
     assert state.batches[batch_id]["status"] == "extracting"
 
     outcome = pipeline.extract_unit(unit_id, extractor=lambda unit: CostlyResult())
     assert outcome.transitioned
     assert state.units[unit_id]["status"] == "extracted"
-    assert state.batches[batch_id]["spent_usd"] == Decimal("200")
+    assert state.batches[batch_id]["spent_usd"] == Decimal(200)
 
 
 def _store(factory: FakeStoreFactory) -> FakeStore:
@@ -511,7 +511,7 @@ def _seed_batch(state: FakeState, **overrides):
     batch_id = uuid4()
     state.batches[batch_id] = {"id": batch_id, "status": "uploading", "file_count": 0,
                                "total_count": 0, "completed_count": 0, "failed_count": 0,
-                               "awaiting_confirmation": False, "spent_usd": Decimal("0"),
+                               "awaiting_confirmation": False, "spent_usd": Decimal(0),
                                "budget_limit_usd": None, **overrides}
     return batch_id
 
@@ -520,12 +520,12 @@ def _seed_batch(state: FakeState, **overrides):
 
 def test_batch_estimate_over_budget_awaits_confirmation():
     state = FakeState()
-    batch_id = _seed_batch(state, status="estimating", budget_limit_usd=Decimal("1000"))
+    batch_id = _seed_batch(state, status="estimating", budget_limit_usd=Decimal(1000))
     store = _store(FakeStoreFactory(state))
 
-    assert batch_machine.estimation_ready(store, batch_id, Decimal("5000")) == "awaiting_confirmation"
+    assert batch_machine.estimation_ready(store, batch_id, Decimal(5000)) == "awaiting_confirmation"
     assert state.batches[batch_id]["awaiting_confirmation"] is True
-    assert state.batches[batch_id]["estimated_cost_usd"] == Decimal("5000")
+    assert state.batches[batch_id]["estimated_cost_usd"] == Decimal(5000)
 
     assert batch_machine.confirm_estimate(store, batch_id) == "extracting"
     assert state.batches[batch_id]["awaiting_confirmation"] is False
@@ -533,9 +533,9 @@ def test_batch_estimate_over_budget_awaits_confirmation():
 
 def test_batch_estimate_within_budget_goes_straight_to_extracting():
     state = FakeState()
-    batch_id = _seed_batch(state, status="estimating", budget_limit_usd=Decimal("1000"))
+    batch_id = _seed_batch(state, status="estimating", budget_limit_usd=Decimal(1000))
     store = _store(FakeStoreFactory(state))
-    assert batch_machine.estimation_ready(store, batch_id, Decimal("500")) == "extracting"
+    assert batch_machine.estimation_ready(store, batch_id, Decimal(500)) == "extracting"
     assert state.batches[batch_id]["awaiting_confirmation"] is False
 
 
@@ -561,13 +561,13 @@ def test_batch_unit_completion_drives_computing_then_complete():
 
 def test_batch_pause_and_resume_budget():
     state = FakeState()
-    batch_id = _seed_batch(state, status="extracting", budget_limit_usd=Decimal("100"))
+    batch_id = _seed_batch(state, status="extracting", budget_limit_usd=Decimal(100))
     store = _store(FakeStoreFactory(state))
 
     assert batch_machine.pause_budget(store, batch_id) == "paused_budget"
     assert batch_machine.resume_batch(store, batch_id,
-                                      new_budget_limit_usd=Decimal("500")) == "extracting"
-    assert state.batches[batch_id]["budget_limit_usd"] == Decimal("500")
+                                      new_budget_limit_usd=Decimal(500)) == "extracting"
+    assert state.batches[batch_id]["budget_limit_usd"] == Decimal(500)
 
 
 # ------------------------------------------------------------------ bulk recompute
@@ -626,7 +626,7 @@ def test_detect_changes_persists_change_events():
         make_fact(property_id, uuid4(), uuid4(), EntityType.LIEN, "l9", "lien.type",
                   value_text="hoa"),
         make_fact(property_id, uuid4(), uuid4(), EntityType.LIEN, "l9", "lien.amount",
-                  value_parsed=Decimal("9000")),
+                  value_parsed=Decimal(9000)),
         make_fact(property_id, uuid4(), uuid4(), EntityType.LIEN, "l9", "lien.attachment_basis",
                   value_text="recorded_against_property"),
     ])
@@ -718,10 +718,11 @@ def test_worker_requeues_failed_job_then_dead_letters():
 
 def test_pure_recompute_property_signature_is_stable():
     from uuid import UUID as _UUID
+
     from contracts import AddressBlock, NormalizedProperty
     assumptions = load_assumptions()
     record = NormalizedProperty(property_id=uuid4(), address=AddressBlock(line1="1 Main St"),
                                 resolution_version="test")
-    computation = recompute_property(record, assumptions, _UUID(int=0), Decimal("0"))
+    computation = recompute_property(record, assumptions, _UUID(int=0), Decimal(0))
     assert computation.underwriting.status == "insufficient_data"
     assert computation.grid.points == []

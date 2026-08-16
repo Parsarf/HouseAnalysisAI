@@ -4,7 +4,6 @@ from pathlib import Path
 
 from contracts import RecordedResponse
 
-
 ROOT = Path(__file__).parents[1] / "fixtures" / "recorded_responses"
 
 

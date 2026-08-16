@@ -3,6 +3,7 @@
 All responses are dumped with ``model_dump(mode="json")`` so ``Decimal`` leaves
 the process as a string — money is never serialized as a float (WP-11 AC #6).
 """
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -28,7 +29,7 @@ from contracts import (
 from db import models as dbm
 
 
-def dump(model: ContractModel | list[ContractModel] | dict) -> Any:
+def dump(model: ContractModel | Sequence[ContractModel] | dict) -> Any:
     if isinstance(model, list):
         return [item.model_dump(mode="json") for item in model]
     if isinstance(model, ContractModel):

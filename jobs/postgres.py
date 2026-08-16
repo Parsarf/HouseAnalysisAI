@@ -1,9 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 
 ENQUEUE_SQL = text("""
 INSERT INTO jobs (id, name, payload, dedupe_key, max_attempts)
@@ -52,7 +51,7 @@ class PostgresJobQueue:
           UPDATE jobs SET status=:status, last_error=:error,
             run_after=:run_after, locked_at=NULL, completed_at=CASE WHEN :dead THEN now() ELSE NULL END
           WHERE id=:id
-        """), {"status": "dead" if dead else "queued", "error": error, "run_after": datetime.now(timezone.utc) + timedelta(seconds=delay), "dead": dead, "id": job_id})
+        """), {"status": "dead" if dead else "queued", "error": error, "run_after": datetime.now(UTC) + timedelta(seconds=delay), "dead": dead, "id": job_id})
 
     def complete(self, session: Session, job_id: UUID) -> None:
         session.execute(text("UPDATE jobs SET status='complete', locked_at=NULL, completed_at=now() WHERE id=:id"), {"id": job_id})

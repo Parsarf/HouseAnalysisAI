@@ -25,9 +25,9 @@ jobs:
       - run: alembic upgrade head
         env:
           ACQ_DATABASE_URL: postgresql+psycopg://acq:acq@localhost:5432/acq
+      - working-directory: web
+        run: npm ci && npm run build
       - run: python -m pytest -m "not integration"
       - run: python -m ruff check .
       - run: python -m mypy api analyst auth calibration changes classification common contracts db exports extraction finance flags identity ingestion jobs normalization ops pipeline scoring strategies
       - run: lint-imports
-      - working-directory: web
-        run: npm ci && npm run build

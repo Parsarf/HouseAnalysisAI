@@ -1,7 +1,7 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Callable
 from uuid import UUID, uuid4
 
 
@@ -23,7 +23,7 @@ class Job:
     attempts: int = 0
     max_attempts: int = 3
     error: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class InMemoryJobQueue:

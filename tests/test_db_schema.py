@@ -10,9 +10,9 @@ from pathlib import Path
 
 from sqlalchemy import UniqueConstraint
 
-from common.db import Base
 import db.models  # noqa: F401  (populates Base.metadata)
 import identity.models  # noqa: F401  (maps identity_merge_report_moves on the shared Base)
+from common.db import Base
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_SQL = REPO_ROOT / "db" / "schema.sql"

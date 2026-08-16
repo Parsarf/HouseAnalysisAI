@@ -2,7 +2,7 @@ import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -308,7 +308,7 @@ def unmerge(session: Session, property_row: Property | UUID, enqueue: Callable[[
         report = session.get(Report, move.report_id)
         if report is not None and report.property_id == move.target_property_id:
             report.property_id = row.id
-        move.restored_at = datetime.now(timezone.utc)
+        move.restored_at = datetime.now(UTC)
     session.flush()
     if enqueue is not None:
         for property_id in {row.id, target_id}:

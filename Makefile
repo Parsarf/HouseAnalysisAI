@@ -5,9 +5,10 @@ test:
 
 lint:
 	python -m ruff check .
+	lint-imports
 
 typecheck:
-	python -m mypy contracts common jobs
+	python -m mypy api analyst auth calibration changes classification common contracts db exports extraction finance flags identity ingestion jobs normalization ops pipeline scoring strategies
 
 eval:
 	python -m extraction.eval

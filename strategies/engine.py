@@ -30,12 +30,23 @@ Deliberate deviations from the golden set, each traced to explicit spec text:
 """
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
-from contracts import (AssumptionSet, AttachmentBasis, CostBlock, FlagRequest, FlagType,
-                       NormalizedProperty, OfferGrid, OfferPoint, Scenario, StrategyResult,
-                       StrategyType, UnderwritingResult)
+from contracts import (
+    AssumptionSet,
+    AttachmentBasis,
+    CostBlock,
+    FlagRequest,
+    FlagType,
+    NormalizedProperty,
+    OfferGrid,
+    OfferPoint,
+    Scenario,
+    StrategyResult,
+    StrategyType,
+    UnderwritingResult,
+)
 
-ZERO = Decimal("0")
-ONE = Decimal("1")
+ZERO = Decimal(0)
+ONE = Decimal(1)
 Q2 = Decimal("0.01")
 Q4 = Decimal("0.0001")
 Q6 = Decimal("0.000001")
@@ -43,10 +54,10 @@ PRECISION = 40  # matches the golden generator
 
 SCENARIO_ORDER = [Scenario.CONSERVATIVE, Scenario.EXPECTED, Scenario.OPTIMISTIC]
 HOLDING_MULT = {Scenario.CONSERVATIVE: Decimal("1.5"), Scenario.EXPECTED: ONE, Scenario.OPTIMISTIC: Decimal("0.75")}
-DCS_WHOLESALE_MIN = Decimal("60")
-PAYOFF_FEES_DEFAULT = Decimal("1200")  # spec §9.2 payoff interest/fees default
-GRID_ROUND = Decimal("5000")
-FLIP_BAND_THRESHOLD = Decimal("500000")
+DCS_WHOLESALE_MIN = Decimal(60)
+PAYOFF_FEES_DEFAULT = Decimal(1200)  # spec §9.2 payoff interest/fees default
+GRID_ROUND = Decimal(5000)
+FLIP_BAND_THRESHOLD = Decimal(500000)
 
 
 def _q(value: Decimal | None, quantum: Decimal = Q2) -> Decimal | None:
@@ -58,7 +69,7 @@ def _tracked(block) -> Decimal | None:
 
 
 def _round_5000(value: Decimal) -> Decimal:
-    return (value / GRID_ROUND).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * GRID_ROUND
+    return (value / GRID_ROUND).quantize(Decimal(1), rounding=ROUND_HALF_UP) * GRID_ROUND
 
 
 def _v_as_is(underwriting: UnderwritingResult, scenario: Scenario) -> Decimal | None:
@@ -93,11 +104,11 @@ def data_confidence(record: NormalizedProperty) -> Decimal:
     """Data Confidence Score, 0-100 (spec §10 DCS formula; golden formula set v1)."""
     quality = record.data_quality
     corroborated = sum(1 for count in quality.source_counts_by_field.values() if count >= 2)
-    corroboration = _q(Decimal(corroborated) / Decimal("22"), Q6)
-    conflict_penalty = min(ONE, Decimal(quality.material_conflict_count) / Decimal("5"))
-    verification = _q(Decimal(quality.verified_field_count) / Decimal("22"), Q6)
+    corroboration = _q(Decimal(corroborated) / Decimal(22), Q6)
+    conflict_penalty = min(ONE, Decimal(quality.material_conflict_count) / Decimal(5))
+    verification = _q(Decimal(quality.verified_field_count) / Decimal(22), Q6)
     recency = ONE if quality.newest_report_date else ZERO
-    return _q(Decimal("100") * (Decimal("0.30") * quality.critical_field_coverage
+    return _q(Decimal(100) * (Decimal("0.30") * quality.critical_field_coverage
                                 + Decimal("0.20") * corroboration + Decimal("0.20") * recency
                                 + Decimal("0.15") * (ONE - conflict_penalty)
                                 + Decimal("0.10") * verification
@@ -108,8 +119,8 @@ def _months_base_from_condition(record: NormalizedProperty, assumptions: Assumpt
     holding = assumptions.holding
     condition = record.condition.condition if record.condition else "moderate"
     repair_months = holding.repair_months_by_condition.get(
-        condition, holding.repair_months_by_condition.get("moderate", Decimal("3")))
-    return holding.acquisition_months + repair_months + Decimal(holding.market_days_default) / Decimal("30")
+        condition, holding.repair_months_by_condition.get("moderate", Decimal(3)))
+    return holding.acquisition_months + repair_months + Decimal(holding.market_days_default) / Decimal(30)
 
 
 def _months_base_from_costs(underwriting: UnderwritingResult, assumptions: AssumptionSet) -> Decimal:
@@ -121,13 +132,13 @@ def _months_base_from_costs(underwriting: UnderwritingResult, assumptions: Assum
     (quantized) holding costs. Exact for any cost block produced by WP-6.
     """
     holding = assumptions.holding
-    market = Decimal(holding.market_days_default) / Decimal("30")
-    fallback = holding.acquisition_months + holding.repair_months_by_condition.get("moderate", Decimal("3")) + market
+    market = Decimal(holding.market_days_default) / Decimal(30)
+    fallback = holding.acquisition_months + holding.repair_months_by_condition.get("moderate", Decimal(3)) + market
     values = {scenario: _v_as_is(underwriting, scenario) for scenario in SCENARIO_ORDER}
     if any(values[scenario] is None or scenario not in underwriting.costs for scenario in SCENARIO_ORDER):
         return fallback
-    rate = (holding.insurance_pct_yr + holding.maintenance_pct_yr) / Decimal("12")
-    candidates = {holding.repair_months_by_condition.get("moderate", Decimal("3")),
+    rate = (holding.insurance_pct_yr + holding.maintenance_pct_yr) / Decimal(12)
+    candidates = {holding.repair_months_by_condition.get("moderate", Decimal(3)),
                   *holding.repair_months_by_condition.values()}
     best = None
     for repair_months in candidates:
@@ -164,7 +175,7 @@ def _flip_mao(arv: Decimal, cost: CostBlock, resale_flip: Decimal, margin_target
               assumptions: AssumptionSet, months: Decimal) -> Decimal:
     """MAO solving MAO = K - a*(MAO + repairs) - financing_flat (golden formula set)."""
     rate, points, ltv = _hard_money(assumptions)
-    coeff = ltv * (points + rate / Decimal("12") * months)
+    coeff = ltv * (points + rate / Decimal(12) * months)
     k_const = _q(arv * (ONE - margin_target) - cost.repairs - cost.holding - resale_flip - cost.acquisition)
     return _q((k_const - coeff * cost.repairs - assumptions.acquisition.financing_flat) / (ONE + coeff))
 
@@ -206,7 +217,7 @@ def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
         months = _q(_months_base_from_condition(record, assumptions) * HOLDING_MULT[scenario], Q4)
         rate, points, ltv = _hard_money(assumptions)
         loan = _q(ltv * (purchase_price + cost.repairs))
-        financing = _q(points * loan + assumptions.acquisition.financing_flat + loan * rate / Decimal("12") * months)
+        financing = _q(points * loan + assumptions.acquisition.financing_flat + loan * rate / Decimal(12) * months)
         resale_flip = _resale_flip(arv, assumptions)
         all_in = _q(purchase_price + cost.repairs + cost.holding + financing + cost.acquisition + resale_flip)
         profit = _q(arv - all_in)
@@ -233,7 +244,7 @@ def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, cont
         if arv is None or not contract_price or cost is None:
             reason = "no_value_data" if _v_as_is(underwriting, scenario) is None else "no_sqft_data"
             return _unavailable(StrategyType.WHOLESALE, scenario, reason, contract_price)
-        dcs = data_confidence if data_confidence is not None else _q((underwriting.confidence or ZERO) * Decimal("100"), Q4)
+        dcs = data_confidence if data_confidence is not None else _q((underwriting.confidence or ZERO) * Decimal(100), Q4)
         threshold = _q(arv * assumptions.strategy.wholesale_investor_pct - cost.repairs)
         max_contract = _q(threshold - assumptions.strategy.min_assignment_spread)
         spread = _q(threshold - contract_price)
@@ -248,12 +259,12 @@ def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, cont
 def _annual_debt_service(loan: Decimal, annual_rate: Decimal, amort_years: int) -> Decimal:
     if loan <= 0:
         return ZERO
-    monthly_rate = annual_rate / Decimal("12")
+    monthly_rate = annual_rate / Decimal(12)
     payments = amort_years * 12
     if monthly_rate == 0:
         return _q(loan / Decimal(amort_years))
     payment = loan * monthly_rate / (ONE - (ONE + monthly_rate) ** -payments)
-    return _q(payment * Decimal("12"))
+    return _q(payment * Decimal(12))
 
 
 def rental(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, price: Decimal, scenario: Scenario) -> StrategyResult:
@@ -269,11 +280,11 @@ def rental(record: NormalizedProperty, underwriting: UnderwritingResult, assumpt
         if _sqft(record) is None:
             return _unavailable(StrategyType.RENTAL, scenario, "no_sqft_data", price)
         config = assumptions.strategy.rental
-        egi = _q(rent * Decimal("12") * (ONE - config.get("vacancy", Decimal(".06"))))
+        egi = _q(rent * Decimal(12) * (ONE - config.get("vacancy", Decimal(".06"))))
         opex = _q((_tracked(record.taxes.annual_taxes) or ZERO)
                   + value * assumptions.holding.insurance_pct_yr
-                  + (_tracked(record.hoa.monthly_dues) or ZERO) * Decimal("12")
-                  + config.get("owner_utilities_monthly", ZERO) * Decimal("12")
+                  + (_tracked(record.hoa.monthly_dues) or ZERO) * Decimal(12)
+                  + config.get("owner_utilities_monthly", ZERO) * Decimal(12)
                   + egi * (config.get("maintenance_pct", Decimal(".08"))
                            + config.get("management_pct", Decimal(".08"))
                            + config.get("reserves_pct", Decimal(".05"))))
@@ -320,13 +331,13 @@ def subject_to(record: NormalizedProperty, underwriting: UnderwritingResult, ass
     if balance is None or not value:
         balance_condition = None
     else:
-        balance_condition = Decimal("1") if balance <= value * Decimal("0.8") else Decimal("0")
+        balance_condition = Decimal(1) if balance <= value * Decimal("0.8") else Decimal(0)
     return StrategyResult(strategy=StrategyType.SUBJECT_TO, scenario=scenario, status="requires_human_review",
                           notices=["detection only - due-on-sale / legal review required"],
                           metrics={"condition_rate_200bps_below_market": None,
                                    "condition_balance_le_80pct_value": balance_condition,
-                                   "condition_no_acceleration": Decimal("0") if record.foreclosure and record.foreclosure.is_active else Decimal("1"),
-                                   "condition_distress_present": Decimal("1") if _distress_present(record) else Decimal("0")},
+                                   "condition_no_acceleration": Decimal(0) if record.foreclosure and record.foreclosure.is_active else Decimal(1),
+                                   "condition_distress_present": Decimal(1) if _distress_present(record) else Decimal(0)},
                           inputs_echo=_echo(price))
 
 
@@ -349,10 +360,10 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
                             and lien.attachment_basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY), ZERO)
         total_obligations = _q(obligations + junior_debt + (_tracked(record.taxes.delinquent_amount) or ZERO))
         holding = assumptions.holding
-        monthly = _q((_tracked(record.taxes.annual_taxes) or ZERO) / Decimal("12")
-                     + v_low * (holding.insurance_pct_yr + holding.maintenance_pct_yr) / Decimal("12")
+        monthly = _q((_tracked(record.taxes.annual_taxes) or ZERO) / Decimal(12)
+                     + v_low * (holding.insurance_pct_yr + holding.maintenance_pct_yr) / Decimal(12)
                      + holding.utilities_monthly + (_tracked(record.hoa.monthly_dues) or ZERO))
-        auction_holding = _q(monthly * Decimal("2"))
+        auction_holding = _q(monthly * Decimal(2))
         interior_unknown = record.condition is None
         repair_scenario = Scenario.CONSERVATIVE if interior_unknown else scenario
         cost = underwriting.costs.get(repair_scenario) or CostBlock()
@@ -371,7 +382,7 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
                               status="viable" if spread > 0 else "not_viable", profit=spread,
                               metrics={"total_obligations": total_obligations, "auction_holding": auction_holding,
                                        "spread": spread,
-                                       **{name: Decimal("1") if fired else Decimal("0") for name, (fired, _) in flags.items()}},
+                                       **{name: Decimal(1) if fired else Decimal(0) for name, (fired, _) in flags.items()}},
                               notices=[f"{name} (source: {source})" for name, (fired, source) in flags.items() if fired],
                               inputs_echo=_echo(price))
 

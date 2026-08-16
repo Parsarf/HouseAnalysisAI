@@ -1,12 +1,23 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from datetime import timezone
-
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from common.db import Base
 
@@ -17,7 +28,7 @@ class Timestamped:
 
 
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Job(Base):
@@ -46,7 +57,7 @@ class Batch(Base):
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     actual_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     budget_limit_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
-    spent_usd: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    spent_usd: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal(0))
     awaiting_confirmation: Mapped[bool] = mapped_column(Boolean, default=False)
     total_count: Mapped[int] = mapped_column(Integer, default=0)
     completed_count: Mapped[int] = mapped_column(Integer, default=0)

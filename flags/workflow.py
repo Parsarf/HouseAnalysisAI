@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -64,7 +64,7 @@ def _write_history(session: Session, entity_id: UUID, action: str, before: dict,
     session.execute(_history_sql(session), {
         "id": str(uuid4()), "entity_type": "flag", "entity_id": str(entity_id), "action": action,
         "before": json.dumps(before, default=str), "after": json.dumps(after, default=str),
-        "at": datetime.now(timezone.utc).isoformat()})
+        "at": datetime.now(UTC).isoformat()})
 
 
 def _fact_columns(field_path: str, value: Any, note: str | None) -> dict:
@@ -162,7 +162,7 @@ def resolve_flag(session: Session, flag_id: UUID, action: str, *,
     flag.resolution = action
     flag.resolved_value = resolved_value
     flag.note = note
-    flag.resolved_at = datetime.now(timezone.utc)
+    flag.resolved_at = datetime.now(UTC)
     _write_history(session, flag.id, f"flag_{action}", before=before,
                    after={"status": "resolved", "resolution": action, "note": note, "user_id": user_id})
     hook = recompute_hook or _default_recompute_hook

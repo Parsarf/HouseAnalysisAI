@@ -1,12 +1,21 @@
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, datetime
 from decimal import Decimal
 
-from contracts import (AssumptionSet, AttachmentBasis, FlagRequest, FlagSummary, FlagType,
-                       NormalizedProperty, Scenario, SourceKind, TrackedValue)
 from common.money import money
+from contracts import (
+    AssumptionSet,
+    AttachmentBasis,
+    FlagRequest,
+    FlagSummary,
+    FlagType,
+    NormalizedProperty,
+    Scenario,
+    SourceKind,
+    TrackedValue,
+)
 
-LIEN_ATTACHMENT_THRESHOLD = Decimal("10000")
+LIEN_ATTACHMENT_THRESHOLD = Decimal(10000)
 DISPERSION_RATIO_THRESHOLD = Decimal("1.5")
 BID_MISMATCH_RATIO_THRESHOLD = Decimal("0.20")
 LOW_CONFIDENCE_THRESHOLD = 0.65
@@ -18,12 +27,12 @@ GATING_FLAG_TYPES: frozenset[FlagType] = frozenset({FlagType.IDENTITY_CONFLICT})
 # Spec §4 range sanity bounds: sale price $1k-$100M, sqft 100-100k, beds 0-30,
 # year 1600-now+2, rate 0-25%, lien $1-$50M.
 RANGE_BOUNDS: dict[str, tuple[Decimal, Decimal]] = {
-    "sqft": (Decimal("100"), Decimal("100000")),
-    "beds": (Decimal("0"), Decimal("30")),
-    "year_built": (Decimal("1600"), Decimal(date.today().year + 2)),
-    "rate": (Decimal("0"), Decimal("25")),
-    "lien_amount": (Decimal("1"), Decimal("50000000")),
-    "value": (Decimal("1000"), Decimal("100000000")),
+    "sqft": (Decimal(100), Decimal(100000)),
+    "beds": (Decimal(0), Decimal(30)),
+    "year_built": (Decimal(1600), Decimal(datetime.now(UTC).year + 2)),
+    "rate": (Decimal(0), Decimal(25)),
+    "lien_amount": (Decimal(1), Decimal(50000000)),
+    "value": (Decimal(1000), Decimal(100000000)),
 }
 
 
@@ -139,7 +148,7 @@ def _conflicting_mortgage_flags(record: NormalizedProperty, assumptions: Assumpt
         balances = [balance for _, balance in entries]
         low, high = min(balances), max(balances)
         # Spec §12: balances differ > 5% or $10k.
-        if len(entries) > 1 and high - low > max(high * Decimal("0.05"), Decimal("10000")):
+        if len(entries) > 1 and high - low > max(high * Decimal("0.05"), Decimal(10000)):
             high_index = entries[balances.index(high)][0]
             low_index = entries[balances.index(low)][0]
 
@@ -293,7 +302,7 @@ def _identity_conflict_flags(record: NormalizedProperty) -> list[FlagRequest]:
     if record.data_quality.conflict_count <= 0:
         return []
     conflicts = [field for field, count in record.data_quality.source_counts_by_field.items()
-                 if count > 1 and (field.startswith("property.apn") or field.startswith("property.address"))]
+                 if count > 1 and (field.startswith(("property.apn", "property.address")))]
     if not conflicts:
         return []
     return [FlagRequest(

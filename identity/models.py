@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Uuid
@@ -8,7 +8,7 @@ from common.db import Base
 
 
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class MergeReportMove(Base):

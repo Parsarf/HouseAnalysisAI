@@ -8,9 +8,10 @@ stable name — WP-14's "why is A above B" reads those names as a contract.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
-from typing import Any, Mapping
+from typing import Any
 from uuid import UUID
 
 from contracts import (
@@ -23,9 +24,9 @@ from contracts import (
     UnderwritingResult,
 )
 
-ZERO = Decimal("0")
-ONE = Decimal("1")
-HUNDRED = Decimal("100")
+ZERO = Decimal(0)
+ONE = Decimal(1)
+HUNDRED = Decimal(100)
 DAYS_PER_MONTH = Decimal("30.4375")
 
 TAX_LIEN_TYPES = frozenset({"tax", "property_tax", "state_tax", "federal_tax"})
@@ -66,61 +67,61 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "bounds": {
-        "profit": (ZERO, Decimal("150000")),
+        "profit": (ZERO, Decimal(150000)),
         "roi": (ZERO, Decimal("0.50")),
         "equity_pct": (ZERO, Decimal("0.60")),
         "discount_to_value": (ZERO, Decimal("0.35")),
         "margin_of_safety": (ZERO, Decimal("0.35")),
-        "critical_field_count": Decimal("22"),
-        "conflict_penalty_divisor": Decimal("5"),
-        "dcs_recency_half_life_days": Decimal("180"),
-        "distress_decay_half_life_months": Decimal("18"),
-        "nts_near_days": Decimal("30"),
-        "owner_only_lien_threshold": Decimal("10000"),
+        "critical_field_count": Decimal(22),
+        "conflict_penalty_divisor": Decimal(5),
+        "dcs_recency_half_life_days": Decimal(180),
+        "distress_decay_half_life_months": Decimal(18),
+        "nts_near_days": Decimal(30),
+        "owner_only_lien_threshold": Decimal(10000),
         "high_equity_threshold": Decimal("0.50"),
-        "years_owned_threshold": Decimal("15"),
-        "delinquent_years_threshold": Decimal("2"),
-        "near_tie_points": Decimal("5"),
+        "years_owned_threshold": Decimal(15),
+        "delinquent_years_threshold": Decimal(2),
+        "near_tie_points": Decimal(5),
     },
     "distress_points": {
-        "nts_near": Decimal("30"),
-        "nts_far": Decimal("24"),
-        "nod": Decimal("18"),
-        "prior_foreclosure_each": Decimal("8"),
-        "prior_foreclosure_cap": Decimal("16"),
-        "bankruptcy_active": Decimal("12"),
-        "bankruptcy_prior_each": Decimal("6"),
-        "bankruptcy_prior_cap": Decimal("18"),
-        "repeat_filings": Decimal("8"),
-        "tax_lien_property": Decimal("10"),
-        "tax_lien_owner": Decimal("4"),
-        "other_lien_each": Decimal("3"),
-        "other_lien_cap": Decimal("12"),
-        "taxes_delinquent": Decimal("10"),
-        "absentee": Decimal("5"),
-        "long_ownership": Decimal("4"),
-        "listing_failure_each": Decimal("6"),
-        "listing_failure_cap": Decimal("12"),
-        "high_equity_bonus": Decimal("5"),
+        "nts_near": Decimal(30),
+        "nts_far": Decimal(24),
+        "nod": Decimal(18),
+        "prior_foreclosure_each": Decimal(8),
+        "prior_foreclosure_cap": Decimal(16),
+        "bankruptcy_active": Decimal(12),
+        "bankruptcy_prior_each": Decimal(6),
+        "bankruptcy_prior_cap": Decimal(18),
+        "repeat_filings": Decimal(8),
+        "tax_lien_property": Decimal(10),
+        "tax_lien_owner": Decimal(4),
+        "other_lien_each": Decimal(3),
+        "other_lien_cap": Decimal(12),
+        "taxes_delinquent": Decimal(10),
+        "absentee": Decimal(5),
+        "long_ownership": Decimal(4),
+        "listing_failure_each": Decimal(6),
+        "listing_failure_cap": Decimal(12),
+        "high_equity_bonus": Decimal(5),
     },
     # Stored inside the ``distress_points`` jsonb column under a "risk" key in
     # the DB (the schema has no dedicated column); see ranking.load_active_scoring_config.
     "risk_points": {
-        "lien_count": Decimal("6"),
-        "active_bankruptcy": Decimal("15"),
-        "foreclosure_stage": Decimal("12"),
-        "owner_only_lien": Decimal("10"),
-        "title_flag": Decimal("10"),
-        "owner_occupied": Decimal("8"),
-        "hoa_arrears": Decimal("8"),
-        "material_conflict": Decimal("10"),
-        "low_confidence": Decimal("12"),
-        "federal_tax_lien": Decimal("6"),
+        "lien_count": Decimal(6),
+        "active_bankruptcy": Decimal(15),
+        "foreclosure_stage": Decimal(12),
+        "owner_only_lien": Decimal(10),
+        "title_flag": Decimal(10),
+        "owner_occupied": Decimal(8),
+        "hoa_arrears": Decimal(8),
+        "material_conflict": Decimal(10),
+        "low_confidence": Decimal(12),
+        "federal_tax_lien": Decimal(6),
     },
     "gates": {
-        "dcs_cap_threshold": Decimal("40"),
-        "dcs_cap": Decimal("45"),
-        "dcs_low_threshold": Decimal("50"),
+        "dcs_cap_threshold": Decimal(40),
+        "dcs_cap": Decimal(45),
+        "dcs_low_threshold": Decimal(50),
     },
 }
 
@@ -430,8 +431,15 @@ def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_
     if underwriting.status != "ok":
         gates.append("insufficient_data")
     if dcs < gates_cfg["dcs_cap_threshold"]:
-        gates.append("needs_review")
+        gates.append("dcs_below_40")
         overall = min(overall, gates_cfg["dcs_cap"])
+    # Spec §8.6: active foreclosure opportunities are capped until the data
+    # confidence score reaches 75. This is a score cap, not a fabricated
+    # foreclosure recommendation or a substitute for missing data.
+    if (record.foreclosure is not None and record.foreclosure.is_active
+            and dcs < Decimal("75")):
+        gates.append("foreclosure_cap")
+        overall = min(overall, Decimal("70"))
     if any(flag.is_gating for flag in record.open_flags):
         gates.append("open_gating_flag")
 

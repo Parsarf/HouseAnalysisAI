@@ -1,14 +1,14 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValueError("naive datetimes are not permitted")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 def months_between(start: date, end: date) -> int:

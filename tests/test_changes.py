@@ -26,9 +26,9 @@ def money(value, estimated=False):
 
 
 def base_property(**overrides):
-    kwargs = dict(property_id=uuid4(), address=AddressBlock(line1="1 Main St", zip5="90001"),
-                  ownership=OwnershipBlock(owner_names=["Jane Doe"]),
-                  resolution_version="test")
+    kwargs = {"property_id": uuid4(), "address": AddressBlock(line1="1 Main St", zip5="90001"),
+                  "ownership": OwnershipBlock(owner_names=["Jane Doe"]),
+                  "resolution_version": "test"}
     kwargs.update(overrides)
     return NormalizedProperty(**kwargs)
 
@@ -59,8 +59,8 @@ def test_new_lien_and_amount_correction_have_different_change_types():
     assert ChangeType.NEW_LIEN in by_type
     correction = by_type[ChangeType.LIEN_AMOUNT_CORRECTED]
     assert correction.field_path == "liens[tax].amount"
-    assert correction.old_value == Decimal("10000")
-    assert correction.new_value == Decimal("12500")
+    assert correction.old_value == Decimal(10000)
+    assert correction.new_value == Decimal(12500)
     assert by_type[ChangeType.NEW_LIEN].field_path == "liens[judgment]"
 
 
@@ -124,8 +124,8 @@ def test_new_listing_and_price_cut():
                                         status="active"))
     events = diff_properties(before, after)
     by_type = {event.change_type: event for event in events}
-    assert by_type[ChangeType.PRICE_CUT].old_value == Decimal("350000")
-    assert by_type[ChangeType.PRICE_CUT].new_value == Decimal("329000")
+    assert by_type[ChangeType.PRICE_CUT].old_value == Decimal(350000)
+    assert by_type[ChangeType.PRICE_CUT].new_value == Decimal(329000)
     assert ChangeType.NEW_LISTING in by_type
 
 
@@ -159,8 +159,8 @@ def test_value_shift_only_above_ten_percent():
     big_move.valuation_candidates[0].value = money("460000")
     (event,) = diff_properties(before, big_move)
     assert event.change_type == ChangeType.VALUE_SHIFT
-    assert event.old_value == Decimal("400000")
-    assert event.new_value == Decimal("460000")
+    assert event.old_value == Decimal(400000)
+    assert event.new_value == Decimal(460000)
 
 
 def test_score_delta_is_propagated():

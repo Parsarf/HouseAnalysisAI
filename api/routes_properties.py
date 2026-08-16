@@ -3,11 +3,12 @@ import json
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from auth.dependencies import User, current_user, write_user
 from common.errors import AcqError, ErrorCode
+from common.settings import settings
 from contracts import (
     AddressBlock,
     AnalysisPayload,
@@ -23,7 +24,7 @@ from contracts import (
     SourceKind,
 )
 from db import models as dbm
-from exports import deal_sheet_html, net_sheet_html
+from exports import deal_sheet_html, net_sheet_html, write_export
 from jobs.postgres import PostgresJobQueue
 
 from . import analysis as analysis_store
@@ -376,6 +377,45 @@ def deal_sheet(property_id: UUID, session: Session = Depends(get_session),
     strategies = analysis_store.load_strategies(session, property_id)
     scores = analysis_store.load_scores(session, property_id)
     return deal_sheet_html(normalized, underwriting=underwriting, strategies=strategies, scores=scores)
+
+
+@router.post("/{property_id}/exports/deal-sheet.pdf")
+def deal_sheet_pdf(property_id: UUID, session: Session = Depends(get_session),
+                   user: User = Depends(current_user)) -> FileResponse:
+    """Render the same deal-sheet HTML as a stored PDF deliverable."""
+    row = _get_property(session, property_id)
+    normalized = _normalized_or_stub(session, row)
+    html = deal_sheet_html(normalized, underwriting=analysis_store.load_underwriting(session, property_id, normalized),
+                           strategies=analysis_store.load_strategies(session, property_id),
+                           scores=analysis_store.load_scores(session, property_id))
+    try:
+        from weasyprint import HTML
+    except ImportError as exc:
+        raise AcqError(ErrorCode.INTERNAL, "PDF rendering is not installed") from exc
+    path = write_export(settings.document_root, property_id, "deal-sheet.pdf", "")
+    HTML(string=html, base_url=str(path.parent)).write_pdf(str(path))
+    return FileResponse(path, media_type="application/pdf", filename="deal-sheet.pdf")
+
+
+@router.post("/{property_id}/exports/net-sheet.pdf")
+def net_sheet_pdf(property_id: UUID, body: OfferRequest, session: Session = Depends(get_session),
+                  user: User = Depends(current_user)) -> FileResponse:
+    row = _get_property(session, property_id)
+    normalized = _normalized_or_stub(session, row)
+    underwriting = analysis_store.load_underwriting(session, property_id, normalized)
+    assumptions = analysis_store.load_assumption_set(session)
+    if underwriting is None or assumptions is None:
+        raise AcqError(ErrorCode.INVALID_INPUT, "no underwriting available for this property")
+    from strategies import offer_point
+    html = net_sheet_html(normalized, offer_point(underwriting, assumptions, body.offer_price,
+                                                  body.scenario, label=body.label), underwriting)
+    try:
+        from weasyprint import HTML
+    except ImportError as exc:
+        raise AcqError(ErrorCode.INTERNAL, "PDF rendering is not installed") from exc
+    path = write_export(settings.document_root, property_id, "net-sheet.pdf", "")
+    HTML(string=html, base_url=str(path.parent)).write_pdf(str(path))
+    return FileResponse(path, media_type="application/pdf", filename="net-sheet.pdf")
 
 
 @router.post("/{property_id}/exports/net-sheet", response_class=HTMLResponse)

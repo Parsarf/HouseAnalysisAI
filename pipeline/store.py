@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Iterator
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -227,7 +228,7 @@ class SqlStore:
 
     def replace_results(self, property_id: UUID, computation, *, purchase_price: Decimal) -> None:
         """Delete + insert derived rows so recompute is idempotent (WP-10 AC #3)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         underwriting = computation.underwriting
         self.session.execute(_DEAL_DELETE_SQL, {"pid": property_id})
         for result in computation.strategies:
@@ -404,7 +405,7 @@ class SqlStore:
 
     def persist_change_events(self, property_id: UUID, events, *,
                               source_report_id: UUID | None = None) -> int:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for event in events:
             self.session.execute(_CHANGE_INSERT_SQL, {
                 "id": uuid4(), "pid": property_id,

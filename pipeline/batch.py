@@ -117,5 +117,14 @@ def fail(store, batch_id: UUID, reason: str) -> str:
     return "failed"
 
 
-__all__ = ["BATCH_STATES", "start_ingestion", "estimation_ready", "confirm_estimate",
-           "pause_budget", "resume_batch", "unit_finished", "mark_complete", "fail"]
+__all__ = [
+    "BATCH_STATES",
+    "confirm_estimate",
+    "estimation_ready",
+    "fail",
+    "mark_complete",
+    "pause_budget",
+    "resume_batch",
+    "start_ingestion",
+    "unit_finished",
+]

@@ -1,14 +1,46 @@
+import itertools
 from decimal import Decimal
 from uuid import uuid4
 
-from contracts import (AcquisitionCosts, AddressBlock, AssumptionSet, AttachmentBasis, CostBlock,
-                       DataQualityBlock, ForeclosureState, HoaBlock, HoldingAssumptions,
-                       LiabilityBlock, LienRecord, MortgageRecord, NormalizedProperty,
-                       OwnershipBlock, PropertyAttributes, RentalBlock, RepairAssumptions,
-                       ResaleAssumptions, Scenario, SourceKind, StrategyAssumptions, TaxBlock,
-                       TrackedValue, UnderwritingResult, ValueBlock)
-from strategies import (all_strategies, cash, flip, foreclosure, offer_grid, offer_point,
-                        rental, short_sale_flag_requests, subject_to, wholesale)
+from contracts import (
+    AcquisitionCosts,
+    AddressBlock,
+    AssumptionSet,
+    AttachmentBasis,
+    CostBlock,
+    DataQualityBlock,
+    ForeclosureState,
+    HoaBlock,
+    HoldingAssumptions,
+    LiabilityBlock,
+    LienRecord,
+    MortgageRecord,
+    NormalizedProperty,
+    OwnershipBlock,
+    PropertyAttributes,
+    RentalBlock,
+    RepairAssumptions,
+    ResaleAssumptions,
+    Scenario,
+    SourceKind,
+    StrategyAssumptions,
+    TaxBlock,
+    TrackedValue,
+    UnderwritingResult,
+    ValueBlock,
+)
+from strategies import (
+    all_strategies,
+    cash,
+    flip,
+    foreclosure,
+    offer_grid,
+    offer_point,
+    rental,
+    short_sale_flag_requests,
+    subject_to,
+    wholesale,
+)
 from strategies.engine import data_confidence
 
 D = Decimal
@@ -51,10 +83,10 @@ def tv(value):
 
 
 def make_property(**kwargs) -> NormalizedProperty:
-    defaults = dict(property_id=uuid4(), address=AddressBlock(line1="1 Main St"),
-                    attributes=PropertyAttributes(sqft=tv("1800")),
-                    data_quality=DataQualityBlock(critical_field_coverage=D(".9"), mean_extraction_confidence=D(".9")),
-                    resolution_version="test")
+    defaults = {"property_id": uuid4(), "address": AddressBlock(line1="1 Main St"),
+                    "attributes": PropertyAttributes(sqft=tv("1800")),
+                    "data_quality": DataQualityBlock(critical_field_coverage=D(".9"), mean_extraction_confidence=D(".9")),
+                    "resolution_version": "test"}
     defaults.update(kwargs)
     return NormalizedProperty(**defaults)
 
@@ -213,7 +245,7 @@ def test_rental_unavailable_without_sqft():
 
 def _subject_to_property(**kwargs):
     mortgage = MortgageRecord(position="1", lender="Bank", rate=D(".04"), estimated_balance=tv("160000"))
-    defaults = dict(mortgages=[mortgage], taxes=TaxBlock(delinquent_amount=tv("5000")))
+    defaults = {"mortgages": [mortgage], "taxes": TaxBlock(delinquent_amount=tv("5000"))}
     defaults.update(kwargs)
     return make_property(**defaults)
 
@@ -245,17 +277,17 @@ def test_subject_to_acceleration_and_balance_conditions():
 
 
 def _foreclosure_property(**kwargs):
-    defaults = dict(
-        foreclosure=ForeclosureState(stage="nts", is_active=True, published_bid=tv("100000"), postponement_count=3),
-        mortgages=[MortgageRecord(position="1", estimated_balance=tv("180000")),
+    defaults = {
+        "foreclosure": ForeclosureState(stage="nts", is_active=True, published_bid=tv("100000"), postponement_count=3),
+        "mortgages": [MortgageRecord(position="1", estimated_balance=tv("180000")),
                    MortgageRecord(position="2", estimated_balance=tv("20000"))],
-        liens=[LienRecord(lien_type="judgment", amount=tv("8000"), attachment_basis=AttachmentBasis.RECORDED_AGAINST_PROPERTY, attachment_confidence=.9),
+        "liens": [LienRecord(lien_type="judgment", amount=tv("8000"), attachment_basis=AttachmentBasis.RECORDED_AGAINST_PROPERTY, attachment_confidence=.9),
                LienRecord(lien_type="federal_tax", amount=tv("12000"), attachment_basis=AttachmentBasis.RECORDED_AGAINST_PROPERTY, attachment_confidence=.9)],
-        hoa=HoaBlock(arrears=tv("3000"), has_lien=True),
-        taxes=TaxBlock(annual_taxes=tv("3600"), delinquent_amount=tv("5000")),
-        ownership=OwnershipBlock(is_owner_occupied=True),
-        condition=None,
-        attributes=PropertyAttributes(sqft=tv("1000")))
+        "hoa": HoaBlock(arrears=tv("3000"), has_lien=True),
+        "taxes": TaxBlock(annual_taxes=tv("3600"), delinquent_amount=tv("5000")),
+        "ownership": OwnershipBlock(is_owner_occupied=True),
+        "condition": None,
+        "attributes": PropertyAttributes(sqft=tv("1000"))}
     defaults.update(kwargs)
     return make_property(**defaults)
 
@@ -320,7 +352,7 @@ def test_offer_grid_points_and_costs():
     grid = offer_grid(underwriting, property.property_id, assumptions(), D("150000"))
     assert grid.interpolatable is True
     by_scenario = {scenario: [p for p in grid.points if p.scenario == scenario] for scenario in Scenario}
-    for scenario, points in by_scenario.items():
+    for points in by_scenario.values():
         plain = [p for p in points if p.label is None]
         assert len(plain) == 9
         assert all(p.offer_price % D("5000") == 0 for p in plain)  # rounded to $5k
@@ -371,7 +403,7 @@ def test_offer_grid_linearity_licenses_interpolation():
         points = sorted((p for p in grid.points if p.scenario == scenario and p.label is None),
                         key=lambda p: p.offer_price)
         assert len(points) == 9
-        for low_point, high_point in zip(points, points[1:]):
+        for low_point, high_point in itertools.pairwise(points):
             midpoint = (low_point.offer_price + high_point.offer_price) / 2
             computed = offer_point(underwriting, assumption_set, midpoint, scenario)
             for field in ("proceeds_low", "proceeds_expected", "proceeds_high", "buyer_basis", "profit", "closing_costs"):

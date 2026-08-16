@@ -91,7 +91,7 @@ def estimated_figures(prop: NormalizedProperty) -> list[str]:
 
 
 def _strategy_rank(result: StrategyResult) -> Decimal:
-    return result.mao if result.mao is not None else Decimal("-1")
+    return result.mao if result.mao is not None else Decimal(-1)
 
 
 def deal_sheet_html(prop: NormalizedProperty,
@@ -118,9 +118,7 @@ def deal_sheet_html(prop: NormalizedProperty,
     summary_rows = "".join(f"<tr><th>{label}</th><td>{value}</td></tr>" for label, value in rows)
 
     strategy_rows = "".join(
-        "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
-            _esc(s.strategy.value if isinstance(s.strategy, StrategyType) else s.strategy),
-            _esc(s.scenario), _usd(s.mao), _usd(s.profit))
+        f"<tr><td>{_esc(s.strategy.value if isinstance(s.strategy, StrategyType) else s.strategy)}</td><td>{_esc(s.scenario)}</td><td>{_usd(s.mao)}</td><td>{_usd(s.profit)}</td></tr>"
         for s in top
     ) or "<tr><td colspan=\"4\">No viable strategies computed.</td></tr>"
 
