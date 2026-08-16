@@ -13,6 +13,7 @@ from decimal import Decimal
 from common.db import db_session
 from jobs.postgres import PostgresJobQueue
 from ingestion.worker import ingest_document
+from extraction import ExtractionService, ProviderClient, UnitInput
 
 from .orchestrator import Pipeline
 
@@ -23,12 +24,33 @@ def _payload(payload) -> dict:
     return json.loads(payload) if isinstance(payload, str) else dict(payload)
 
 
-def _pipeline() -> Pipeline:
-    return Pipeline()
+def _pipeline(**kwargs) -> Pipeline:
+    return Pipeline(**kwargs)
+
+
+def _extractor(unit: dict):
+    from pathlib import Path
+    from uuid import UUID
+
+    unit_id = UUID(str(unit["id"]))
+    text = Path(unit["text_path"]).read_text()
+    request = UnitInput(
+        id=unit_id,
+        report_id=UUID(str(unit["report_id"])),
+        unit_type=unit["unit_type"], text=text,
+        page_start=unit.get("page_start") or 1,
+        page_end=unit.get("page_end") or 1,
+        property_id=unit.get("property_id"), batch_id=unit.get("batch_id"),
+        token_estimate=unit.get("token_estimate") or 0,
+    )
+    # Pipeline.SqlStore owns fact persistence, budget reservation, and the
+    # extraction-unit transition.  Keep this adapter side-effect free so a
+    # retry cannot insert the same fact ledger twice.
+    return ExtractionService(ProviderClient()).extract_unit(request)
 
 
 def _handle_extract_unit(payload) -> None:
-    _pipeline().extract_unit(_payload(payload)["unit_id"])
+    _pipeline(extractor=_extractor).extract_unit(_payload(payload)["unit_id"])
 
 
 def _handle_recompute_property(payload) -> None:

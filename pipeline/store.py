@@ -47,7 +47,8 @@ _UNIT_OUTSTANDING_SQL = text("""
 """)
 
 _UNIT_SQL = text("""
-    SELECT u.id, u.report_id, u.status, u.unit_type, u.text_path, u.token_estimate,
+    SELECT u.id, u.report_id, u.status, u.unit_type, u.page_start, u.page_end,
+           u.text_path, u.token_estimate,
            r.property_id, r.batch_id
     FROM extraction_units u
     JOIN reports r ON r.id = u.report_id
