@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class ExtractionUnit:
+class SectionedUnit:
     unit_type: str
     page_start: int
     page_end: int
@@ -14,7 +14,7 @@ class ExtractionUnit:
 HEADERS = {"mortgage": "mortgage|deed of trust", "foreclosure": "foreclosure|notice of trustee", "lien": "lien|judgment", "tax": "tax information|assessed value", "comparables": "comparables|comparative market"}
 
 
-def section_pages(pages: list[str], fallback_size: int = 3) -> list[ExtractionUnit]:
+def section_pages(pages: list[str], fallback_size: int = 3) -> list[SectionedUnit]:
     units = []
     current = None
     start = 1
@@ -25,11 +25,11 @@ def section_pages(pages: list[str], fallback_size: int = 3) -> list[ExtractionUn
                 break
         if current and (index == len(pages) or any(re.search(pattern, pages[index], re.IGNORECASE) for pattern in HEADERS.values())):
             text = "\n".join(pages[start - 1:index])
-            units.append(ExtractionUnit(current, start, index, text, max(1, len(text) // 4)))
+            units.append(SectionedUnit(current, start, index, text, max(1, len(text) // 4)))
             current = None
     if not units:
-        for start in range(0, len(pages), fallback_size - 1):
+        for start in range(0, len(pages), max(1, fallback_size - 1)):
             end = min(len(pages), start + fallback_size)
             text = "\n".join(pages[start:end])
-            units.append(ExtractionUnit("combined", start + 1, end, text, max(1, len(text) // 4)))
+            units.append(SectionedUnit("combined", start + 1, end, text, max(1, len(text) // 4)))
     return units

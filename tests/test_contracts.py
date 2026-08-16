@@ -5,6 +5,12 @@ import pytest
 
 from contracts import (AddressBlock, AttachmentBasis, ExtractedFactDraft,
                        EntityType, NullReason, SourceKind, TrackedValue)
+import contracts
+
+
+def test_no_duplicate_contract_names():
+    assert contracts.AssumptionSet.__module__ == "contracts.models"
+    assert contracts.NormalizedProperty.__module__ == "contracts.models"
 
 
 def test_null_tracked_value_requires_reason():

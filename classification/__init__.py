@@ -1,4 +1,4 @@
-from .sectioning import ExtractionUnit, section_pages
+from .sectioning import SectionedUnit, section_pages
 from .service import Classification, classify
 
-__all__ = ["Classification", "ExtractionUnit", "classify", "section_pages"]
+__all__ = ["Classification", "SectionedUnit", "classify", "section_pages"]
