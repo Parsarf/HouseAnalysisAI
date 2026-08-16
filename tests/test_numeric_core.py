@@ -19,7 +19,7 @@ def test_underwriting_and_strategy_are_repeatable():
     first = underwrite(property, assumptions)
     second = underwrite(property, assumptions)
     assert first.model_dump() == second.model_dump()
-    result = flip(first, assumptions, Decimal("150000"), Scenario.EXPECTED)
+    result = flip(property, first, assumptions, Decimal("150000"), Scenario.EXPECTED)
     assert result.profit is not None
     grid = offer_grid(first, property.property_id, assumptions, Decimal("150000"))
     assert grid.points
