@@ -45,6 +45,9 @@ class Batch(Base):
     status: Mapped[str] = mapped_column(String(30), default="created")
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     actual_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    budget_limit_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    spent_usd: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    awaiting_confirmation: Mapped[bool] = mapped_column(Boolean, default=False)
     total_count: Mapped[int] = mapped_column(Integer, default=0)
     completed_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -113,3 +116,18 @@ class ExtractionUnit(Base):
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class Flag(Base):
+    __tablename__ = "flags"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    property_id: Mapped[UUID] = mapped_column(ForeignKey("properties.id"))
+    flag_type: Mapped[str] = mapped_column(String(60))
+    payload: Mapped[dict] = mapped_column(JSON)
+    financial_impact_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    status: Mapped[str] = mapped_column(String(30), default="open")
+    resolution: Mapped[str | None] = mapped_column(Text)
+    resolved_value: Mapped[dict | None] = mapped_column(JSON)
+    note: Mapped[str | None] = mapped_column(Text)
+    dedupe_key: Mapped[str] = mapped_column(String(255), unique=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

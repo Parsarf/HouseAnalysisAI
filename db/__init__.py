@@ -1,3 +1,3 @@
-from .models import Batch, ExtractionUnit, Job, Property, Report
+from .models import Batch, ExtractionUnit, Flag, Job, Property, Report
 
-__all__ = ["Batch", "ExtractionUnit", "Job", "Property", "Report"]
+__all__ = ["Batch", "ExtractionUnit", "Flag", "Job", "Property", "Report"]
