@@ -1,0 +1,946 @@
+fixture,assumption,stage,step,formula,inputs,value
+01_clean_high_equity,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+01_clean_high_equity,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+01_clean_high_equity,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+01_clean_high_equity,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+01_clean_high_equity,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,500000.00
+01_clean_high_equity,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+01_clean_high_equity,aggressive,underwriting,value.v_low,V*(1-disp),,425000.00
+01_clean_high_equity,aggressive,underwriting,value.v_high,V*(1+disp),,575000.00
+01_clean_high_equity,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1800 condition=moderate,75600.00
+01_clean_high_equity,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+01_clean_high_equity,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=481.04 months=12.0000,5772.48
+01_clean_high_equity,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14225.00
+01_clean_high_equity,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,30812.50
+01_clean_high_equity,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,425000.00
+01_clean_high_equity,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,425000.00
+01_clean_high_equity,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=90720.00,515720.00
+01_clean_high_equity,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=534.17 months=8.0000,4273.36
+01_clean_high_equity,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,16100.00
+01_clean_high_equity,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,36250.00
+01_clean_high_equity,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,500000.00
+01_clean_high_equity,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,500000.00
+01_clean_high_equity,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=75600.00,575600.00
+01_clean_high_equity,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=587.29 months=6.0000,3523.74
+01_clean_high_equity,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,17975.00
+01_clean_high_equity,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,41687.50
+01_clean_high_equity,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,575000.00
+01_clean_high_equity,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,575000.00
+01_clean_high_equity,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=64260.00,639260.00
+01_clean_high_equity,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+01_clean_high_equity,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+01_clean_high_equity,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+01_clean_high_equity,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+01_clean_high_equity,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,500000.00
+01_clean_high_equity,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+01_clean_high_equity,conservative,underwriting,value.v_low,V*(1-disp),,425000.00
+01_clean_high_equity,conservative,underwriting,value.v_high,V*(1+disp),,575000.00
+01_clean_high_equity,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1800 condition=moderate,75600.00
+01_clean_high_equity,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+01_clean_high_equity,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=481.04 months=12.0000,5772.48
+01_clean_high_equity,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14225.00
+01_clean_high_equity,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,30812.50
+01_clean_high_equity,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,425000.00
+01_clean_high_equity,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,425000.00
+01_clean_high_equity,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=120960.00,545960.00
+01_clean_high_equity,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=534.17 months=8.0000,4273.36
+01_clean_high_equity,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,16100.00
+01_clean_high_equity,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,36250.00
+01_clean_high_equity,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,500000.00
+01_clean_high_equity,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,500000.00
+01_clean_high_equity,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=75600.00,575600.00
+01_clean_high_equity,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=587.29 months=6.0000,3523.74
+01_clean_high_equity,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,17975.00
+01_clean_high_equity,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,41687.50
+01_clean_high_equity,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,575000.00
+01_clean_high_equity,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,575000.00
+01_clean_high_equity,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=49140.00,624140.00
+01_clean_high_equity,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+01_clean_high_equity,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+01_clean_high_equity,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+01_clean_high_equity,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+01_clean_high_equity,default,underwriting,value.v_expected,sum(v*w)/sum(w),,500000.00
+01_clean_high_equity,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+01_clean_high_equity,default,underwriting,value.v_low,V*(1-disp),,425000.00
+01_clean_high_equity,default,underwriting,value.v_high,V*(1+disp),,575000.00
+01_clean_high_equity,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1800 condition=moderate,75600.00
+01_clean_high_equity,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+01_clean_high_equity,default,underwriting,scenario[conservative].holding,monthly x months,monthly=481.04 months=12.0000,5772.48
+01_clean_high_equity,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14225.00
+01_clean_high_equity,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,30812.50
+01_clean_high_equity,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,425000.00
+01_clean_high_equity,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,425000.00
+01_clean_high_equity,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=105840.00,530840.00
+01_clean_high_equity,default,underwriting,scenario[expected].holding,monthly x months,monthly=534.17 months=8.0000,4273.36
+01_clean_high_equity,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,16100.00
+01_clean_high_equity,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,36250.00
+01_clean_high_equity,default,underwriting,scenario[expected].equity.gross,V - confirmed,,500000.00
+01_clean_high_equity,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,500000.00
+01_clean_high_equity,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=75600.00,575600.00
+01_clean_high_equity,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=587.29 months=6.0000,3523.74
+01_clean_high_equity,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,17975.00
+01_clean_high_equity,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,41687.50
+01_clean_high_equity,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,575000.00
+01_clean_high_equity,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,575000.00
+01_clean_high_equity,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=56700.00,631700.00
+02_owner_only_federal_lien,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+02_owner_only_federal_lien,aggressive,underwriting,liabilities.potential,sum of potential bucket,,128000.00
+02_owner_only_federal_lien,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,32000.00
+02_owner_only_federal_lien,aggressive,underwriting,value.candidate[avm].weight,base_weight x adjustment,base=0.30 adj=0.800000,0.240000
+02_owner_only_federal_lien,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+02_owner_only_federal_lien,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,398064.52
+02_owner_only_federal_lien,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.040000
+02_owner_only_federal_lien,aggressive,underwriting,value.v_low,V*(1-disp),,382141.94
+02_owner_only_federal_lien,aggressive,underwriting,value.v_high,V*(1+disp),,413987.10
+02_owner_only_federal_lien,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1650 condition=cosmetic,29700.00
+02_owner_only_federal_lien,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+02_owner_only_federal_lien,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=850.68 months=9.0000,7656.12
+02_owner_only_federal_lien,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13153.55
+02_owner_only_federal_lien,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,27705.29
+02_owner_only_federal_lien,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,382141.94
+02_owner_only_federal_lien,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=128000.00,254141.94
+02_owner_only_federal_lien,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=35640.00,417781.94
+02_owner_only_federal_lien,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=861.96 months=6.0000,5171.76
+02_owner_only_federal_lien,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13551.61
+02_owner_only_federal_lien,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,28859.68
+02_owner_only_federal_lien,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,398064.52
+02_owner_only_federal_lien,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=32000.00,366064.52
+02_owner_only_federal_lien,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=29700.00,427764.52
+02_owner_only_federal_lien,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=873.24 months=4.5000,3929.58
+02_owner_only_federal_lien,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13949.68
+02_owner_only_federal_lien,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,30014.06
+02_owner_only_federal_lien,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,413987.10
+02_owner_only_federal_lien,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,413987.10
+02_owner_only_federal_lien,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=25245.00,439232.10
+02_owner_only_federal_lien,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+02_owner_only_federal_lien,conservative,underwriting,liabilities.potential,sum of potential bucket,,128000.00
+02_owner_only_federal_lien,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,64000.00
+02_owner_only_federal_lien,conservative,underwriting,value.candidate[avm].weight,base_weight x adjustment,base=0.30 adj=0.800000,0.240000
+02_owner_only_federal_lien,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+02_owner_only_federal_lien,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,398064.52
+02_owner_only_federal_lien,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.040000
+02_owner_only_federal_lien,conservative,underwriting,value.v_low,V*(1-disp),,382141.94
+02_owner_only_federal_lien,conservative,underwriting,value.v_high,V*(1+disp),,413987.10
+02_owner_only_federal_lien,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1650 condition=cosmetic,29700.00
+02_owner_only_federal_lien,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+02_owner_only_federal_lien,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=850.68 months=9.0000,7656.12
+02_owner_only_federal_lien,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13153.55
+02_owner_only_federal_lien,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,27705.29
+02_owner_only_federal_lien,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,382141.94
+02_owner_only_federal_lien,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=128000.00,254141.94
+02_owner_only_federal_lien,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=47520.00,429661.94
+02_owner_only_federal_lien,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=861.96 months=6.0000,5171.76
+02_owner_only_federal_lien,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13551.61
+02_owner_only_federal_lien,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,28859.68
+02_owner_only_federal_lien,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,398064.52
+02_owner_only_federal_lien,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=64000.00,334064.52
+02_owner_only_federal_lien,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=29700.00,427764.52
+02_owner_only_federal_lien,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=873.24 months=4.5000,3929.58
+02_owner_only_federal_lien,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13949.68
+02_owner_only_federal_lien,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,30014.06
+02_owner_only_federal_lien,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,413987.10
+02_owner_only_federal_lien,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,413987.10
+02_owner_only_federal_lien,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=19305.00,433292.10
+02_owner_only_federal_lien,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+02_owner_only_federal_lien,default,underwriting,liabilities.potential,sum of potential bucket,,128000.00
+02_owner_only_federal_lien,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,44800.00
+02_owner_only_federal_lien,default,underwriting,value.candidate[avm].weight,base_weight x adjustment,base=0.30 adj=0.800000,0.240000
+02_owner_only_federal_lien,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+02_owner_only_federal_lien,default,underwriting,value.v_expected,sum(v*w)/sum(w),,398064.52
+02_owner_only_federal_lien,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.040000
+02_owner_only_federal_lien,default,underwriting,value.v_low,V*(1-disp),,382141.94
+02_owner_only_federal_lien,default,underwriting,value.v_high,V*(1+disp),,413987.10
+02_owner_only_federal_lien,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1650 condition=cosmetic,29700.00
+02_owner_only_federal_lien,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+02_owner_only_federal_lien,default,underwriting,scenario[conservative].holding,monthly x months,monthly=850.68 months=9.0000,7656.12
+02_owner_only_federal_lien,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13153.55
+02_owner_only_federal_lien,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,27705.29
+02_owner_only_federal_lien,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,382141.94
+02_owner_only_federal_lien,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=128000.00,254141.94
+02_owner_only_federal_lien,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=41580.00,423721.94
+02_owner_only_federal_lien,default,underwriting,scenario[expected].holding,monthly x months,monthly=861.96 months=6.0000,5171.76
+02_owner_only_federal_lien,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13551.61
+02_owner_only_federal_lien,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,28859.68
+02_owner_only_federal_lien,default,underwriting,scenario[expected].equity.gross,V - confirmed,,398064.52
+02_owner_only_federal_lien,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=44800.00,353264.52
+02_owner_only_federal_lien,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=29700.00,427764.52
+02_owner_only_federal_lien,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=873.24 months=4.5000,3929.58
+02_owner_only_federal_lien,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13949.68
+02_owner_only_federal_lien,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,30014.06
+02_owner_only_federal_lien,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,413987.10
+02_owner_only_federal_lien,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,413987.10
+02_owner_only_federal_lien,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=22275.00,436262.10
+03_conflicting_mortgages,aggressive,underwriting,mortgage[1].conflict,same-position conflict: keep highest balance,"250000,265000",265000
+03_conflicting_mortgages,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,265000.00
+03_conflicting_mortgages,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+03_conflicting_mortgages,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+03_conflicting_mortgages,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+03_conflicting_mortgages,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,450000.00
+03_conflicting_mortgages,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+03_conflicting_mortgages,aggressive,underwriting,value.v_low,V*(1-disp),,382500.00
+03_conflicting_mortgages,aggressive,underwriting,value.v_high,V*(1+disp),,517500.00
+03_conflicting_mortgages,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1700 condition=moderate,71400.00
+03_conflicting_mortgages,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+03_conflicting_mortgages,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=875.94 months=12.0000,10511.28
+03_conflicting_mortgages,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13162.50
+03_conflicting_mortgages,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,27731.25
+03_conflicting_mortgages,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,117500.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,117500.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=85680.00,468180.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=923.75 months=8.0000,7390.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14850.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,32625.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,185000.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,185000.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=71400.00,521400.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=971.56 months=6.0000,5829.36
+03_conflicting_mortgages,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,16537.50
+03_conflicting_mortgages,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,37518.75
+03_conflicting_mortgages,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,252500.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,252500.00
+03_conflicting_mortgages,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=60690.00,578190.00
+03_conflicting_mortgages,conservative,underwriting,mortgage[1].conflict,same-position conflict: keep highest balance,"250000,265000",265000
+03_conflicting_mortgages,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,265000.00
+03_conflicting_mortgages,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+03_conflicting_mortgages,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+03_conflicting_mortgages,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+03_conflicting_mortgages,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,450000.00
+03_conflicting_mortgages,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+03_conflicting_mortgages,conservative,underwriting,value.v_low,V*(1-disp),,382500.00
+03_conflicting_mortgages,conservative,underwriting,value.v_high,V*(1+disp),,517500.00
+03_conflicting_mortgages,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1700 condition=moderate,71400.00
+03_conflicting_mortgages,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+03_conflicting_mortgages,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=875.94 months=12.0000,10511.28
+03_conflicting_mortgages,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13162.50
+03_conflicting_mortgages,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,27731.25
+03_conflicting_mortgages,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,117500.00
+03_conflicting_mortgages,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,117500.00
+03_conflicting_mortgages,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=114240.00,496740.00
+03_conflicting_mortgages,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=923.75 months=8.0000,7390.00
+03_conflicting_mortgages,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14850.00
+03_conflicting_mortgages,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,32625.00
+03_conflicting_mortgages,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,185000.00
+03_conflicting_mortgages,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,185000.00
+03_conflicting_mortgages,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=71400.00,521400.00
+03_conflicting_mortgages,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=971.56 months=6.0000,5829.36
+03_conflicting_mortgages,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,16537.50
+03_conflicting_mortgages,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,37518.75
+03_conflicting_mortgages,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,252500.00
+03_conflicting_mortgages,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,252500.00
+03_conflicting_mortgages,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=46410.00,563910.00
+03_conflicting_mortgages,default,underwriting,mortgage[1].conflict,same-position conflict: keep highest balance,"250000,265000",265000
+03_conflicting_mortgages,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,265000.00
+03_conflicting_mortgages,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+03_conflicting_mortgages,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+03_conflicting_mortgages,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+03_conflicting_mortgages,default,underwriting,value.v_expected,sum(v*w)/sum(w),,450000.00
+03_conflicting_mortgages,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+03_conflicting_mortgages,default,underwriting,value.v_low,V*(1-disp),,382500.00
+03_conflicting_mortgages,default,underwriting,value.v_high,V*(1+disp),,517500.00
+03_conflicting_mortgages,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1700 condition=moderate,71400.00
+03_conflicting_mortgages,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+03_conflicting_mortgages,default,underwriting,scenario[conservative].holding,monthly x months,monthly=875.94 months=12.0000,10511.28
+03_conflicting_mortgages,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13162.50
+03_conflicting_mortgages,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,27731.25
+03_conflicting_mortgages,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,117500.00
+03_conflicting_mortgages,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,117500.00
+03_conflicting_mortgages,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=99960.00,482460.00
+03_conflicting_mortgages,default,underwriting,scenario[expected].holding,monthly x months,monthly=923.75 months=8.0000,7390.00
+03_conflicting_mortgages,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14850.00
+03_conflicting_mortgages,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,32625.00
+03_conflicting_mortgages,default,underwriting,scenario[expected].equity.gross,V - confirmed,,185000.00
+03_conflicting_mortgages,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,185000.00
+03_conflicting_mortgages,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=71400.00,521400.00
+03_conflicting_mortgages,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=971.56 months=6.0000,5829.36
+03_conflicting_mortgages,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,16537.50
+03_conflicting_mortgages,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,37518.75
+03_conflicting_mortgages,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,252500.00
+03_conflicting_mortgages,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,252500.00
+03_conflicting_mortgages,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=53550.00,571050.00
+04_active_nts_postponements,aggressive,underwriting,mortgage[1].balance,published bid replaces first balance,bid=210000,210000
+04_active_nts_postponements,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,218500.00
+04_active_nts_postponements,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+04_active_nts_postponements,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+04_active_nts_postponements,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+04_active_nts_postponements,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,350000.00
+04_active_nts_postponements,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+04_active_nts_postponements,aggressive,underwriting,value.v_low,V*(1-disp),,297500.00
+04_active_nts_postponements,aggressive,underwriting,value.v_high,V*(1+disp),,402500.00
+04_active_nts_postponements,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1400 condition=heavy,109200.00
+04_active_nts_postponements,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=heavy,10.0000
+04_active_nts_postponements,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=690.73 months=15.0000,10360.95
+04_active_nts_postponements,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11037.50
+04_active_nts_postponements,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,21568.75
+04_active_nts_postponements,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,79000.00
+04_active_nts_postponements,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,79000.00
+04_active_nts_postponements,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=131040.00,428540.00
+04_active_nts_postponements,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=727.92 months=10.0000,7279.20
+04_active_nts_postponements,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12350.00
+04_active_nts_postponements,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,25375.00
+04_active_nts_postponements,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,131500.00
+04_active_nts_postponements,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,131500.00
+04_active_nts_postponements,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=109200.00,459200.00
+04_active_nts_postponements,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=765.10 months=7.5000,5738.25
+04_active_nts_postponements,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13662.50
+04_active_nts_postponements,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,29181.25
+04_active_nts_postponements,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,184000.00
+04_active_nts_postponements,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,184000.00
+04_active_nts_postponements,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=92820.00,495320.00
+04_active_nts_postponements,conservative,underwriting,mortgage[1].balance,published bid replaces first balance,bid=210000,210000
+04_active_nts_postponements,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,218500.00
+04_active_nts_postponements,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+04_active_nts_postponements,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+04_active_nts_postponements,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+04_active_nts_postponements,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,350000.00
+04_active_nts_postponements,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+04_active_nts_postponements,conservative,underwriting,value.v_low,V*(1-disp),,297500.00
+04_active_nts_postponements,conservative,underwriting,value.v_high,V*(1+disp),,402500.00
+04_active_nts_postponements,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1400 condition=heavy,109200.00
+04_active_nts_postponements,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=heavy,10.0000
+04_active_nts_postponements,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=690.73 months=15.0000,10360.95
+04_active_nts_postponements,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11037.50
+04_active_nts_postponements,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,21568.75
+04_active_nts_postponements,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,79000.00
+04_active_nts_postponements,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,79000.00
+04_active_nts_postponements,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=174720.00,472220.00
+04_active_nts_postponements,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=727.92 months=10.0000,7279.20
+04_active_nts_postponements,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12350.00
+04_active_nts_postponements,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,25375.00
+04_active_nts_postponements,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,131500.00
+04_active_nts_postponements,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,131500.00
+04_active_nts_postponements,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=109200.00,459200.00
+04_active_nts_postponements,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=765.10 months=7.5000,5738.25
+04_active_nts_postponements,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13662.50
+04_active_nts_postponements,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,29181.25
+04_active_nts_postponements,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,184000.00
+04_active_nts_postponements,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,184000.00
+04_active_nts_postponements,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=70980.00,473480.00
+04_active_nts_postponements,default,underwriting,mortgage[1].balance,published bid replaces first balance,bid=210000,210000
+04_active_nts_postponements,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,218500.00
+04_active_nts_postponements,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+04_active_nts_postponements,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+04_active_nts_postponements,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+04_active_nts_postponements,default,underwriting,value.v_expected,sum(v*w)/sum(w),,350000.00
+04_active_nts_postponements,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+04_active_nts_postponements,default,underwriting,value.v_low,V*(1-disp),,297500.00
+04_active_nts_postponements,default,underwriting,value.v_high,V*(1+disp),,402500.00
+04_active_nts_postponements,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1400 condition=heavy,109200.00
+04_active_nts_postponements,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=heavy,10.0000
+04_active_nts_postponements,default,underwriting,scenario[conservative].holding,monthly x months,monthly=690.73 months=15.0000,10360.95
+04_active_nts_postponements,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11037.50
+04_active_nts_postponements,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,21568.75
+04_active_nts_postponements,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,79000.00
+04_active_nts_postponements,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,79000.00
+04_active_nts_postponements,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=152880.00,450380.00
+04_active_nts_postponements,default,underwriting,scenario[expected].holding,monthly x months,monthly=727.92 months=10.0000,7279.20
+04_active_nts_postponements,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12350.00
+04_active_nts_postponements,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,25375.00
+04_active_nts_postponements,default,underwriting,scenario[expected].equity.gross,V - confirmed,,131500.00
+04_active_nts_postponements,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,131500.00
+04_active_nts_postponements,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=109200.00,459200.00
+04_active_nts_postponements,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=765.10 months=7.5000,5738.25
+04_active_nts_postponements,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13662.50
+04_active_nts_postponements,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,29181.25
+04_active_nts_postponements,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,184000.00
+04_active_nts_postponements,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,184000.00
+04_active_nts_postponements,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=81900.00,484400.00
+05_no_value_data,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,180000.00
+05_no_value_data,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+05_no_value_data,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+05_no_value_data,aggressive,underwriting,status,no value candidates -> insufficient_data,,insufficient_data
+05_no_value_data,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,180000.00
+05_no_value_data,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+05_no_value_data,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+05_no_value_data,conservative,underwriting,status,no value candidates -> insufficient_data,,insufficient_data
+05_no_value_data,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,180000.00
+05_no_value_data,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+05_no_value_data,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+05_no_value_data,default,underwriting,status,no value candidates -> insufficient_data,,insufficient_data
+06_no_debt_data,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+06_no_debt_data,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+06_no_debt_data,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+06_no_debt_data,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+06_no_debt_data,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,300000.00
+06_no_debt_data,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+06_no_debt_data,aggressive,underwriting,value.v_low,V*(1-disp),,255000.00
+06_no_debt_data,aggressive,underwriting,value.v_high,V*(1+disp),,345000.00
+06_no_debt_data,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1200 condition=cosmetic,21600.00
+06_no_debt_data,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+06_no_debt_data,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=560.63 months=9.0000,5045.67
+06_no_debt_data,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9975.00
+06_no_debt_data,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,18487.50
+06_no_debt_data,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,255000.00
+06_no_debt_data,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,255000.00
+06_no_debt_data,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=25920.00,280920.00
+06_no_debt_data,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=592.50 months=6.0000,3555.00
+06_no_debt_data,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11100.00
+06_no_debt_data,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,21750.00
+06_no_debt_data,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,300000.00
+06_no_debt_data,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,300000.00
+06_no_debt_data,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=21600.00,321600.00
+06_no_debt_data,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=624.38 months=4.5000,2809.71
+06_no_debt_data,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12225.00
+06_no_debt_data,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,25012.50
+06_no_debt_data,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,345000.00
+06_no_debt_data,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,345000.00
+06_no_debt_data,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=18360.00,363360.00
+06_no_debt_data,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+06_no_debt_data,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+06_no_debt_data,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+06_no_debt_data,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+06_no_debt_data,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,300000.00
+06_no_debt_data,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+06_no_debt_data,conservative,underwriting,value.v_low,V*(1-disp),,255000.00
+06_no_debt_data,conservative,underwriting,value.v_high,V*(1+disp),,345000.00
+06_no_debt_data,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1200 condition=cosmetic,21600.00
+06_no_debt_data,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+06_no_debt_data,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=560.63 months=9.0000,5045.67
+06_no_debt_data,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9975.00
+06_no_debt_data,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,18487.50
+06_no_debt_data,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,255000.00
+06_no_debt_data,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,255000.00
+06_no_debt_data,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=34560.00,289560.00
+06_no_debt_data,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=592.50 months=6.0000,3555.00
+06_no_debt_data,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11100.00
+06_no_debt_data,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,21750.00
+06_no_debt_data,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,300000.00
+06_no_debt_data,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,300000.00
+06_no_debt_data,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=21600.00,321600.00
+06_no_debt_data,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=624.38 months=4.5000,2809.71
+06_no_debt_data,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12225.00
+06_no_debt_data,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,25012.50
+06_no_debt_data,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,345000.00
+06_no_debt_data,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,345000.00
+06_no_debt_data,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=14040.00,359040.00
+06_no_debt_data,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,0.00
+06_no_debt_data,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+06_no_debt_data,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+06_no_debt_data,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+06_no_debt_data,default,underwriting,value.v_expected,sum(v*w)/sum(w),,300000.00
+06_no_debt_data,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+06_no_debt_data,default,underwriting,value.v_low,V*(1-disp),,255000.00
+06_no_debt_data,default,underwriting,value.v_high,V*(1+disp),,345000.00
+06_no_debt_data,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1200 condition=cosmetic,21600.00
+06_no_debt_data,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+06_no_debt_data,default,underwriting,scenario[conservative].holding,monthly x months,monthly=560.63 months=9.0000,5045.67
+06_no_debt_data,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9975.00
+06_no_debt_data,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,18487.50
+06_no_debt_data,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,255000.00
+06_no_debt_data,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,255000.00
+06_no_debt_data,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=30240.00,285240.00
+06_no_debt_data,default,underwriting,scenario[expected].holding,monthly x months,monthly=592.50 months=6.0000,3555.00
+06_no_debt_data,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11100.00
+06_no_debt_data,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,21750.00
+06_no_debt_data,default,underwriting,scenario[expected].equity.gross,V - confirmed,,300000.00
+06_no_debt_data,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,300000.00
+06_no_debt_data,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=21600.00,321600.00
+06_no_debt_data,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=624.38 months=4.5000,2809.71
+06_no_debt_data,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12225.00
+06_no_debt_data,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,25012.50
+06_no_debt_data,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,345000.00
+06_no_debt_data,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,345000.00
+06_no_debt_data,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=16200.00,361200.00
+07_negative_equity,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,260000.00
+07_negative_equity,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+07_negative_equity,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+07_negative_equity,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+07_negative_equity,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,200000.00
+07_negative_equity,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+07_negative_equity,aggressive,underwriting,value.v_low,V*(1-disp),,170000.00
+07_negative_equity,aggressive,underwriting,value.v_high,V*(1+disp),,230000.00
+07_negative_equity,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1100 condition=moderate,46200.00
+07_negative_equity,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+07_negative_equity,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=517.08 months=12.0000,6204.96
+07_negative_equity,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,7850.00
+07_negative_equity,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,12325.00
+07_negative_equity,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,-90000.00
+07_negative_equity,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,-90000.00
+07_negative_equity,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=55440.00,225440.00
+07_negative_equity,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=538.33 months=8.0000,4306.64
+07_negative_equity,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,8600.00
+07_negative_equity,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,14500.00
+07_negative_equity,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,-60000.00
+07_negative_equity,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,-60000.00
+07_negative_equity,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=46200.00,246200.00
+07_negative_equity,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=559.58 months=6.0000,3357.48
+07_negative_equity,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9350.00
+07_negative_equity,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,16675.00
+07_negative_equity,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,-30000.00
+07_negative_equity,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,-30000.00
+07_negative_equity,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=39270.00,269270.00
+07_negative_equity,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,260000.00
+07_negative_equity,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+07_negative_equity,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+07_negative_equity,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+07_negative_equity,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,200000.00
+07_negative_equity,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+07_negative_equity,conservative,underwriting,value.v_low,V*(1-disp),,170000.00
+07_negative_equity,conservative,underwriting,value.v_high,V*(1+disp),,230000.00
+07_negative_equity,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1100 condition=moderate,46200.00
+07_negative_equity,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+07_negative_equity,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=517.08 months=12.0000,6204.96
+07_negative_equity,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,7850.00
+07_negative_equity,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,12325.00
+07_negative_equity,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,-90000.00
+07_negative_equity,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,-90000.00
+07_negative_equity,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=73920.00,243920.00
+07_negative_equity,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=538.33 months=8.0000,4306.64
+07_negative_equity,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,8600.00
+07_negative_equity,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,14500.00
+07_negative_equity,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,-60000.00
+07_negative_equity,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,-60000.00
+07_negative_equity,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=46200.00,246200.00
+07_negative_equity,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=559.58 months=6.0000,3357.48
+07_negative_equity,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9350.00
+07_negative_equity,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,16675.00
+07_negative_equity,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,-30000.00
+07_negative_equity,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,-30000.00
+07_negative_equity,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=30030.00,260030.00
+07_negative_equity,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,260000.00
+07_negative_equity,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+07_negative_equity,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+07_negative_equity,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+07_negative_equity,default,underwriting,value.v_expected,sum(v*w)/sum(w),,200000.00
+07_negative_equity,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+07_negative_equity,default,underwriting,value.v_low,V*(1-disp),,170000.00
+07_negative_equity,default,underwriting,value.v_high,V*(1+disp),,230000.00
+07_negative_equity,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1100 condition=moderate,46200.00
+07_negative_equity,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+07_negative_equity,default,underwriting,scenario[conservative].holding,monthly x months,monthly=517.08 months=12.0000,6204.96
+07_negative_equity,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,7850.00
+07_negative_equity,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,12325.00
+07_negative_equity,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,-90000.00
+07_negative_equity,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,-90000.00
+07_negative_equity,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=64680.00,234680.00
+07_negative_equity,default,underwriting,scenario[expected].holding,monthly x months,monthly=538.33 months=8.0000,4306.64
+07_negative_equity,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,8600.00
+07_negative_equity,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,14500.00
+07_negative_equity,default,underwriting,scenario[expected].equity.gross,V - confirmed,,-60000.00
+07_negative_equity,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,-60000.00
+07_negative_equity,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=46200.00,246200.00
+07_negative_equity,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=559.58 months=6.0000,3357.48
+07_negative_equity,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9350.00
+07_negative_equity,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,16675.00
+07_negative_equity,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,-30000.00
+07_negative_equity,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,-30000.00
+07_negative_equity,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=34650.00,264650.00
+08_active_bankruptcy,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,210000.00
+08_active_bankruptcy,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+08_active_bankruptcy,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+08_active_bankruptcy,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+08_active_bankruptcy,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,375000.00
+08_active_bankruptcy,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+08_active_bankruptcy,aggressive,underwriting,value.v_low,V*(1-disp),,318750.00
+08_active_bankruptcy,aggressive,underwriting,value.v_high,V*(1+disp),,431250.00
+08_active_bankruptcy,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1600 condition=cosmetic,28800.00
+08_active_bankruptcy,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+08_active_bankruptcy,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=730.78 months=9.0000,6577.02
+08_active_bankruptcy,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11568.75
+08_active_bankruptcy,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,23109.38
+08_active_bankruptcy,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,108750.00
+08_active_bankruptcy,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,108750.00
+08_active_bankruptcy,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=34560.00,353310.00
+08_active_bankruptcy,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=770.63 months=6.0000,4623.78
+08_active_bankruptcy,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12975.00
+08_active_bankruptcy,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,27187.50
+08_active_bankruptcy,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,165000.00
+08_active_bankruptcy,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,165000.00
+08_active_bankruptcy,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=28800.00,403800.00
+08_active_bankruptcy,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=810.47 months=4.5000,3647.12
+08_active_bankruptcy,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14381.25
+08_active_bankruptcy,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,31265.63
+08_active_bankruptcy,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,221250.00
+08_active_bankruptcy,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,221250.00
+08_active_bankruptcy,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=24480.00,455730.00
+08_active_bankruptcy,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,210000.00
+08_active_bankruptcy,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+08_active_bankruptcy,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+08_active_bankruptcy,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+08_active_bankruptcy,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,375000.00
+08_active_bankruptcy,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+08_active_bankruptcy,conservative,underwriting,value.v_low,V*(1-disp),,318750.00
+08_active_bankruptcy,conservative,underwriting,value.v_high,V*(1+disp),,431250.00
+08_active_bankruptcy,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1600 condition=cosmetic,28800.00
+08_active_bankruptcy,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+08_active_bankruptcy,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=730.78 months=9.0000,6577.02
+08_active_bankruptcy,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11568.75
+08_active_bankruptcy,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,23109.38
+08_active_bankruptcy,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,108750.00
+08_active_bankruptcy,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,108750.00
+08_active_bankruptcy,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=46080.00,364830.00
+08_active_bankruptcy,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=770.63 months=6.0000,4623.78
+08_active_bankruptcy,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12975.00
+08_active_bankruptcy,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,27187.50
+08_active_bankruptcy,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,165000.00
+08_active_bankruptcy,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,165000.00
+08_active_bankruptcy,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=28800.00,403800.00
+08_active_bankruptcy,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=810.47 months=4.5000,3647.12
+08_active_bankruptcy,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14381.25
+08_active_bankruptcy,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,31265.63
+08_active_bankruptcy,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,221250.00
+08_active_bankruptcy,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,221250.00
+08_active_bankruptcy,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=18720.00,449970.00
+08_active_bankruptcy,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,210000.00
+08_active_bankruptcy,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+08_active_bankruptcy,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+08_active_bankruptcy,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+08_active_bankruptcy,default,underwriting,value.v_expected,sum(v*w)/sum(w),,375000.00
+08_active_bankruptcy,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+08_active_bankruptcy,default,underwriting,value.v_low,V*(1-disp),,318750.00
+08_active_bankruptcy,default,underwriting,value.v_high,V*(1+disp),,431250.00
+08_active_bankruptcy,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1600 condition=cosmetic,28800.00
+08_active_bankruptcy,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+08_active_bankruptcy,default,underwriting,scenario[conservative].holding,monthly x months,monthly=730.78 months=9.0000,6577.02
+08_active_bankruptcy,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11568.75
+08_active_bankruptcy,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,23109.38
+08_active_bankruptcy,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,108750.00
+08_active_bankruptcy,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,108750.00
+08_active_bankruptcy,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=40320.00,359070.00
+08_active_bankruptcy,default,underwriting,scenario[expected].holding,monthly x months,monthly=770.63 months=6.0000,4623.78
+08_active_bankruptcy,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12975.00
+08_active_bankruptcy,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,27187.50
+08_active_bankruptcy,default,underwriting,scenario[expected].equity.gross,V - confirmed,,165000.00
+08_active_bankruptcy,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,165000.00
+08_active_bankruptcy,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=28800.00,403800.00
+08_active_bankruptcy,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=810.47 months=4.5000,3647.12
+08_active_bankruptcy,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,14381.25
+08_active_bankruptcy,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,31265.63
+08_active_bankruptcy,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,221250.00
+08_active_bankruptcy,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,221250.00
+08_active_bankruptcy,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=21600.00,452850.00
+09_ocr_low_confidence,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,150000.00
+09_ocr_low_confidence,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+09_ocr_low_confidence,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+09_ocr_low_confidence,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+09_ocr_low_confidence,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,325000.00
+09_ocr_low_confidence,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+09_ocr_low_confidence,aggressive,underwriting,value.v_low,V*(1-disp),,276250.00
+09_ocr_low_confidence,aggressive,underwriting,value.v_high,V*(1+disp),,373750.00
+09_ocr_low_confidence,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1350 condition=moderate,56700.00
+09_ocr_low_confidence,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+09_ocr_low_confidence,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=609.01 months=12.0000,7308.12
+09_ocr_low_confidence,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10506.25
+09_ocr_low_confidence,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,20028.13
+09_ocr_low_confidence,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,126250.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,126250.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=68040.00,344290.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=643.54 months=8.0000,5148.32
+09_ocr_low_confidence,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11725.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,23562.50
+09_ocr_low_confidence,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,175000.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,175000.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=56700.00,381700.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=678.07 months=6.0000,4068.42
+09_ocr_low_confidence,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12943.75
+09_ocr_low_confidence,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,27096.88
+09_ocr_low_confidence,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,223750.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,223750.00
+09_ocr_low_confidence,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=48195.00,421945.00
+09_ocr_low_confidence,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,150000.00
+09_ocr_low_confidence,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+09_ocr_low_confidence,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+09_ocr_low_confidence,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+09_ocr_low_confidence,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,325000.00
+09_ocr_low_confidence,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+09_ocr_low_confidence,conservative,underwriting,value.v_low,V*(1-disp),,276250.00
+09_ocr_low_confidence,conservative,underwriting,value.v_high,V*(1+disp),,373750.00
+09_ocr_low_confidence,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1350 condition=moderate,56700.00
+09_ocr_low_confidence,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+09_ocr_low_confidence,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=609.01 months=12.0000,7308.12
+09_ocr_low_confidence,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10506.25
+09_ocr_low_confidence,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,20028.13
+09_ocr_low_confidence,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,126250.00
+09_ocr_low_confidence,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,126250.00
+09_ocr_low_confidence,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=90720.00,366970.00
+09_ocr_low_confidence,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=643.54 months=8.0000,5148.32
+09_ocr_low_confidence,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11725.00
+09_ocr_low_confidence,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,23562.50
+09_ocr_low_confidence,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,175000.00
+09_ocr_low_confidence,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,175000.00
+09_ocr_low_confidence,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=56700.00,381700.00
+09_ocr_low_confidence,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=678.07 months=6.0000,4068.42
+09_ocr_low_confidence,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12943.75
+09_ocr_low_confidence,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,27096.88
+09_ocr_low_confidence,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,223750.00
+09_ocr_low_confidence,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,223750.00
+09_ocr_low_confidence,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=36855.00,410605.00
+09_ocr_low_confidence,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,150000.00
+09_ocr_low_confidence,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+09_ocr_low_confidence,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+09_ocr_low_confidence,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+09_ocr_low_confidence,default,underwriting,value.v_expected,sum(v*w)/sum(w),,325000.00
+09_ocr_low_confidence,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+09_ocr_low_confidence,default,underwriting,value.v_low,V*(1-disp),,276250.00
+09_ocr_low_confidence,default,underwriting,value.v_high,V*(1+disp),,373750.00
+09_ocr_low_confidence,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1350 condition=moderate,56700.00
+09_ocr_low_confidence,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+09_ocr_low_confidence,default,underwriting,scenario[conservative].holding,monthly x months,monthly=609.01 months=12.0000,7308.12
+09_ocr_low_confidence,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10506.25
+09_ocr_low_confidence,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,20028.13
+09_ocr_low_confidence,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,126250.00
+09_ocr_low_confidence,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,126250.00
+09_ocr_low_confidence,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=79380.00,355630.00
+09_ocr_low_confidence,default,underwriting,scenario[expected].holding,monthly x months,monthly=643.54 months=8.0000,5148.32
+09_ocr_low_confidence,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11725.00
+09_ocr_low_confidence,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,23562.50
+09_ocr_low_confidence,default,underwriting,scenario[expected].equity.gross,V - confirmed,,175000.00
+09_ocr_low_confidence,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,175000.00
+09_ocr_low_confidence,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=56700.00,381700.00
+09_ocr_low_confidence,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=678.07 months=6.0000,4068.42
+09_ocr_low_confidence,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12943.75
+09_ocr_low_confidence,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,27096.88
+09_ocr_low_confidence,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,223750.00
+09_ocr_low_confidence,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,223750.00
+09_ocr_low_confidence,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=42525.00,416275.00
+10_released_lien,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,214500.00
+10_released_lien,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+10_released_lien,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+10_released_lien,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+10_released_lien,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,410000.00
+10_released_lien,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+10_released_lien,aggressive,underwriting,value.v_low,V*(1-disp),,348500.00
+10_released_lien,aggressive,underwriting,value.v_high,V*(1+disp),,471500.00
+10_released_lien,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1450 condition=cosmetic,26100.00
+10_released_lien,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+10_released_lien,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=685.19 months=9.0000,6166.71
+10_released_lien,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12312.50
+10_released_lien,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,25266.25
+10_released_lien,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,134000.00
+10_released_lien,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,134000.00
+10_released_lien,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=31320.00,379820.00
+10_released_lien,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=728.75 months=6.0000,4372.50
+10_released_lien,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13850.00
+10_released_lien,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,29725.00
+10_released_lien,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,195500.00
+10_released_lien,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,195500.00
+10_released_lien,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=26100.00,436100.00
+10_released_lien,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=772.31 months=4.5000,3475.40
+10_released_lien,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,15387.50
+10_released_lien,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,34183.75
+10_released_lien,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,257000.00
+10_released_lien,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,257000.00
+10_released_lien,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=22185.00,493685.00
+10_released_lien,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,214500.00
+10_released_lien,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+10_released_lien,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+10_released_lien,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+10_released_lien,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,410000.00
+10_released_lien,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+10_released_lien,conservative,underwriting,value.v_low,V*(1-disp),,348500.00
+10_released_lien,conservative,underwriting,value.v_high,V*(1+disp),,471500.00
+10_released_lien,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1450 condition=cosmetic,26100.00
+10_released_lien,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+10_released_lien,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=685.19 months=9.0000,6166.71
+10_released_lien,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12312.50
+10_released_lien,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,25266.25
+10_released_lien,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,134000.00
+10_released_lien,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,134000.00
+10_released_lien,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=41760.00,390260.00
+10_released_lien,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=728.75 months=6.0000,4372.50
+10_released_lien,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13850.00
+10_released_lien,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,29725.00
+10_released_lien,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,195500.00
+10_released_lien,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,195500.00
+10_released_lien,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=26100.00,436100.00
+10_released_lien,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=772.31 months=4.5000,3475.40
+10_released_lien,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,15387.50
+10_released_lien,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,34183.75
+10_released_lien,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,257000.00
+10_released_lien,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,257000.00
+10_released_lien,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=16965.00,488465.00
+10_released_lien,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,214500.00
+10_released_lien,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+10_released_lien,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+10_released_lien,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+10_released_lien,default,underwriting,value.v_expected,sum(v*w)/sum(w),,410000.00
+10_released_lien,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+10_released_lien,default,underwriting,value.v_low,V*(1-disp),,348500.00
+10_released_lien,default,underwriting,value.v_high,V*(1+disp),,471500.00
+10_released_lien,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1450 condition=cosmetic,26100.00
+10_released_lien,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+10_released_lien,default,underwriting,scenario[conservative].holding,monthly x months,monthly=685.19 months=9.0000,6166.71
+10_released_lien,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,12312.50
+10_released_lien,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,25266.25
+10_released_lien,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,134000.00
+10_released_lien,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,134000.00
+10_released_lien,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=36540.00,385040.00
+10_released_lien,default,underwriting,scenario[expected].holding,monthly x months,monthly=728.75 months=6.0000,4372.50
+10_released_lien,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,13850.00
+10_released_lien,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,29725.00
+10_released_lien,default,underwriting,scenario[expected].equity.gross,V - confirmed,,195500.00
+10_released_lien,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,195500.00
+10_released_lien,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=26100.00,436100.00
+10_released_lien,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=772.31 months=4.5000,3475.40
+10_released_lien,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,15387.50
+10_released_lien,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,34183.75
+10_released_lien,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,257000.00
+10_released_lien,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,257000.00
+10_released_lien,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=19575.00,491075.00
+11_missing_apn,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,140000.00
+11_missing_apn,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+11_missing_apn,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+11_missing_apn,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+11_missing_apn,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,290000.00
+11_missing_apn,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+11_missing_apn,aggressive,underwriting,value.v_low,V*(1-disp),,246500.00
+11_missing_apn,aggressive,underwriting,value.v_high,V*(1+disp),,333500.00
+11_missing_apn,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1250 condition=moderate,52500.00
+11_missing_apn,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+11_missing_apn,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=562.94 months=12.0000,6755.28
+11_missing_apn,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9762.50
+11_missing_apn,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,17871.25
+11_missing_apn,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,106500.00
+11_missing_apn,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,106500.00
+11_missing_apn,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=63000.00,309500.00
+11_missing_apn,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=593.75 months=8.0000,4750.00
+11_missing_apn,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10850.00
+11_missing_apn,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,21025.00
+11_missing_apn,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,150000.00
+11_missing_apn,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,150000.00
+11_missing_apn,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=52500.00,342500.00
+11_missing_apn,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=624.56 months=6.0000,3747.36
+11_missing_apn,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11937.50
+11_missing_apn,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,24178.75
+11_missing_apn,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,193500.00
+11_missing_apn,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,193500.00
+11_missing_apn,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=44625.00,378125.00
+11_missing_apn,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,140000.00
+11_missing_apn,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+11_missing_apn,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+11_missing_apn,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+11_missing_apn,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,290000.00
+11_missing_apn,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+11_missing_apn,conservative,underwriting,value.v_low,V*(1-disp),,246500.00
+11_missing_apn,conservative,underwriting,value.v_high,V*(1+disp),,333500.00
+11_missing_apn,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1250 condition=moderate,52500.00
+11_missing_apn,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+11_missing_apn,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=562.94 months=12.0000,6755.28
+11_missing_apn,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9762.50
+11_missing_apn,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,17871.25
+11_missing_apn,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,106500.00
+11_missing_apn,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,106500.00
+11_missing_apn,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=84000.00,330500.00
+11_missing_apn,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=593.75 months=8.0000,4750.00
+11_missing_apn,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10850.00
+11_missing_apn,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,21025.00
+11_missing_apn,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,150000.00
+11_missing_apn,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,150000.00
+11_missing_apn,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=52500.00,342500.00
+11_missing_apn,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=624.56 months=6.0000,3747.36
+11_missing_apn,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11937.50
+11_missing_apn,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,24178.75
+11_missing_apn,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,193500.00
+11_missing_apn,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,193500.00
+11_missing_apn,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=34125.00,367625.00
+11_missing_apn,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,140000.00
+11_missing_apn,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+11_missing_apn,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+11_missing_apn,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+11_missing_apn,default,underwriting,value.v_expected,sum(v*w)/sum(w),,290000.00
+11_missing_apn,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+11_missing_apn,default,underwriting,value.v_low,V*(1-disp),,246500.00
+11_missing_apn,default,underwriting,value.v_high,V*(1+disp),,333500.00
+11_missing_apn,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=1250 condition=moderate,52500.00
+11_missing_apn,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=moderate,8.0000
+11_missing_apn,default,underwriting,scenario[conservative].holding,monthly x months,monthly=562.94 months=12.0000,6755.28
+11_missing_apn,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9762.50
+11_missing_apn,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,17871.25
+11_missing_apn,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,106500.00
+11_missing_apn,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,106500.00
+11_missing_apn,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=73500.00,320000.00
+11_missing_apn,default,underwriting,scenario[expected].holding,monthly x months,monthly=593.75 months=8.0000,4750.00
+11_missing_apn,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10850.00
+11_missing_apn,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,21025.00
+11_missing_apn,default,underwriting,scenario[expected].equity.gross,V - confirmed,,150000.00
+11_missing_apn,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,150000.00
+11_missing_apn,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=52500.00,342500.00
+11_missing_apn,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=624.56 months=6.0000,3747.36
+11_missing_apn,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11937.50
+11_missing_apn,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,24178.75
+11_missing_apn,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,193500.00
+11_missing_apn,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,193500.00
+11_missing_apn,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=39375.00,372875.00
+12_condo_hoa_arrears,aggressive,underwriting,liabilities.confirmed,sum of confirmed bucket,,171000.00
+12_condo_hoa_arrears,aggressive,underwriting,liabilities.potential,sum of potential bucket,,0.00
+12_condo_hoa_arrears,aggressive,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+12_condo_hoa_arrears,aggressive,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+12_condo_hoa_arrears,aggressive,underwriting,value.v_expected,sum(v*w)/sum(w),,275000.00
+12_condo_hoa_arrears,aggressive,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+12_condo_hoa_arrears,aggressive,underwriting,value.v_low,V*(1-disp),,233750.00
+12_condo_hoa_arrears,aggressive,underwriting,value.v_high,V*(1+disp),,316250.00
+12_condo_hoa_arrears,aggressive,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=980 condition=cosmetic,17640.00
+12_condo_hoa_arrears,aggressive,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+12_condo_hoa_arrears,aggressive,underwriting,scenario[conservative].holding,monthly x months,monthly=978.91 months=9.0000,8810.19
+12_condo_hoa_arrears,aggressive,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9443.75
+12_condo_hoa_arrears,aggressive,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,16946.88
+12_condo_hoa_arrears,aggressive,underwriting,scenario[conservative].equity.gross,V - confirmed,,62750.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,62750.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=21168.00,254918.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[expected].holding,monthly x months,monthly=1008.13 months=6.0000,6048.78
+12_condo_hoa_arrears,aggressive,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10475.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,19937.50
+12_condo_hoa_arrears,aggressive,underwriting,scenario[expected].equity.gross,V - confirmed,,104000.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,104000.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=17640.00,292640.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[optimistic].holding,monthly x months,monthly=1037.34 months=4.5000,4668.03
+12_condo_hoa_arrears,aggressive,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11506.25
+12_condo_hoa_arrears,aggressive,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,22928.13
+12_condo_hoa_arrears,aggressive,underwriting,scenario[optimistic].equity.gross,V - confirmed,,145250.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,145250.00
+12_condo_hoa_arrears,aggressive,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=14994.00,331244.00
+12_condo_hoa_arrears,conservative,underwriting,liabilities.confirmed,sum of confirmed bucket,,171000.00
+12_condo_hoa_arrears,conservative,underwriting,liabilities.potential,sum of potential bucket,,0.00
+12_condo_hoa_arrears,conservative,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+12_condo_hoa_arrears,conservative,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+12_condo_hoa_arrears,conservative,underwriting,value.v_expected,sum(v*w)/sum(w),,275000.00
+12_condo_hoa_arrears,conservative,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+12_condo_hoa_arrears,conservative,underwriting,value.v_low,V*(1-disp),,233750.00
+12_condo_hoa_arrears,conservative,underwriting,value.v_high,V*(1+disp),,316250.00
+12_condo_hoa_arrears,conservative,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=980 condition=cosmetic,17640.00
+12_condo_hoa_arrears,conservative,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+12_condo_hoa_arrears,conservative,underwriting,scenario[conservative].holding,monthly x months,monthly=978.91 months=9.0000,8810.19
+12_condo_hoa_arrears,conservative,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9443.75
+12_condo_hoa_arrears,conservative,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,16946.88
+12_condo_hoa_arrears,conservative,underwriting,scenario[conservative].equity.gross,V - confirmed,,62750.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,62750.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=28224.00,261974.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[expected].holding,monthly x months,monthly=1008.13 months=6.0000,6048.78
+12_condo_hoa_arrears,conservative,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10475.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,19937.50
+12_condo_hoa_arrears,conservative,underwriting,scenario[expected].equity.gross,V - confirmed,,104000.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,104000.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=17640.00,292640.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[optimistic].holding,monthly x months,monthly=1037.34 months=4.5000,4668.03
+12_condo_hoa_arrears,conservative,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11506.25
+12_condo_hoa_arrears,conservative,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,22928.13
+12_condo_hoa_arrears,conservative,underwriting,scenario[optimistic].equity.gross,V - confirmed,,145250.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,145250.00
+12_condo_hoa_arrears,conservative,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=11466.00,327716.00
+12_condo_hoa_arrears,default,underwriting,liabilities.confirmed,sum of confirmed bucket,,171000.00
+12_condo_hoa_arrears,default,underwriting,liabilities.potential,sum of potential bucket,,0.00
+12_condo_hoa_arrears,default,underwriting,liabilities.potential_weighted,sum(potential x attachment_probability),,0.00
+12_condo_hoa_arrears,default,underwriting,value.candidate[comp].weight,base_weight x adjustment,base=1 adj=1.000000,1.000000
+12_condo_hoa_arrears,default,underwriting,value.v_expected,sum(v*w)/sum(w),,275000.00
+12_condo_hoa_arrears,default,underwriting,value.dispersion,"single->0.15 else clamp(wstdev/V,0.04,0.30)",,0.15
+12_condo_hoa_arrears,default,underwriting,value.v_low,V*(1-disp),,233750.00
+12_condo_hoa_arrears,default,underwriting,value.v_high,V*(1+disp),,316250.00
+12_condo_hoa_arrears,default,underwriting,repairs.base,sqft x psf[condition] x regional_index,sqft=980 condition=cosmetic,17640.00
+12_condo_hoa_arrears,default,underwriting,holding.months_base,acquisition_months + repair_months + market_days/30,condition=cosmetic,6.0000
+12_condo_hoa_arrears,default,underwriting,scenario[conservative].holding,monthly x months,monthly=978.91 months=9.0000,8810.19
+12_condo_hoa_arrears,default,underwriting,scenario[conservative].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,9443.75
+12_condo_hoa_arrears,default,underwriting,scenario[conservative].resale,V x resale_pct,resale_pct=0.0725,16946.88
+12_condo_hoa_arrears,default,underwriting,scenario[conservative].equity.gross,V - confirmed,,62750.00
+12_condo_hoa_arrears,default,underwriting,scenario[conservative].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,62750.00
+12_condo_hoa_arrears,default,underwriting,scenario[conservative].arv,V + repairs (recapture 1.0),repairs=24696.00,258446.00
+12_condo_hoa_arrears,default,underwriting,scenario[expected].holding,monthly x months,monthly=1008.13 months=6.0000,6048.78
+12_condo_hoa_arrears,default,underwriting,scenario[expected].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,10475.00
+12_condo_hoa_arrears,default,underwriting,scenario[expected].resale,V x resale_pct,resale_pct=0.0725,19937.50
+12_condo_hoa_arrears,default,underwriting,scenario[expected].equity.gross,V - confirmed,,104000.00
+12_condo_hoa_arrears,default,underwriting,scenario[expected].equity.adjusted,V - confirmed - potential_weighted,pw=0.00,104000.00
+12_condo_hoa_arrears,default,underwriting,scenario[expected].arv,V + repairs (recapture 1.0),repairs=17640.00,292640.00
+12_condo_hoa_arrears,default,underwriting,scenario[optimistic].holding,monthly x months,monthly=1037.34 months=4.5000,4668.03
+12_condo_hoa_arrears,default,underwriting,scenario[optimistic].acquisition,V x acq_pct + flats,acq_pct=0.025 flat=3600,11506.25
+12_condo_hoa_arrears,default,underwriting,scenario[optimistic].resale,V x resale_pct,resale_pct=0.0725,22928.13
+12_condo_hoa_arrears,default,underwriting,scenario[optimistic].equity.gross,V - confirmed,,145250.00
+12_condo_hoa_arrears,default,underwriting,scenario[optimistic].equity.adjusted,V - confirmed - potential_weighted,pw=0,145250.00
+12_condo_hoa_arrears,default,underwriting,scenario[optimistic].arv,V + repairs (recapture 1.0),repairs=13230.00,329480.00

@@ -2,7 +2,26 @@
   "name": "acq-web",
   "private": true,
   "type": "module",
-  "scripts": {"dev": "vite", "build": "tsc && vite build"},
-  "dependencies": {"@vitejs/plugin-react": "latest", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest"},
-  "devDependencies": {}
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.0.5",
+    "vite": "8.2.1",
+    "typescript": "7.0.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "msw": "2.15.0",
+    "json-schema-to-typescript": "15.0.4"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
 }

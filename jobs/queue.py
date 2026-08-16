@@ -32,9 +32,14 @@ class InMemoryJobQueue:
         self.jobs: list[Job] = []
 
     def enqueue(self, name: str, payload: dict, dedupe_key: str | None = None) -> Job:
-        if dedupe_key and any(j.dedupe_key == dedupe_key and j.status not in (JobStatus.DEAD, JobStatus.FAILED)
-                              for j in self.jobs):
-            return next(j for j in self.jobs if j.dedupe_key == dedupe_key)
+        # Dedupe only blocks while an active job holds the key; once the prior
+        # job finishes, re-enqueueing is allowed (recompute_property must be
+        # re-triggerable over a property's lifetime).
+        if dedupe_key:
+            active = next((j for j in self.jobs if j.dedupe_key == dedupe_key
+                           and j.status in (JobStatus.QUEUED, JobStatus.RUNNING)), None)
+            if active is not None:
+                return active
         job = Job(name=name, payload=payload, dedupe_key=dedupe_key)
         self.jobs.append(job)
         return job

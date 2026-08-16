@@ -1,70 +1,463 @@
+"""Deterministic scoring per spec section 10. Pure library: no DB, no IO, no LLM numbers.
+
+All weights, bounds, and point values come from a scoring config (a
+``scoring_configs`` row in production); ``DEFAULT_CONFIG`` is the in-code
+fallback used when no config is supplied (e.g. offline tests). Every sub-term
+of every component score is emitted into ``ScoreSet.components`` under a
+stable name — WP-14's "why is A above B" reads those names as a contract.
+"""
+from __future__ import annotations
+
+from datetime import date
 from decimal import Decimal
+from typing import Any, Mapping
 from uuid import UUID
 
-from contracts import NormalizedProperty, ScoreSet, StrategyResult, StrategyType, UnderwritingResult
-
+from contracts import (
+    AttachmentBasis,
+    NormalizedProperty,
+    Scenario,
+    ScoreSet,
+    StrategyResult,
+    StrategyType,
+    UnderwritingResult,
+)
 
 ZERO = Decimal("0")
+ONE = Decimal("1")
+HUNDRED = Decimal("100")
+DAYS_PER_MONTH = Decimal("30.4375")
+
+TAX_LIEN_TYPES = frozenset({"tax", "property_tax", "state_tax", "federal_tax"})
+FEDERAL_TAX_LIEN_TYPE = "federal_tax"
+ACTIVE_BANKRUPTCY_STATUSES = frozenset({"active"})
+PRIOR_BANKRUPTCY_STATUSES = frozenset({"dismissed", "discharged", "closed"})
+FAILED_LISTING_STATUSES = frozenset({"expired", "cancelled"})
+NEAR_SALE_STAGES = frozenset({"nts", "auction"})
+
+# Deterministic tie-break order for recommended-strategy selection.
+STRATEGY_PRIORITY = (
+    StrategyType.CASH,
+    StrategyType.FLIP,
+    StrategyType.WHOLESALE,
+    StrategyType.RENTAL,
+    StrategyType.SUBJECT_TO,
+    StrategyType.FORECLOSURE,
+)
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "version": 0,
+    "weights": {
+        "overall": {"fos": Decimal("0.50"), "distress": Decimal("0.20"), "dcs": Decimal("0.20"), "risk": Decimal("0.25")},
+        "fos": {
+            "profit": Decimal("0.30"),
+            "roi": Decimal("0.25"),
+            "equity_pct": Decimal("0.20"),
+            "discount_to_value": Decimal("0.15"),
+            "margin_of_safety": Decimal("0.10"),
+        },
+        "dcs": {
+            "coverage": Decimal("0.30"),
+            "corroboration": Decimal("0.20"),
+            "recency": Decimal("0.20"),
+            "conflict": Decimal("0.15"),
+            "verification": Decimal("0.10"),
+            "extraction": Decimal("0.05"),
+        },
+    },
+    "bounds": {
+        "profit": (ZERO, Decimal("150000")),
+        "roi": (ZERO, Decimal("0.50")),
+        "equity_pct": (ZERO, Decimal("0.60")),
+        "discount_to_value": (ZERO, Decimal("0.35")),
+        "margin_of_safety": (ZERO, Decimal("0.35")),
+        "critical_field_count": Decimal("22"),
+        "conflict_penalty_divisor": Decimal("5"),
+        "dcs_recency_half_life_days": Decimal("180"),
+        "distress_decay_half_life_months": Decimal("18"),
+        "nts_near_days": Decimal("30"),
+        "owner_only_lien_threshold": Decimal("10000"),
+        "high_equity_threshold": Decimal("0.50"),
+        "years_owned_threshold": Decimal("15"),
+        "delinquent_years_threshold": Decimal("2"),
+        "near_tie_points": Decimal("5"),
+    },
+    "distress_points": {
+        "nts_near": Decimal("30"),
+        "nts_far": Decimal("24"),
+        "nod": Decimal("18"),
+        "prior_foreclosure_each": Decimal("8"),
+        "prior_foreclosure_cap": Decimal("16"),
+        "bankruptcy_active": Decimal("12"),
+        "bankruptcy_prior_each": Decimal("6"),
+        "bankruptcy_prior_cap": Decimal("18"),
+        "repeat_filings": Decimal("8"),
+        "tax_lien_property": Decimal("10"),
+        "tax_lien_owner": Decimal("4"),
+        "other_lien_each": Decimal("3"),
+        "other_lien_cap": Decimal("12"),
+        "taxes_delinquent": Decimal("10"),
+        "absentee": Decimal("5"),
+        "long_ownership": Decimal("4"),
+        "listing_failure_each": Decimal("6"),
+        "listing_failure_cap": Decimal("12"),
+        "high_equity_bonus": Decimal("5"),
+    },
+    # Stored inside the ``distress_points`` jsonb column under a "risk" key in
+    # the DB (the schema has no dedicated column); see ranking.load_active_scoring_config.
+    "risk_points": {
+        "lien_count": Decimal("6"),
+        "active_bankruptcy": Decimal("15"),
+        "foreclosure_stage": Decimal("12"),
+        "owner_only_lien": Decimal("10"),
+        "title_flag": Decimal("10"),
+        "owner_occupied": Decimal("8"),
+        "hoa_arrears": Decimal("8"),
+        "material_conflict": Decimal("10"),
+        "low_confidence": Decimal("12"),
+        "federal_tax_lien": Decimal("6"),
+    },
+    "gates": {
+        "dcs_cap_threshold": Decimal("40"),
+        "dcs_cap": Decimal("45"),
+        "dcs_low_threshold": Decimal("50"),
+    },
+}
+
+
+def _d(value: Any) -> Decimal:
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def resolve_config(config: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Deep-merge a scoring config (or partial dict) over DEFAULT_CONFIG."""
+    merged: dict[str, Any] = {"version": DEFAULT_CONFIG["version"]}
+    for section, values in DEFAULT_CONFIG.items():
+        if isinstance(values, Mapping):
+            merged[section] = {key: (dict(value) if isinstance(value, Mapping) else value) for key, value in values.items()}
+    if not config:
+        return merged
+    for section, values in config.items():
+        if section == "version" or not isinstance(values, Mapping) or not isinstance(merged.get(section), Mapping):
+            merged[section] = values
+            continue
+        for key, value in values.items():
+            if isinstance(value, Mapping) and isinstance(merged[section].get(key), Mapping):
+                merged[section][key] = {**merged[section][key], **value}
+            else:
+                merged[section][key] = value
+    return merged
+
+
+def _weights(config: Mapping[str, Any], section: str) -> dict[str, Decimal]:
+    return {key: _d(value) for key, value in config["weights"][section].items()}
+
+
+def _points(config: Mapping[str, Any], section: str) -> dict[str, Decimal]:
+    return {key: _d(value) for key, value in config[section].items()}
+
+
+def _bound(config: Mapping[str, Any], key: str) -> Any:
+    value = config["bounds"][key]
+    if isinstance(value, (list, tuple)):
+        return _d(value[0]), _d(value[1])
+    return _d(value)
 
 
 def n(value: Decimal | None, low: Decimal, high: Decimal) -> Decimal:
     if value is None or high == low:
         return ZERO
-    return max(ZERO, min(Decimal("1"), (value - low) / (high - low)))
+    return max(ZERO, min(ONE, (value - low) / (high - low)))
 
 
-def _best_strategy(strategies: list[StrategyResult]) -> StrategyResult | None:
-    viable = [item for item in strategies if item.status == "viable" and item.strategy in (StrategyType.CASH, StrategyType.FLIP)]
-    return max(viable, key=lambda item: item.profit or ZERO) if viable else None
+def _clamp100(value: Decimal) -> Decimal:
+    return max(ZERO, min(HUNDRED, value))
 
 
-def _distress(record: NormalizedProperty) -> Decimal:
-    points = ZERO
-    if record.foreclosure and record.foreclosure.is_active:
-        points += Decimal("30") if record.foreclosure.current_sale_date else Decimal("18")
-        points += min(Decimal("16"), Decimal(record.foreclosure.postponement_count) * Decimal("8"))
-    points += Decimal("12") * Decimal(len(record.bankruptcies))
+def _months_between(as_of: date, when: date | None) -> Decimal:
+    if when is None:
+        return ZERO
+    days = (as_of - when).days
+    return Decimal(days) / DAYS_PER_MONTH if days > 0 else ZERO
+
+
+def _decay(months: Decimal, half_life_months: Decimal) -> Decimal:
+    """Recency decay 0.5^(months/half_life); dateless events are treated as fresh."""
+    if months <= 0 or half_life_months <= 0:
+        return ONE
+    return Decimal(str(0.5 ** float(months / half_life_months)))
+
+
+def _is_open_lien(lien: Any) -> bool:
+    return lien.status != "released"
+
+
+def _recommend(config: Mapping[str, Any], strategies: list[StrategyResult]) -> tuple[StrategyResult | None, list[StrategyType]]:
+    """Highest-scoring viable strategy; near-ties within the configured point
+    band are alternatives. Ties break by STRATEGY_PRIORITY."""
+    viable = [item for item in strategies if item.status == "viable"]
+    if not viable:
+        return None, []
+    low, high = _bound(config, "profit")
+    near_tie = _bound(config, "near_tie_points")
+
+    def points(item: StrategyResult) -> Decimal:
+        return HUNDRED * n(item.profit, low, high)
+
+    best = max(viable, key=lambda item: (points(item), -STRATEGY_PRIORITY.index(item.strategy)))
+    best_points = points(best)
+    alternatives = [
+        item.strategy
+        for item in sorted(viable, key=lambda item: STRATEGY_PRIORITY.index(item.strategy))
+        if item is not best and best_points - points(item) <= near_tie
+    ]
+    return best, alternatives
+
+
+def _fos(config: Mapping[str, Any], profit: Decimal | None, roi: Decimal | None, equity_pct: Decimal | None,
+         discount: Decimal, margin: Decimal | None) -> tuple[Decimal, dict[str, Decimal]]:
+    weights = _weights(config, "fos")
+    terms = {}
+    for key, value in (("profit", profit), ("roi", roi), ("equity_pct", equity_pct),
+                       ("discount_to_value", discount), ("margin_of_safety", margin)):
+        low, high = _bound(config, key)
+        terms[f"fos_{key}"] = HUNDRED * weights[key] * n(value, low, high)
+    return sum(terms.values(), ZERO), terms
+
+
+def _distress(record: NormalizedProperty, config: Mapping[str, Any], as_of: date,
+              equity_pct: Decimal | None) -> tuple[Decimal, dict[str, Decimal]]:
+    """Additive points with recency decay 0.5^(months/18) on dated events,
+    per-category caps, and an overall cap of 100. Distress indicates financial
+    pressure, not willingness to sell."""
+    points_cfg = _points(config, "distress_points")
+    half_life = _bound(config, "distress_decay_half_life_months")
+    terms: dict[str, Decimal] = {}
+
+    foreclosure = record.foreclosure
+    foreclosure_points = ZERO
+    if foreclosure and foreclosure.is_active:
+        if foreclosure.stage == "nod":
+            base, event_date = points_cfg["nod"], foreclosure.nod_date
+        elif foreclosure.stage in NEAR_SALE_STAGES:
+            near_days = int(_bound(config, "nts_near_days"))
+            is_near = (foreclosure.stage == "auction") or (
+                foreclosure.current_sale_date is not None
+                and 0 <= (foreclosure.current_sale_date - as_of).days <= near_days
+            )
+            base = points_cfg["nts_near"] if is_near else points_cfg["nts_far"]
+            event_date = foreclosure.nts_date
+        else:
+            base, event_date = ZERO, None
+        foreclosure_points = base * _decay(_months_between(as_of, event_date), half_life)
+    terms["distress_foreclosure"] = foreclosure_points
+
+    prior_events = (foreclosure.postponement_count + foreclosure.rescission_count) if foreclosure else 0
+    terms["distress_prior_foreclosure_activity"] = min(
+        points_cfg["prior_foreclosure_cap"], points_cfg["prior_foreclosure_each"] * prior_events
+    )
+
+    active_bk = [item for item in record.bankruptcies if item.status in ACTIVE_BANKRUPTCY_STATUSES]
+    prior_bk = [item for item in record.bankruptcies if item.status in PRIOR_BANKRUPTCY_STATUSES]
+    terms["distress_bankruptcy_active"] = max(
+        (points_cfg["bankruptcy_active"] * _decay(_months_between(as_of, item.filing_date), half_life) for item in active_bk),
+        default=ZERO,
+    )
+    terms["distress_bankruptcy_prior"] = min(
+        points_cfg["bankruptcy_prior_cap"],
+        sum((points_cfg["bankruptcy_prior_each"] * _decay(_months_between(as_of, item.filing_date), half_life) for item in prior_bk), ZERO),
+    )
+    is_repeat = len(record.bankruptcies) >= 2 or any(item.sequence is not None and item.sequence >= 2 for item in record.bankruptcies)
+    terms["distress_repeat_filings"] = points_cfg["repeat_filings"] if is_repeat else ZERO
+
+    tax_property = tax_owner = other = ZERO
     for lien in record.liens:
-        if lien.status == "active":
-            points += Decimal("10") if lien.attachment_basis.value == "recorded_against_property" and lien.lien_type == "property_tax" else Decimal("3")
-    if record.taxes.delinquent_years and record.taxes.delinquent_years >= 2:
-        points += Decimal("10")
-    if record.ownership.is_absentee:
-        points += Decimal("5")
-    if record.ownership.years_owned and record.ownership.years_owned > Decimal("15"):
-        points += Decimal("4")
-    return min(Decimal("100"), points)
+        if not _is_open_lien(lien):
+            continue
+        decay = _decay(_months_between(as_of, lien.recording_date), half_life)
+        if lien.lien_type in TAX_LIEN_TYPES and lien.attachment_basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY:
+            tax_property += points_cfg["tax_lien_property"] * decay
+        elif lien.lien_type in TAX_LIEN_TYPES and lien.attachment_basis == AttachmentBasis.OWNER_NAMED_ONLY:
+            tax_owner += points_cfg["tax_lien_owner"] * decay
+        else:
+            other += points_cfg["other_lien_each"] * decay
+    terms["distress_tax_lien_property"] = tax_property
+    terms["distress_tax_lien_owner"] = tax_owner
+    terms["distress_other_liens"] = min(points_cfg["other_lien_cap"], other)
+
+    delinquent_years = record.taxes.delinquent_years or 0
+    terms["distress_taxes_delinquent"] = (
+        points_cfg["taxes_delinquent"] if delinquent_years >= int(_bound(config, "delinquent_years_threshold")) else ZERO
+    )
+    terms["distress_absentee"] = points_cfg["absentee"] if record.ownership.is_absentee else ZERO
+    years_owned = record.ownership.years_owned
+    terms["distress_long_ownership"] = (
+        points_cfg["long_ownership"] if years_owned is not None and years_owned > _bound(config, "years_owned_threshold") else ZERO
+    )
+
+    listing_failures = sum(
+        (
+            points_cfg["listing_failure_each"] * _decay(_months_between(as_of, listing.delist_date or listing.list_date), half_life)
+            for listing in record.listings
+            if listing.status in FAILED_LISTING_STATUSES
+        ),
+        ZERO,
+    )
+    terms["distress_listing_failures"] = min(points_cfg["listing_failure_cap"], listing_failures)
+
+    high_equity = equity_pct is not None and equity_pct >= _bound(config, "high_equity_threshold")
+    terms["distress_high_equity_bonus"] = (
+        points_cfg["high_equity_bonus"] if high_equity and sum(terms.values(), ZERO) > ZERO else ZERO
+    )
+
+    return _clamp100(sum(terms.values(), ZERO)), terms
 
 
-def _dcs(record: NormalizedProperty) -> Decimal:
+def _dcs(record: NormalizedProperty, config: Mapping[str, Any], as_of: date) -> tuple[Decimal, dict[str, Decimal]]:
+    weights = _weights(config, "dcs")
     quality = record.data_quality
-    conflict_penalty = min(Decimal("1"), Decimal(quality.material_conflict_count) / Decimal("5"))
-    return Decimal("100") * (Decimal(".30") * quality.critical_field_coverage + Decimal(".20") * min(Decimal("1"), quality.verified_field_count / Decimal("22")) + Decimal(".15") * (Decimal("1") - conflict_penalty) + Decimal(".10") * min(Decimal("1"), quality.verified_field_count / Decimal("22")) + Decimal(".25") * quality.mean_extraction_confidence)
+    critical = _bound(config, "critical_field_count")
+
+    coverage = max(ZERO, min(ONE, quality.critical_field_coverage))
+    corroborated = sum(1 for count in quality.source_counts_by_field.values() if count >= 2)
+    corroboration = max(ZERO, min(ONE, Decimal(corroborated) / critical)) if critical > 0 else ZERO
+    if quality.newest_report_date is not None:
+        days = max(0, (as_of - quality.newest_report_date).days)
+        half_life_days = _bound(config, "dcs_recency_half_life_days")
+        recency = Decimal(str(0.5 ** (days / float(half_life_days)))) if half_life_days > 0 else ONE
+    else:
+        recency = ZERO
+    divisor = _bound(config, "conflict_penalty_divisor")
+    conflict_penalty = min(ONE, Decimal(quality.material_conflict_count) / divisor) if divisor > 0 else ZERO
+    verification = max(ZERO, min(ONE, Decimal(quality.verified_field_count) / critical)) if critical > 0 else ZERO
+    extraction = max(ZERO, min(ONE, quality.mean_extraction_confidence))
+
+    terms = {
+        "dcs_coverage": HUNDRED * weights["coverage"] * coverage,
+        "dcs_corroboration": HUNDRED * weights["corroboration"] * corroboration,
+        "dcs_recency": HUNDRED * weights["recency"] * recency,
+        "dcs_conflict": HUNDRED * weights["conflict"] * (ONE - conflict_penalty),
+        "dcs_verification": HUNDRED * weights["verification"] * verification,
+        "dcs_extraction": HUNDRED * weights["extraction"] * extraction,
+    }
+    return sum(terms.values(), ZERO), terms
 
 
-def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_config_id: UUID, strategies: list[StrategyResult] | None = None) -> ScoreSet:
+def _risk(record: NormalizedProperty, config: Mapping[str, Any], dcs: Decimal) -> tuple[Decimal, dict[str, Decimal]]:
+    points_cfg = _points(config, "risk_points")
+    gates = _points(config, "gates")
+    open_liens = [lien for lien in record.liens if _is_open_lien(lien)]
+    foreclosure = record.foreclosure
+    terms: dict[str, Decimal] = {}
+
+    terms["risk_lien_count"] = points_cfg["lien_count"] * Decimal(len(open_liens))
+    terms["risk_active_bankruptcy"] = (
+        points_cfg["active_bankruptcy"] if any(item.status in ACTIVE_BANKRUPTCY_STATUSES for item in record.bankruptcies) else ZERO
+    )
+    terms["risk_foreclosure_stage"] = (
+        points_cfg["foreclosure_stage"] if foreclosure and foreclosure.is_active and foreclosure.stage in NEAR_SALE_STAGES else ZERO
+    )
+    threshold = _bound(config, "owner_only_lien_threshold")
+    over_threshold = sum(
+        1
+        for lien in open_liens
+        if lien.attachment_basis == AttachmentBasis.OWNER_NAMED_ONLY
+        and lien.amount is not None
+        and lien.amount.value is not None
+        and lien.amount.value > threshold
+    )
+    terms["risk_owner_only_liens"] = points_cfg["owner_only_lien"] * Decimal(over_threshold)
+    # Title flags (spec section 8): junior liens present, HOA super-priority,
+    # and a sale that has been postponed 3+ times.
+    title_flags = sum(
+        (
+            any(lien.priority not in (None, 1) for lien in open_liens),
+            record.hoa.has_lien,
+            bool(foreclosure and foreclosure.is_active and foreclosure.postponement_count >= 3),
+        )
+    )
+    terms["risk_title_flags"] = points_cfg["title_flag"] * Decimal(title_flags)
+    terms["risk_owner_occupied"] = points_cfg["owner_occupied"] if record.ownership.is_owner_occupied else ZERO
+    arrears = record.hoa.arrears
+    terms["risk_hoa_arrears"] = (
+        points_cfg["hoa_arrears"] if arrears is not None and arrears.value is not None and arrears.value > ZERO else ZERO
+    )
+    terms["risk_material_conflicts"] = points_cfg["material_conflict"] * Decimal(record.data_quality.material_conflict_count)
+    terms["risk_low_confidence"] = points_cfg["low_confidence"] if dcs < gates["dcs_low_threshold"] else ZERO
+    terms["risk_federal_tax_lien"] = (
+        points_cfg["federal_tax_lien"] if any(lien.lien_type == FEDERAL_TAX_LIEN_TYPE for lien in open_liens) else ZERO
+    )
+
+    return _clamp100(sum(terms.values(), ZERO)), terms
+
+
+def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_config_id: UUID,
+          strategies: list[StrategyResult] | None = None, config: Mapping[str, Any] | None = None,
+          as_of: date | None = None) -> ScoreSet:
+    """Score a property per spec section 10. ``config`` is a scoring_configs
+    row (or partial override dict); when omitted the in-code DEFAULT_CONFIG is
+    used. ``as_of`` anchors all recency math (defaults to today)."""
+    resolved = resolve_config(config)
+    as_of = as_of or date.today()
     strategies = strategies or []
-    best = _best_strategy(strategies)
+
     expected_value = underwriting.value.v_expected
+    equity_block = underwriting.equity.get(Scenario.EXPECTED)
+    equity_pct = equity_block.equity_pct if equity_block else None
+
+    best, alternatives = _recommend(resolved, strategies)
     profit = best.profit if best else None
     roi = best.roi if best else None
-    equity_pct = underwriting.equity.get(next(iter(underwriting.equity), None)).equity_pct if underwriting.equity else None
-    discount = (expected_value - (best.mao or expected_value)) / expected_value if expected_value and best else ZERO
-    margin = best.margin_of_safety if best else ZERO
-    fos = Decimal("100") * (Decimal(".30") * n(profit, ZERO, Decimal("150000")) + Decimal(".25") * n(roi, ZERO, Decimal(".50")) + Decimal(".20") * n(equity_pct, ZERO, Decimal(".60")) + Decimal(".15") * n(discount, ZERO, Decimal(".35")) + Decimal(".10") * n(margin, ZERO, Decimal(".35")))
-    distress = _distress(record)
-    dcs = _dcs(record)
-    risk = min(Decimal("100"), Decimal(len(record.liens) * 6) + Decimal("15" if record.bankruptcies else "0") + Decimal("12" if record.foreclosure and record.foreclosure.is_active else "0") + Decimal("10" if any(item.attachment_basis.value == "owner_named_only" and item.amount and item.amount.value and item.amount.value > Decimal("10000") for item in record.liens) else "0") + Decimal("8" if record.hoa.arrears and record.hoa.arrears.value else "0") + Decimal(record.data_quality.material_conflict_count * 10) + Decimal("12" if dcs < Decimal("50") else "0"))
-    overall = max(ZERO, min(Decimal("100"), Decimal(".50") * fos + Decimal(".20") * distress + Decimal(".20") * dcs - Decimal(".25") * risk))
-    gates = []
+    margin = best.margin_of_safety if best else None
+    if expected_value and best and best.mao is not None:
+        discount = (expected_value - best.mao) / expected_value
+    else:
+        discount = ZERO
+
+    fos, fos_terms = _fos(resolved, profit, roi, equity_pct, discount, margin)
+    distress, distress_terms = _distress(record, resolved, as_of, equity_pct)
+    dcs, dcs_terms = _dcs(record, resolved, as_of)
+    risk, risk_terms = _risk(record, resolved, dcs)
+
+    overall_weights = _weights(resolved, "overall")
+    gates_cfg = _points(resolved, "gates")
+    overall = _clamp100(
+        overall_weights["fos"] * fos + overall_weights["distress"] * distress
+        + overall_weights["dcs"] * dcs - overall_weights["risk"] * risk
+    )
+
+    gates: list[str] = []
     if underwriting.status != "ok":
         gates.append("insufficient_data")
-    if dcs < Decimal("40"):
+    if dcs < gates_cfg["dcs_cap_threshold"]:
         gates.append("needs_review")
-        overall = min(overall, Decimal("45"))
-    if any(item.is_gating for item in record.open_flags):
+        overall = min(overall, gates_cfg["dcs_cap"])
+    if any(flag.is_gating for flag in record.open_flags):
         gates.append("open_gating_flag")
-    return ScoreSet(property_id=record.property_id, scoring_config_id=scoring_config_id, fos=fos, distress=distress, data_confidence=dcs, risk=risk, overall=overall,
-                    components={"profit": profit or ZERO, "roi": roi or ZERO, "equity_pct": equity_pct or ZERO, "discount_to_value": discount, "margin_of_safety": margin},
-                    gates_applied=gates, is_rankable=underwriting.status == "ok" and "open_gating_flag" not in gates and "needs_review" not in gates,
-                    recommended_strategy=best.strategy if best else None)
+
+    components = {
+        "profit": profit or ZERO,
+        "roi": roi or ZERO,
+        "equity_pct": equity_pct or ZERO,
+        "discount_to_value": discount,
+        "margin_of_safety": margin or ZERO,
+        **fos_terms,
+        **distress_terms,
+        **dcs_terms,
+        **risk_terms,
+    }
+    return ScoreSet(
+        property_id=record.property_id,
+        scoring_config_id=scoring_config_id,
+        fos=fos,
+        distress=distress,
+        data_confidence=dcs,
+        risk=risk,
+        overall=overall,
+        components=components,
+        gates_applied=gates,
+        # needs_review caps the score at 45 but the property stays rankable (spec section 10).
+        is_rankable="insufficient_data" not in gates and "open_gating_flag" not in gates,
+        recommended_strategy=best.strategy if best else None,
+        recommended_alternatives=alternatives,
+    )

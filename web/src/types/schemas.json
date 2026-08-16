@@ -1,0 +1,3421 @@
+{
+  "TrackedValue": {
+    "$defs": {
+      "NullReason": {
+        "enum": [
+          "not_present",
+          "illegible",
+          "redacted",
+          "conflicting_in_source"
+        ],
+        "title": "NullReason",
+        "type": "string"
+      },
+      "SourceKind": {
+        "enum": [
+          "report",
+          "derived",
+          "human",
+          "api",
+          "pasted"
+        ],
+        "title": "SourceKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Value"
+      },
+      "confidence": {
+        "maximum": 1,
+        "minimum": 0,
+        "title": "Confidence",
+        "type": "number"
+      },
+      "source_kind": {
+        "$ref": "#/$defs/SourceKind"
+      },
+      "is_estimated": {
+        "title": "Is Estimated",
+        "type": "boolean"
+      },
+      "fact_id": {
+        "anyOf": [
+          {
+            "format": "uuid",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Fact Id"
+      },
+      "as_of": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "As Of"
+      },
+      "null_reason": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NullReason"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "value",
+      "confidence",
+      "source_kind",
+      "is_estimated"
+    ],
+    "title": "TrackedValue",
+    "type": "object"
+  },
+  "ExtractedFactDraft": {
+    "$defs": {
+      "EntityType": {
+        "enum": [
+          "property",
+          "mortgage",
+          "lien",
+          "foreclosure",
+          "bankruptcy",
+          "valuation",
+          "listing",
+          "comp",
+          "tax",
+          "rental",
+          "condition"
+        ],
+        "title": "EntityType",
+        "type": "string"
+      },
+      "NullReason": {
+        "enum": [
+          "not_present",
+          "illegible",
+          "redacted",
+          "conflicting_in_source"
+        ],
+        "title": "NullReason",
+        "type": "string"
+      },
+      "SourceKind": {
+        "enum": [
+          "report",
+          "derived",
+          "human",
+          "api",
+          "pasted"
+        ],
+        "title": "SourceKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "report_id": {
+        "format": "uuid",
+        "title": "Report Id",
+        "type": "string"
+      },
+      "extraction_unit_id": {
+        "format": "uuid",
+        "title": "Extraction Unit Id",
+        "type": "string"
+      },
+      "entity_type": {
+        "$ref": "#/$defs/EntityType"
+      },
+      "entity_local_id": {
+        "title": "Entity Local Id",
+        "type": "string"
+      },
+      "field_path": {
+        "title": "Field Path",
+        "type": "string"
+      },
+      "value_raw": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Value Raw"
+      },
+      "value_parsed": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Value Parsed"
+      },
+      "value_text": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Value Text"
+      },
+      "value_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Value Date"
+      },
+      "value_bool": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Value Bool"
+      },
+      "unit": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Unit"
+      },
+      "as_of_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "As Of Date"
+      },
+      "page_number": {
+        "minimum": 1,
+        "title": "Page Number",
+        "type": "integer"
+      },
+      "snippet": {
+        "maxLength": 200,
+        "title": "Snippet",
+        "type": "string"
+      },
+      "extraction_confidence": {
+        "maximum": 1,
+        "minimum": 0,
+        "title": "Extraction Confidence",
+        "type": "number"
+      },
+      "null_reason": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NullReason"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "source_kind": {
+        "$ref": "#/$defs/SourceKind",
+        "default": "report"
+      }
+    },
+    "required": [
+      "report_id",
+      "extraction_unit_id",
+      "entity_type",
+      "entity_local_id",
+      "field_path",
+      "page_number",
+      "snippet",
+      "extraction_confidence"
+    ],
+    "title": "ExtractedFactDraft",
+    "type": "object"
+  },
+  "NormalizedProperty": {
+    "$defs": {
+      "AddressBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "line1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line1"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unit"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "City"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "zip5": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Zip5"
+          },
+          "county": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "County"
+          },
+          "fips": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fips"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lat"
+          },
+          "lng": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lng"
+          }
+        },
+        "title": "AddressBlock",
+        "type": "object"
+      },
+      "AttachmentBasis": {
+        "enum": [
+          "recorded_against_property",
+          "owner_named_only",
+          "unknown"
+        ],
+        "title": "AttachmentBasis",
+        "type": "string"
+      },
+      "BankruptcyRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "chapter": {
+            "title": "Chapter",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "filing_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filing Date"
+          },
+          "discharge_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Discharge Date"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sequence"
+          }
+        },
+        "required": [
+          "chapter",
+          "status"
+        ],
+        "title": "BankruptcyRecord",
+        "type": "object"
+      },
+      "ComparableSale": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "sale_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sale Date"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "sqft": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sqft"
+          },
+          "distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Distance"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Similarity"
+          },
+          "included": {
+            "default": true,
+            "title": "Included",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "address"
+        ],
+        "title": "ComparableSale",
+        "type": "object"
+      },
+      "ConditionSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "enum": [
+              "pristine",
+              "cosmetic",
+              "moderate",
+              "heavy",
+              "gut"
+            ],
+            "title": "Condition",
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evidence"
+          }
+        },
+        "required": [
+          "condition"
+        ],
+        "title": "ConditionSignal",
+        "type": "object"
+      },
+      "DataQualityBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "critical_field_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Critical Field Coverage"
+          },
+          "source_counts_by_field": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Source Counts By Field",
+            "type": "object"
+          },
+          "conflict_count": {
+            "default": 0,
+            "title": "Conflict Count",
+            "type": "integer"
+          },
+          "material_conflict_count": {
+            "default": 0,
+            "title": "Material Conflict Count",
+            "type": "integer"
+          },
+          "verified_field_count": {
+            "default": 0,
+            "title": "Verified Field Count",
+            "type": "integer"
+          },
+          "ocr_applied": {
+            "default": false,
+            "title": "Ocr Applied",
+            "type": "boolean"
+          },
+          "newest_report_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Newest Report Date"
+          },
+          "mean_extraction_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Mean Extraction Confidence"
+          }
+        },
+        "title": "DataQualityBlock",
+        "type": "object"
+      },
+      "FlagSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "$ref": "#/$defs/FlagType"
+          },
+          "severity": {
+            "default": "warning",
+            "title": "Severity",
+            "type": "string"
+          },
+          "is_gating": {
+            "default": false,
+            "title": "Is Gating",
+            "type": "boolean"
+          },
+          "financial_impact": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Financial Impact"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "FlagSummary",
+        "type": "object"
+      },
+      "FlagType": {
+        "enum": [
+          "identity_conflict",
+          "lien_attachment",
+          "conflicting_mortgage",
+          "foreclosure_unclear",
+          "missing_lien_amount",
+          "valuation_dispersion",
+          "missing_apn",
+          "low_extraction_confidence",
+          "bid_mismatch",
+          "range_violation",
+          "possible_duplicate",
+          "short_sale_candidate"
+        ],
+        "title": "FlagType",
+        "type": "string"
+      },
+      "ForeclosureState": {
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "nod_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Nod Date"
+          },
+          "nts_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Nts Date"
+          },
+          "original_sale_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Original Sale Date"
+          },
+          "current_sale_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Sale Date"
+          },
+          "published_bid": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "default_amount": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "postponement_count": {
+            "default": 0,
+            "title": "Postponement Count",
+            "type": "integer"
+          },
+          "rescission_count": {
+            "default": 0,
+            "title": "Rescission Count",
+            "type": "integer"
+          },
+          "trustee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trustee"
+          },
+          "is_active": {
+            "default": false,
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "ForeclosureState",
+        "type": "object"
+      },
+      "HoaBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "monthly_dues": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "arrears": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "has_lien": {
+            "default": false,
+            "title": "Has Lien",
+            "type": "boolean"
+          }
+        },
+        "title": "HoaBlock",
+        "type": "object"
+      },
+      "LienRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "lien_type": {
+            "title": "Lien Type",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "amount_is_estimated": {
+            "default": false,
+            "title": "Amount Is Estimated",
+            "type": "boolean"
+          },
+          "status": {
+            "default": "unknown",
+            "title": "Status",
+            "type": "string"
+          },
+          "attachment_basis": {
+            "$ref": "#/$defs/AttachmentBasis"
+          },
+          "attachment_confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Attachment Confidence",
+            "type": "number"
+          },
+          "recording_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recording Date"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Priority"
+          }
+        },
+        "required": [
+          "lien_type",
+          "attachment_basis",
+          "attachment_confidence"
+        ],
+        "title": "LienRecord",
+        "type": "object"
+      },
+      "ListingRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "list_date": {
+            "format": "date",
+            "title": "List Date",
+            "type": "string"
+          },
+          "delist_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delist Date"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "dom": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dom"
+          }
+        },
+        "required": [
+          "list_date",
+          "status"
+        ],
+        "title": "ListingRecord",
+        "type": "object"
+      },
+      "MortgageRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "position": {
+            "title": "Position",
+            "type": "string"
+          },
+          "lender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lender"
+          },
+          "original_amount": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rate"
+          },
+          "term_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Term Months"
+          },
+          "origination_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origination Date"
+          },
+          "estimated_balance": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "balance_method": {
+            "default": "reported",
+            "title": "Balance Method",
+            "type": "string"
+          },
+          "is_open": {
+            "default": true,
+            "title": "Is Open",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "position"
+        ],
+        "title": "MortgageRecord",
+        "type": "object"
+      },
+      "NullReason": {
+        "enum": [
+          "not_present",
+          "illegible",
+          "redacted",
+          "conflicting_in_source"
+        ],
+        "title": "NullReason",
+        "type": "string"
+      },
+      "OwnershipBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "owner_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Owner Names",
+            "type": "array"
+          },
+          "entity_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Entity Type"
+          },
+          "is_owner_occupied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Owner Occupied"
+          },
+          "is_absentee": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Absentee"
+          },
+          "ownership_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ownership Start Date"
+          },
+          "purchase_price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "years_owned": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Years Owned"
+          }
+        },
+        "title": "OwnershipBlock",
+        "type": "object"
+      },
+      "PropertyAttributes": {
+        "additionalProperties": false,
+        "properties": {
+          "property_type": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "beds": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "baths": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "sqft": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "lot_sqft": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "year_built": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "units": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "PropertyAttributes",
+        "type": "object"
+      },
+      "RentalBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "rent_estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          }
+        },
+        "title": "RentalBlock",
+        "type": "object"
+      },
+      "SourceKind": {
+        "enum": [
+          "report",
+          "derived",
+          "human",
+          "api",
+          "pasted"
+        ],
+        "title": "SourceKind",
+        "type": "string"
+      },
+      "TaxBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "annual_taxes": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "assessed_value": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "delinquent_amount": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TrackedValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "delinquent_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delinquent Years"
+          }
+        },
+        "title": "TaxBlock",
+        "type": "object"
+      },
+      "TrackedValue": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "source_kind": {
+            "$ref": "#/$defs/SourceKind"
+          },
+          "is_estimated": {
+            "title": "Is Estimated",
+            "type": "boolean"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fact Id"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "null_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/NullReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "value",
+          "confidence",
+          "source_kind",
+          "is_estimated"
+        ],
+        "title": "TrackedValue",
+        "type": "object"
+      },
+      "ValuationCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "valuation_type": {
+            "title": "Valuation Type",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/$defs/TrackedValue"
+          },
+          "value_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value Low"
+          },
+          "value_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value High"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "reported_confidence": {
+            "anyOf": [
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reported Confidence"
+          },
+          "weight_hint": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Weight Hint"
+          }
+        },
+        "required": [
+          "valuation_type",
+          "value"
+        ],
+        "title": "ValuationCandidate",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "property_id": {
+        "format": "uuid",
+        "title": "Property Id",
+        "type": "string"
+      },
+      "apn": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Apn"
+      },
+      "address": {
+        "$ref": "#/$defs/AddressBlock"
+      },
+      "attributes": {
+        "$ref": "#/$defs/PropertyAttributes"
+      },
+      "ownership": {
+        "$ref": "#/$defs/OwnershipBlock"
+      },
+      "valuation_candidates": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/ValuationCandidate"
+        },
+        "title": "Valuation Candidates",
+        "type": "array"
+      },
+      "mortgages": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/MortgageRecord"
+        },
+        "title": "Mortgages",
+        "type": "array"
+      },
+      "liens": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/LienRecord"
+        },
+        "title": "Liens",
+        "type": "array"
+      },
+      "foreclosure": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ForeclosureState"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "bankruptcies": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/BankruptcyRecord"
+        },
+        "title": "Bankruptcies",
+        "type": "array"
+      },
+      "taxes": {
+        "$ref": "#/$defs/TaxBlock"
+      },
+      "hoa": {
+        "$ref": "#/$defs/HoaBlock"
+      },
+      "rental": {
+        "$ref": "#/$defs/RentalBlock"
+      },
+      "listings": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/ListingRecord"
+        },
+        "title": "Listings",
+        "type": "array"
+      },
+      "comparables": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/ComparableSale"
+        },
+        "title": "Comparables",
+        "type": "array"
+      },
+      "condition": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ConditionSignal"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "data_quality": {
+        "$ref": "#/$defs/DataQualityBlock"
+      },
+      "open_flags": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/FlagSummary"
+        },
+        "title": "Open Flags",
+        "type": "array"
+      },
+      "resolution_version": {
+        "title": "Resolution Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "property_id",
+      "address",
+      "resolution_version"
+    ],
+    "title": "NormalizedProperty",
+    "type": "object"
+  },
+  "FlagRequest": {
+    "$defs": {
+      "FlagType": {
+        "enum": [
+          "identity_conflict",
+          "lien_attachment",
+          "conflicting_mortgage",
+          "foreclosure_unclear",
+          "missing_lien_amount",
+          "valuation_dispersion",
+          "missing_apn",
+          "low_extraction_confidence",
+          "bid_mismatch",
+          "range_violation",
+          "possible_duplicate",
+          "short_sale_candidate"
+        ],
+        "title": "FlagType",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "property_id": {
+        "format": "uuid",
+        "title": "Property Id",
+        "type": "string"
+      },
+      "flag_type": {
+        "$ref": "#/$defs/FlagType"
+      },
+      "payload": {
+        "additionalProperties": true,
+        "title": "Payload",
+        "type": "object"
+      },
+      "financial_impact_usd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Financial Impact Usd"
+      },
+      "raised_by": {
+        "title": "Raised By",
+        "type": "string"
+      },
+      "dedupe_key": {
+        "title": "Dedupe Key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "property_id",
+      "flag_type",
+      "payload",
+      "raised_by",
+      "dedupe_key"
+    ],
+    "title": "FlagRequest",
+    "type": "object"
+  },
+  "FilterClause": {
+    "additionalProperties": false,
+    "properties": {
+      "field": {
+        "title": "Field",
+        "type": "string"
+      },
+      "op": {
+        "enum": [
+          "eq",
+          "neq",
+          "gt",
+          "gte",
+          "lt",
+          "lte",
+          "in",
+          "between",
+          "contains",
+          "is_null"
+        ],
+        "title": "Op",
+        "type": "string"
+      },
+      "value": {
+        "default": null,
+        "title": "Value"
+      }
+    },
+    "required": [
+      "field",
+      "op"
+    ],
+    "title": "FilterClause",
+    "type": "object"
+  },
+  "MoneyResponse": {
+    "$defs": {
+      "NullReason": {
+        "enum": [
+          "not_present",
+          "illegible",
+          "redacted",
+          "conflicting_in_source"
+        ],
+        "title": "NullReason",
+        "type": "string"
+      },
+      "SourceKind": {
+        "enum": [
+          "report",
+          "derived",
+          "human",
+          "api",
+          "pasted"
+        ],
+        "title": "SourceKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Value"
+      },
+      "confidence": {
+        "maximum": 1,
+        "minimum": 0,
+        "title": "Confidence",
+        "type": "number"
+      },
+      "source_kind": {
+        "$ref": "#/$defs/SourceKind"
+      },
+      "is_estimated": {
+        "title": "Is Estimated",
+        "type": "boolean"
+      },
+      "null_reason": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NullReason"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "value",
+      "confidence",
+      "source_kind",
+      "is_estimated"
+    ],
+    "title": "MoneyResponse",
+    "type": "object"
+  },
+  "JobPayload": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "payload": {
+        "additionalProperties": true,
+        "default": {},
+        "title": "Payload",
+        "type": "object"
+      },
+      "dedupe_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Dedupe Key"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "title": "JobPayload",
+    "type": "object"
+  },
+  "AssumptionSet": {
+    "$defs": {
+      "AcquisitionCosts": {
+        "additionalProperties": false,
+        "properties": {
+          "closing_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Closing Pct"
+          },
+          "title_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Title Pct"
+          },
+          "escrow_flat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Escrow Flat"
+          },
+          "transfer_tax_lookup_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Transfer Tax Lookup Key"
+          },
+          "financing_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Financing Points"
+          },
+          "financing_flat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Financing Flat"
+          },
+          "inspection_flat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Inspection Flat"
+          },
+          "legal_flat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Legal Flat"
+          },
+          "acq_fee_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Acq Fee Pct"
+          }
+        },
+        "required": [
+          "closing_pct",
+          "title_pct",
+          "escrow_flat",
+          "financing_points",
+          "financing_flat",
+          "inspection_flat",
+          "legal_flat",
+          "acq_fee_pct"
+        ],
+        "title": "AcquisitionCosts",
+        "type": "object"
+      },
+      "AttachmentBasis": {
+        "enum": [
+          "recorded_against_property",
+          "owner_named_only",
+          "unknown"
+        ],
+        "title": "AttachmentBasis",
+        "type": "string"
+      },
+      "HoldingAssumptions": {
+        "additionalProperties": false,
+        "properties": {
+          "insurance_pct_yr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Insurance Pct Yr"
+          },
+          "utilities_monthly": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Utilities Monthly"
+          },
+          "maintenance_pct_yr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Maintenance Pct Yr"
+          },
+          "acquisition_months": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Acquisition Months"
+          },
+          "repair_months_by_condition": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Repair Months By Condition",
+            "type": "object"
+          },
+          "market_days_default": {
+            "title": "Market Days Default",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "insurance_pct_yr",
+          "utilities_monthly",
+          "maintenance_pct_yr",
+          "acquisition_months",
+          "repair_months_by_condition",
+          "market_days_default"
+        ],
+        "title": "HoldingAssumptions",
+        "type": "object"
+      },
+      "RepairAssumptions": {
+        "additionalProperties": false,
+        "properties": {
+          "psf_by_condition": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Psf By Condition",
+            "type": "object"
+          },
+          "low_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Low Multiplier"
+          },
+          "high_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "High Multiplier"
+          },
+          "regional_index": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Regional Index"
+          }
+        },
+        "required": [
+          "psf_by_condition",
+          "low_multiplier",
+          "high_multiplier",
+          "regional_index"
+        ],
+        "title": "RepairAssumptions",
+        "type": "object"
+      },
+      "ResaleAssumptions": {
+        "additionalProperties": false,
+        "properties": {
+          "commission_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Commission Pct"
+          },
+          "seller_closing_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Seller Closing Pct"
+          },
+          "concessions_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Concessions Pct"
+          },
+          "staging_flat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Staging Flat"
+          },
+          "misc_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Misc Pct"
+          }
+        },
+        "required": [
+          "commission_pct",
+          "seller_closing_pct",
+          "concessions_pct",
+          "staging_flat",
+          "misc_pct"
+        ],
+        "title": "ResaleAssumptions",
+        "type": "object"
+      },
+      "StrategyAssumptions": {
+        "additionalProperties": false,
+        "properties": {
+          "cash_target_margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Cash Target Margin"
+          },
+          "flip_target_margin_by_arv_band": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Flip Target Margin By Arv Band",
+            "type": "object"
+          },
+          "wholesale_investor_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Wholesale Investor Pct"
+          },
+          "min_assignment_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Min Assignment Spread"
+          },
+          "hard_money": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Hard Money",
+            "type": "object"
+          },
+          "rental": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Rental",
+            "type": "object"
+          }
+        },
+        "required": [
+          "cash_target_margin",
+          "flip_target_margin_by_arv_band",
+          "wholesale_investor_pct",
+          "min_assignment_spread",
+          "hard_money",
+          "rental"
+        ],
+        "title": "StrategyAssumptions",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "format": "uuid",
+        "title": "Id",
+        "type": "string"
+      },
+      "version": {
+        "title": "Version",
+        "type": "integer"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "acquisition": {
+        "$ref": "#/$defs/AcquisitionCosts"
+      },
+      "repairs": {
+        "$ref": "#/$defs/RepairAssumptions"
+      },
+      "holding": {
+        "$ref": "#/$defs/HoldingAssumptions"
+      },
+      "resale": {
+        "$ref": "#/$defs/ResaleAssumptions"
+      },
+      "strategy": {
+        "$ref": "#/$defs/StrategyAssumptions"
+      },
+      "attachment_probability": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ]
+        },
+        "propertyNames": {
+          "$ref": "#/$defs/AttachmentBasis"
+        },
+        "title": "Attachment Probability",
+        "type": "object"
+      },
+      "unknown_lien_medians": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ]
+        },
+        "title": "Unknown Lien Medians",
+        "type": "object"
+      },
+      "valuation_weights": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ]
+        },
+        "title": "Valuation Weights",
+        "type": "object"
+      }
+    },
+    "required": [
+      "id",
+      "version",
+      "name",
+      "acquisition",
+      "repairs",
+      "holding",
+      "resale",
+      "strategy",
+      "attachment_probability",
+      "unknown_lien_medians",
+      "valuation_weights"
+    ],
+    "title": "AssumptionSet",
+    "type": "object"
+  },
+  "UnderwritingResult": {
+    "$defs": {
+      "CostBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "acquisition": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Acquisition"
+          },
+          "repairs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Repairs"
+          },
+          "holding": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Holding"
+          },
+          "resale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Resale"
+          },
+          "financing": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Financing"
+          }
+        },
+        "title": "CostBlock",
+        "type": "object"
+      },
+      "EquityBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "gross": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gross"
+          },
+          "adjusted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Adjusted"
+          },
+          "net_realizable": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Net Realizable"
+          },
+          "equity_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Equity Pct"
+          }
+        },
+        "title": "EquityBlock",
+        "type": "object"
+      },
+      "LiabilityBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Confirmed"
+          },
+          "potential": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Potential"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Maximum"
+          },
+          "breakdown": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Breakdown",
+            "type": "array"
+          }
+        },
+        "title": "LiabilityBlock",
+        "type": "object"
+      },
+      "Scenario": {
+        "enum": [
+          "conservative",
+          "expected",
+          "optimistic"
+        ],
+        "title": "Scenario",
+        "type": "string"
+      },
+      "ValueBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "v_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "V Low"
+          },
+          "v_expected": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "V Expected"
+          },
+          "v_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "V High"
+          },
+          "dispersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dispersion"
+          },
+          "arv_by_scenario": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "default": {},
+            "propertyNames": {
+              "$ref": "#/$defs/Scenario"
+            },
+            "title": "Arv By Scenario",
+            "type": "object"
+          },
+          "candidates_used": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Candidates Used",
+            "type": "array"
+          },
+          "valuation_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Valuation Confidence"
+          }
+        },
+        "title": "ValueBlock",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "property_id": {
+        "format": "uuid",
+        "title": "Property Id",
+        "type": "string"
+      },
+      "assumption_set_id": {
+        "format": "uuid",
+        "title": "Assumption Set Id",
+        "type": "string"
+      },
+      "engine_version": {
+        "title": "Engine Version",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "insufficient_data"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "unavailable_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Unavailable Reason"
+      },
+      "value": {
+        "$ref": "#/$defs/ValueBlock"
+      },
+      "liabilities": {
+        "$ref": "#/$defs/LiabilityBlock"
+      },
+      "equity": {
+        "additionalProperties": {
+          "$ref": "#/$defs/EquityBlock"
+        },
+        "default": {},
+        "propertyNames": {
+          "$ref": "#/$defs/Scenario"
+        },
+        "title": "Equity",
+        "type": "object"
+      },
+      "costs": {
+        "additionalProperties": {
+          "$ref": "#/$defs/CostBlock"
+        },
+        "default": {},
+        "propertyNames": {
+          "$ref": "#/$defs/Scenario"
+        },
+        "title": "Costs",
+        "type": "object"
+      },
+      "debt_data_present": {
+        "default": false,
+        "title": "Debt Data Present",
+        "type": "boolean"
+      },
+      "confidence": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "default": "0",
+        "title": "Confidence"
+      }
+    },
+    "required": [
+      "property_id",
+      "assumption_set_id",
+      "engine_version",
+      "status"
+    ],
+    "title": "UnderwritingResult",
+    "type": "object"
+  },
+  "StrategyResult": {
+    "$defs": {
+      "Scenario": {
+        "enum": [
+          "conservative",
+          "expected",
+          "optimistic"
+        ],
+        "title": "Scenario",
+        "type": "string"
+      },
+      "StrategyType": {
+        "enum": [
+          "cash",
+          "flip",
+          "wholesale",
+          "rental",
+          "subject_to",
+          "foreclosure"
+        ],
+        "title": "StrategyType",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "strategy": {
+        "$ref": "#/$defs/StrategyType"
+      },
+      "scenario": {
+        "$ref": "#/$defs/Scenario"
+      },
+      "status": {
+        "enum": [
+          "viable",
+          "not_viable",
+          "unavailable",
+          "requires_human_review"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "unavailable_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Unavailable Reason"
+      },
+      "mao": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mao"
+      },
+      "all_in_basis": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "All In Basis"
+      },
+      "profit": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Profit"
+      },
+      "roi": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Roi"
+      },
+      "margin_of_safety": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Margin Of Safety"
+      },
+      "metrics": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default": {},
+        "title": "Metrics",
+        "type": "object"
+      },
+      "inputs_echo": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ]
+        },
+        "default": {},
+        "title": "Inputs Echo",
+        "type": "object"
+      },
+      "notices": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Notices",
+        "type": "array"
+      }
+    },
+    "required": [
+      "strategy",
+      "scenario",
+      "status"
+    ],
+    "title": "StrategyResult",
+    "type": "object"
+  },
+  "OfferGrid": {
+    "$defs": {
+      "OfferPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "offer_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Offer Price"
+          },
+          "scenario": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "confirmed_payoffs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Confirmed Payoffs"
+          },
+          "potential_payoffs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Potential Payoffs"
+          },
+          "closing_costs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Closing Costs"
+          },
+          "proceeds_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Proceeds Low"
+          },
+          "proceeds_expected": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Proceeds Expected"
+          },
+          "proceeds_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Proceeds High"
+          },
+          "buyer_basis": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Buyer Basis"
+          },
+          "profit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Profit"
+          },
+          "roi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Roi"
+          },
+          "is_short_sale": {
+            "title": "Is Short Sale",
+            "type": "boolean"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Label"
+          }
+        },
+        "required": [
+          "offer_price",
+          "scenario",
+          "confirmed_payoffs",
+          "potential_payoffs",
+          "closing_costs",
+          "proceeds_low",
+          "proceeds_expected",
+          "proceeds_high",
+          "buyer_basis",
+          "profit",
+          "is_short_sale"
+        ],
+        "title": "OfferPoint",
+        "type": "object"
+      },
+      "Scenario": {
+        "enum": [
+          "conservative",
+          "expected",
+          "optimistic"
+        ],
+        "title": "Scenario",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "property_id": {
+        "format": "uuid",
+        "title": "Property Id",
+        "type": "string"
+      },
+      "points": {
+        "items": {
+          "$ref": "#/$defs/OfferPoint"
+        },
+        "title": "Points",
+        "type": "array"
+      },
+      "interpolatable": {
+        "default": true,
+        "title": "Interpolatable",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "property_id",
+      "points"
+    ],
+    "title": "OfferGrid",
+    "type": "object"
+  },
+  "ScoreSet": {
+    "$defs": {
+      "StrategyType": {
+        "enum": [
+          "cash",
+          "flip",
+          "wholesale",
+          "rental",
+          "subject_to",
+          "foreclosure"
+        ],
+        "title": "StrategyType",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "property_id": {
+        "format": "uuid",
+        "title": "Property Id",
+        "type": "string"
+      },
+      "scoring_config_id": {
+        "format": "uuid",
+        "title": "Scoring Config Id",
+        "type": "string"
+      },
+      "fos": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Fos"
+      },
+      "distress": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Distress"
+      },
+      "data_confidence": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Data Confidence"
+      },
+      "risk": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Risk"
+      },
+      "overall": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Overall"
+      },
+      "components": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ]
+        },
+        "title": "Components",
+        "type": "object"
+      },
+      "gates_applied": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Gates Applied",
+        "type": "array"
+      },
+      "is_rankable": {
+        "title": "Is Rankable",
+        "type": "boolean"
+      },
+      "recommended_strategy": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/StrategyType"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "recommended_alternatives": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/StrategyType"
+        },
+        "title": "Recommended Alternatives",
+        "type": "array"
+      }
+    },
+    "required": [
+      "property_id",
+      "scoring_config_id",
+      "fos",
+      "distress",
+      "data_confidence",
+      "risk",
+      "overall",
+      "components",
+      "gates_applied",
+      "is_rankable"
+    ],
+    "title": "ScoreSet",
+    "type": "object"
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "property_id": "00000000-0000-0000-0000-000000000002",
+  "assumption_set_id": "10000000-0000-0000-0000-000000000001",
+  "engine_version": "golden-spec-1",
+  "status": "ok",
+  "unavailable_reason": null,
+  "value": {
+    "v_low": "382141.94",
+    "v_expected": "398064.52",
+    "v_high": "413987.10",
+    "dispersion": "0.040000",
+    "arv_by_scenario": {
+      "conservative": "423721.94",
+      "expected": "427764.52",
+      "optimistic": "436262.10"
+    },
+    "candidates_used": [
+      {
+        "type": "avm",
+        "value": "390000.00",
+        "weight": "0.240000"
+      },
+      {
+        "type": "comp",
+        "value": "400000.00",
+        "weight": "1.000000"
+      }
+    ],
+    "valuation_confidence": "0.85"
+  },
+  "liabilities": {
+    "confirmed": "0.00",
+    "potential": "128000.00",
+    "maximum": "128000.00",
+    "breakdown": [
+      {
+        "label": "federal_tax",
+        "amount": "128000.00",
+        "basis": "owner_named_only",
+        "is_estimated": false
+      }
+    ]
+  },
+  "equity": {
+    "conservative": {
+      "gross": "382141.94",
+      "adjusted": "254141.94",
+      "net_realizable": "218780.53",
+      "equity_pct": "1.000000"
+    },
+    "expected": {
+      "gross": "398064.52",
+      "adjusted": "353264.52",
+      "net_realizable": "319233.08",
+      "equity_pct": "1.000000"
+    },
+    "optimistic": {
+      "gross": "413987.10",
+      "adjusted": "413987.10",
+      "net_realizable": "380043.46",
+      "equity_pct": "1.000000"
+    }
+  },
+  "costs": {
+    "conservative": {
+      "acquisition": "13153.55",
+      "repairs": "41580.00",
+      "holding": "7656.12",
+      "resale": "27705.29",
+      "financing": "0"
+    },
+    "expected": {
+      "acquisition": "13551.61",
+      "repairs": "29700.00",
+      "holding": "5171.76",
+      "resale": "28859.68",
+      "financing": "0"
+    },
+    "optimistic": {
+      "acquisition": "13949.68",
+      "repairs": "22275.00",
+      "holding": "3929.58",
+      "resale": "30014.06",
+      "financing": "0"
+    }
+  },
+  "debt_data_present": true,
+  "confidence": "0.85"
+}

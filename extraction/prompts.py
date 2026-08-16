@@ -1,5 +1,4 @@
 import hashlib
-from pathlib import Path
 
 SYSTEM_PROMPT = """You are a document extraction engine for real estate records. You extract facts.
 You do not analyze, estimate, calculate, or infer.

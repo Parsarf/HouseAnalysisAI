@@ -1,0 +1,24 @@
+{
+  "expected": [
+    {
+      "field_path": "liens[0].lien_type",
+      "value_text": "federal_tax"
+    },
+    {
+      "field_path": "liens[0].amount",
+      "value_parsed": "48210.5"
+    },
+    {
+      "field_path": "liens[0].attachment_basis",
+      "value_text": "recorded_against_property"
+    },
+    {
+      "field_path": "liens[0].recording_date",
+      "value_date": "2022-03-14"
+    },
+    {
+      "field_path": "liens[0].status",
+      "value_text": "active"
+    }
+  ]
+}

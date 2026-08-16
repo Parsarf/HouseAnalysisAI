@@ -1,5 +1,5 @@
 """Frozen cross-package contracts for ACQ WP-0."""
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
@@ -76,3 +76,55 @@ class RecordedResponse(ContractModel):
     prompt_version: str
     input_hash: str
     response: dict[str, Any]
+
+# --- WP-11 API payload contracts (spec §16) -----------------------------------
+class ErrorDetail(ContractModel):
+    code: str; message: str; details: dict[str, Any] = {}
+class ErrorEnvelope(ContractModel):
+    error: ErrorDetail
+class PropertySummary(ContractModel):
+    id: UUID; apn: str|None=None; address_line1: str|None=None; city: str|None=None
+    state: str|None=None; zip5: str|None=None; pipeline_status: str="new"
+    tags: list[str]=[]; next_action: str|None=None; next_action_date: date|None=None
+    gut_rating: int|None=None; is_watchlisted: bool=False
+    overall_score: Decimal|None=None; rank: int|None=None; open_flags: int=0
+class PropertyDetail(PropertySummary):
+    lat: Decimal|None=None; lng: Decimal|None=None
+    created_at: datetime|None=None; updated_at: datetime|None=None
+    latest_valuation: MoneyResponse|None=None
+class PropertyListPage(ContractModel):
+    items: list[PropertySummary]; next_cursor: str|None=None
+class FlagRecord(ContractModel):
+    id: UUID; property_id: UUID; flag_type: FlagType; payload: dict[str, Any]={}
+    financial_impact_usd: Decimal|None=None; status: str="open"
+    resolution: str|None=None; resolved_value: dict[str, Any]|None=None
+    note: str|None=None; dedupe_key: str=""; resolved_at: datetime|None=None
+class FlagResolution(ContractModel):
+    resolution: Literal["approve", "reject", "replace", "dismiss"]
+    note: str|None=None; resolved_value: dict[str, Any]|None=None
+class TimelineEvent(ContractModel):
+    event_type: str; event_date: date|None=None; label: str; details: dict[str, Any]={}
+class NoteCreate(ContractModel):
+    body: str = Field(min_length=1)
+class NoteRecord(ContractModel):
+    id: UUID; property_id: UUID; body: str; created_at: datetime|None=None
+class SavedViewCreate(ContractModel):
+    name: str = Field(min_length=1); filters: list[FilterClause]=[]
+    columns: dict[str, Any]={}
+class SavedViewRecord(ContractModel):
+    id: UUID; name: str; filters: list[FilterClause]=[]; columns: dict[str, Any]={}
+    created_at: datetime|None=None
+class OfferRequest(ContractModel):
+    offer_price: Decimal = Field(gt=0); scenario: Scenario=Scenario.EXPECTED; label: str|None=None
+class BatchEstimate(ContractModel):
+    batch_id: UUID; report_count: int; total_tokens: int
+    estimated_cost_usd: Decimal; awaiting_confirmation: bool=True
+class RankingEntry(ContractModel):
+    property_id: UUID; rank: int; prev_rank: int|None=None; score: Decimal|None=None
+class AnalysisPayload(ContractModel):
+    """One-round-trip deal-page payload (spec §16): the scenario toggle and the
+    offer slider work entirely from this response."""
+    property_id: UUID; scenario: Scenario=Scenario.EXPECTED
+    normalized: NormalizedProperty|None=None; underwriting: UnderwritingResult|None=None
+    strategies: list[StrategyResult]=[]; offers: OfferGrid|None=None
+    scores: ScoreSet|None=None; flags: list[FlagRecord]=[]; timeline: list[TimelineEvent]=[]

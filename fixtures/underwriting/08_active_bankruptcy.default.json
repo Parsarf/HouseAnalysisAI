@@ -1,0 +1,84 @@
+{
+  "property_id": "00000000-0000-0000-0000-000000000008",
+  "assumption_set_id": "10000000-0000-0000-0000-000000000001",
+  "engine_version": "golden-spec-1",
+  "status": "ok",
+  "unavailable_reason": null,
+  "value": {
+    "v_low": "318750.00",
+    "v_expected": "375000.00",
+    "v_high": "431250.00",
+    "dispersion": "0.15",
+    "arv_by_scenario": {
+      "conservative": "359070.00",
+      "expected": "403800.00",
+      "optimistic": "452850.00"
+    },
+    "candidates_used": [
+      {
+        "type": "comp",
+        "value": "375000.00",
+        "weight": "1.000000"
+      }
+    ],
+    "valuation_confidence": "0.5"
+  },
+  "liabilities": {
+    "confirmed": "210000.00",
+    "potential": "0.00",
+    "maximum": "210000.00",
+    "breakdown": [
+      {
+        "label": "mortgage:1",
+        "amount": "210000.00",
+        "basis": "recorded",
+        "is_estimated": false
+      }
+    ]
+  },
+  "equity": {
+    "conservative": {
+      "gross": "108750.00",
+      "adjusted": "108750.00",
+      "net_realizable": "79063.61",
+      "equity_pct": "0.341176"
+    },
+    "expected": {
+      "gross": "165000.00",
+      "adjusted": "165000.00",
+      "net_realizable": "133188.72",
+      "equity_pct": "0.440000"
+    },
+    "optimistic": {
+      "gross": "221250.00",
+      "adjusted": "221250.00",
+      "net_realizable": "186337.26",
+      "equity_pct": "0.513043"
+    }
+  },
+  "costs": {
+    "conservative": {
+      "acquisition": "11568.75",
+      "repairs": "40320.00",
+      "holding": "6577.02",
+      "resale": "23109.38",
+      "financing": "0"
+    },
+    "expected": {
+      "acquisition": "12975.00",
+      "repairs": "28800.00",
+      "holding": "4623.78",
+      "resale": "27187.50",
+      "financing": "0"
+    },
+    "optimistic": {
+      "acquisition": "14381.25",
+      "repairs": "21600.00",
+      "holding": "3647.12",
+      "resale": "31265.63",
+      "financing": "0"
+    }
+  },
+  "debt_data_present": true,
+  "confidence": "0.5"
+}

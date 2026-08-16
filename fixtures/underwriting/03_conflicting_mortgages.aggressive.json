@@ -1,0 +1,84 @@
+{
+  "property_id": "00000000-0000-0000-0000-000000000003",
+  "assumption_set_id": "10000000-0000-0000-0000-000000000002",
+  "engine_version": "golden-spec-1",
+  "status": "ok",
+  "unavailable_reason": null,
+  "value": {
+    "v_low": "382500.00",
+    "v_expected": "450000.00",
+    "v_high": "517500.00",
+    "dispersion": "0.15",
+    "arv_by_scenario": {
+      "conservative": "468180.00",
+      "expected": "521400.00",
+      "optimistic": "578190.00"
+    },
+    "candidates_used": [
+      {
+        "type": "comp",
+        "value": "450000.00",
+        "weight": "1.000000"
+      }
+    ],
+    "valuation_confidence": "0.5"
+  },
+  "liabilities": {
+    "confirmed": "265000.00",
+    "potential": "0.00",
+    "maximum": "265000.00",
+    "breakdown": [
+      {
+        "label": "mortgage:1",
+        "amount": "265000.00",
+        "basis": "recorded",
+        "is_estimated": false
+      }
+    ]
+  },
+  "equity": {
+    "conservative": {
+      "gross": "117500.00",
+      "adjusted": "117500.00",
+      "net_realizable": "79257.47",
+      "equity_pct": "0.307190"
+    },
+    "expected": {
+      "gross": "185000.00",
+      "adjusted": "185000.00",
+      "net_realizable": "144985.00",
+      "equity_pct": "0.411111"
+    },
+    "optimistic": {
+      "gross": "252500.00",
+      "adjusted": "252500.00",
+      "net_realizable": "209151.89",
+      "equity_pct": "0.487923"
+    }
+  },
+  "costs": {
+    "conservative": {
+      "acquisition": "13162.50",
+      "repairs": "85680.00",
+      "holding": "10511.28",
+      "resale": "27731.25",
+      "financing": "0"
+    },
+    "expected": {
+      "acquisition": "14850.00",
+      "repairs": "71400.00",
+      "holding": "7390.00",
+      "resale": "32625.00",
+      "financing": "0"
+    },
+    "optimistic": {
+      "acquisition": "16537.50",
+      "repairs": "60690.00",
+      "holding": "5829.36",
+      "resale": "37518.75",
+      "financing": "0"
+    }
+  },
+  "debt_data_present": true,
+  "confidence": "0.5"
+}

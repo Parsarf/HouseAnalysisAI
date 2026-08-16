@@ -15,7 +15,7 @@ from strategies import flip, offer_grid
 
 def sample_property() -> NormalizedProperty:
     value = TrackedValue(value=Decimal("300000"), confidence=Decimal(".9"), source_kind=SourceKind.REPORT, is_estimated=False)
-    return NormalizedProperty(property_id=uuid4(), address=AddressBlock(line1="1 Main St"), attributes=PropertyAttributes(),
+    return NormalizedProperty(property_id=uuid4(), address=AddressBlock(line1="1 Main St"), attributes=PropertyAttributes(sqft=TrackedValue(value=Decimal("1800"), confidence=Decimal(".9"), source_kind=SourceKind.REPORT, is_estimated=False)),
                                   valuation_candidates=[ValuationCandidate(valuation_type="manual", value=value)],
                                   data_quality=DataQualityBlock(critical_field_coverage=Decimal(".9"), mean_extraction_confidence=Decimal(".9")), resolution_version="test")
 

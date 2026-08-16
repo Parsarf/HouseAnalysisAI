@@ -1,4 +1,22 @@
-from .service import extract_text_pages, safe_zip_members, sha256_file, store_pdf
 from .pages import get_all_page_text, get_page_text
+from .service import (
+    extract_text_pages,
+    ingest_paste,
+    register_pdf,
+    safe_zip_members,
+    scan_inbox,
+    sha256_file,
+    store_pdf,
+)
 
-__all__ = ["extract_text_pages", "get_all_page_text", "get_page_text", "safe_zip_members", "sha256_file", "store_pdf"]
+__all__ = [
+    "extract_text_pages",
+    "get_all_page_text",
+    "get_page_text",
+    "ingest_paste",
+    "register_pdf",
+    "safe_zip_members",
+    "scan_inbox",
+    "sha256_file",
+    "store_pdf",
+]

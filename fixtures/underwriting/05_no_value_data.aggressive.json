@@ -1,0 +1,33 @@
+{
+  "property_id": "00000000-0000-0000-0000-000000000005",
+  "assumption_set_id": "10000000-0000-0000-0000-000000000002",
+  "engine_version": "golden-spec-1",
+  "status": "insufficient_data",
+  "unavailable_reason": "no_valuation_candidates",
+  "value": {
+    "v_low": null,
+    "v_expected": null,
+    "v_high": null,
+    "dispersion": null,
+    "arv_by_scenario": {},
+    "candidates_used": [],
+    "valuation_confidence": null
+  },
+  "liabilities": {
+    "confirmed": "180000.00",
+    "potential": "0.00",
+    "maximum": "180000.00",
+    "breakdown": [
+      {
+        "label": "mortgage:1",
+        "amount": "180000.00",
+        "basis": "recorded",
+        "is_estimated": false
+      }
+    ]
+  },
+  "equity": {},
+  "costs": {},
+  "debt_data_present": true,
+  "confidence": "0"
+}

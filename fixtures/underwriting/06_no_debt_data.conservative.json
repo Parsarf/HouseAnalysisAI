@@ -1,0 +1,77 @@
+{
+  "property_id": "00000000-0000-0000-0000-000000000006",
+  "assumption_set_id": "10000000-0000-0000-0000-000000000003",
+  "engine_version": "golden-spec-1",
+  "status": "ok",
+  "unavailable_reason": null,
+  "value": {
+    "v_low": "255000.00",
+    "v_expected": "300000.00",
+    "v_high": "345000.00",
+    "dispersion": "0.15",
+    "arv_by_scenario": {
+      "conservative": "289560.00",
+      "expected": "321600.00",
+      "optimistic": "359040.00"
+    },
+    "candidates_used": [
+      {
+        "type": "comp",
+        "value": "300000.00",
+        "weight": "1.000000"
+      }
+    ],
+    "valuation_confidence": "0.5"
+  },
+  "liabilities": {
+    "confirmed": "0.00",
+    "potential": "0.00",
+    "maximum": "0.00",
+    "breakdown": []
+  },
+  "equity": {
+    "conservative": {
+      "gross": "255000.00",
+      "adjusted": "255000.00",
+      "net_realizable": "231466.83",
+      "equity_pct": "1.000000"
+    },
+    "expected": {
+      "gross": "300000.00",
+      "adjusted": "300000.00",
+      "net_realizable": "274695.00",
+      "equity_pct": "1.000000"
+    },
+    "optimistic": {
+      "gross": "345000.00",
+      "adjusted": "345000.00",
+      "net_realizable": "317177.79",
+      "equity_pct": "1.000000"
+    }
+  },
+  "costs": {
+    "conservative": {
+      "acquisition": "9975.00",
+      "repairs": "34560.00",
+      "holding": "5045.67",
+      "resale": "18487.50",
+      "financing": "0"
+    },
+    "expected": {
+      "acquisition": "11100.00",
+      "repairs": "21600.00",
+      "holding": "3555.00",
+      "resale": "21750.00",
+      "financing": "0"
+    },
+    "optimistic": {
+      "acquisition": "12225.00",
+      "repairs": "14040.00",
+      "holding": "2809.71",
+      "resale": "25012.50",
+      "financing": "0"
+    }
+  },
+  "debt_data_present": false,
+  "confidence": "0.5"
+}

@@ -1,0 +1,56 @@
+name: backup-restore
+
+on: [push, pull_request]
+
+jobs:
+  backup-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: acq
+          POSTGRES_USER: acq
+          POSTGRES_PASSWORD: acq
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U acq -d acq"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ACQ_DATABASE_URL: postgresql://acq:acq@localhost:5432/acq
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seed scratch database and documents
+        run: |
+          psql "$ACQ_DATABASE_URL" -c "CREATE TABLE properties (id uuid PRIMARY KEY, apn text);"
+          psql "$ACQ_DATABASE_URL" -c "INSERT INTO properties VALUES ('00000000-0000-0000-0000-000000000001', 'APN-1');"
+          mkdir -p documents/p1
+          echo "page text" > documents/p1/page.txt
+
+      - name: Backup
+        run: bash scripts/backup.sh "$RUNNER_TEMP/backup"
+
+      - name: Wipe database and documents
+        run: |
+          psql "$ACQ_DATABASE_URL" -c "DROP TABLE properties;"
+          rm -rf documents
+
+      - name: Restore into explicit target directory
+        run: bash scripts/restore.sh "$RUNNER_TEMP/backup" "$RUNNER_TEMP/restore"
+
+      - name: Verify data integrity
+        run: |
+          count="$(psql "$ACQ_DATABASE_URL" -tAc 'SELECT count(*) FROM properties;')"
+          test "$count" = "1"
+          apn="$(psql "$ACQ_DATABASE_URL" -tAc 'SELECT apn FROM properties;')"
+          test "$apn" = "APN-1"
+          test -f "$RUNNER_TEMP/restore/documents/p1/page.txt"
+
+      - name: Restore refuses the current working directory
+        run: |
+          cd "$RUNNER_TEMP"
+          if bash "$GITHUB_WORKSPACE/scripts/restore.sh" "$RUNNER_TEMP/backup" .; then
+            echo "restore.sh must refuse the current working directory" >&2
+            exit 1
+          fi

@@ -1,8 +1,9 @@
-from dataclasses import dataclass
 import hashlib
 import hmac
+from dataclasses import dataclass
 
-from fastapi import Cookie, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
+
 from common.settings import settings
 
 
@@ -31,3 +32,10 @@ def current_user(session_cookie: str | None = Cookie(default=None)) -> User:
     if not hmac.compare_digest(signature, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session")
     return User(user_id, role == "read_only")
+
+
+def write_user(user: User = Depends(current_user)) -> User:
+    """Guard for mutating endpoints: read-only users get 403 (spec §21)."""
+    if user.read_only or settings.read_only:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="read-only user cannot mutate")
+    return user

@@ -1,0 +1,844 @@
+{
+  "property_id": "00000000-0000-0000-0000-000000000010",
+  "assumption_set": "default",
+  "purchase_price": "310000",
+  "strategies": [
+    {
+      "strategy": "cash",
+      "scenario": "conservative",
+      "status": "not_viable",
+      "unavailable_reason": null,
+      "mao": "198514.54",
+      "all_in_basis": "365019.21",
+      "profit": "-41785.46",
+      "roi": "-0.114475",
+      "margin_of_safety": "-0.047401",
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "flip",
+      "scenario": "conservative",
+      "status": "not_viable",
+      "unavailable_reason": null,
+      "mao": "201199.89",
+      "all_in_basis": "425617.72",
+      "profit": "-40577.72",
+      "roi": "-0.095338",
+      "margin_of_safety": "-0.105386",
+      "metrics": {
+        "coc": "-0.575896",
+        "margin": "-0.105386",
+        "financing": "29183.11",
+        "loan": "294559.00"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "wholesale",
+      "scenario": "conservative",
+      "status": "not_viable",
+      "unavailable_reason": null,
+      "mao": "217988.00",
+      "all_in_basis": null,
+      "profit": "-77012.00",
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {
+        "investor_threshold": "232988.00",
+        "spread": "-77012.00",
+        "dcs": "63.4917"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "rental",
+      "scenario": "conservative",
+      "status": "unavailable",
+      "unavailable_reason": "no_rent_data",
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "subject_to",
+      "scenario": "conservative",
+      "status": "requires_human_review",
+      "unavailable_reason": null,
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {
+        "condition_rate_200bps_below_market": null,
+        "condition_balance_le_80pct_value": "1",
+        "condition_no_acceleration": "1",
+        "condition_distress_present": "0"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": [
+        "detection only - due-on-sale / legal review required"
+      ]
+    },
+    {
+      "strategy": "foreclosure",
+      "scenario": "conservative",
+      "status": "unavailable",
+      "unavailable_reason": "no_active_foreclosure",
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "cash",
+      "scenario": "expected",
+      "status": "viable",
+      "unavailable_reason": null,
+      "mao": "253952.50",
+      "all_in_basis": "354322.50",
+      "profit": "25952.50",
+      "roi": "0.073245",
+      "margin_of_safety": "0.135799",
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "flip",
+      "scenario": "expected",
+      "status": "viable",
+      "unavailable_reason": null,
+      "mao": "251710.52",
+      "all_in_basis": "410637.70",
+      "profit": "25462.30",
+      "roi": "0.062007",
+      "margin_of_safety": "0.058386",
+      "metrics": {
+        "coc": "0.370968",
+        "margin": "0.058386",
+        "financing": "21197.95",
+        "loan": "285685.00"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "wholesale",
+      "scenario": "expected",
+      "status": "not_viable",
+      "unavailable_reason": null,
+      "mao": "264170.00",
+      "all_in_basis": null,
+      "profit": "-30830.00",
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {
+        "investor_threshold": "279170.00",
+        "spread": "-30830.00",
+        "dcs": "63.4917"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "rental",
+      "scenario": "expected",
+      "status": "unavailable",
+      "unavailable_reason": "no_rent_data",
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "subject_to",
+      "scenario": "expected",
+      "status": "requires_human_review",
+      "unavailable_reason": null,
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {
+        "condition_rate_200bps_below_market": null,
+        "condition_balance_le_80pct_value": "1",
+        "condition_no_acceleration": "1",
+        "condition_distress_present": "0"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": [
+        "detection only - due-on-sale / legal review required"
+      ]
+    },
+    {
+      "strategy": "foreclosure",
+      "scenario": "expected",
+      "status": "unavailable",
+      "unavailable_reason": "no_active_foreclosure",
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "cash",
+      "scenario": "optimistic",
+      "status": "viable",
+      "unavailable_reason": null,
+      "mao": "304578.35",
+      "all_in_basis": "348437.90",
+      "profit": "88878.35",
+      "roi": "0.255077",
+      "margin_of_safety": "0.261001",
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "flip",
+      "scenario": "optimistic",
+      "status": "viable",
+      "unavailable_reason": null,
+      "mao": "298569.83",
+      "all_in_basis": "404848.82",
+      "profit": "86226.18",
+      "roi": "0.212984",
+      "margin_of_safety": "0.175587",
+      "metrics": {
+        "coc": "1.262478",
+        "margin": "0.175587",
+        "financing": "17307.98",
+        "loan": "280138.75"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "wholesale",
+      "scenario": "optimistic",
+      "status": "not_viable",
+      "unavailable_reason": null,
+      "mao": "309177.50",
+      "all_in_basis": null,
+      "profit": "14177.50",
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {
+        "investor_threshold": "324177.50",
+        "spread": "14177.50",
+        "dcs": "63.4917"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "rental",
+      "scenario": "optimistic",
+      "status": "unavailable",
+      "unavailable_reason": "no_rent_data",
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    },
+    {
+      "strategy": "subject_to",
+      "scenario": "optimistic",
+      "status": "requires_human_review",
+      "unavailable_reason": null,
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {
+        "condition_rate_200bps_below_market": null,
+        "condition_balance_le_80pct_value": "1",
+        "condition_no_acceleration": "1",
+        "condition_distress_present": "0"
+      },
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": [
+        "detection only - due-on-sale / legal review required"
+      ]
+    },
+    {
+      "strategy": "foreclosure",
+      "scenario": "optimistic",
+      "status": "unavailable",
+      "unavailable_reason": "no_active_foreclosure",
+      "mao": null,
+      "all_in_basis": null,
+      "profit": null,
+      "roi": null,
+      "margin_of_safety": null,
+      "metrics": {},
+      "inputs_echo": {
+        "purchase_price": "310000"
+      },
+      "notices": []
+    }
+  ],
+  "offer_grid": {
+    "property_id": "00000000-0000-0000-0000-000000000010",
+    "points": [
+      {
+        "offer_price": "198514.54",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2492.57",
+        "proceeds_low": "-19678.03",
+        "proceeds_expected": "-19678.03",
+        "proceeds_high": "-19678.03",
+        "buyer_basis": "253533.75",
+        "profit": "69700.00",
+        "roi": "0.274914",
+        "is_short_sale": true,
+        "label": "mao_cash"
+      },
+      {
+        "offer_price": "201199.89",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2506.00",
+        "proceeds_low": "-17006.11",
+        "proceeds_expected": "-17006.11",
+        "proceeds_high": "-17006.11",
+        "buyer_basis": "256219.10",
+        "profit": "67014.65",
+        "roi": "0.261552",
+        "is_short_sale": true,
+        "label": "mao_flip"
+      },
+      {
+        "offer_price": "245000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2725.00",
+        "proceeds_low": "26575.00",
+        "proceeds_expected": "26575.00",
+        "proceeds_high": "26575.00",
+        "buyer_basis": "300019.21",
+        "profit": "23214.54",
+        "roi": "0.077377",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "265000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2825.00",
+        "proceeds_low": "46475.00",
+        "proceeds_expected": "46475.00",
+        "proceeds_high": "46475.00",
+        "buyer_basis": "320019.21",
+        "profit": "3214.54",
+        "roi": "0.010045",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "285000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2925.00",
+        "proceeds_low": "66375.00",
+        "proceeds_expected": "66375.00",
+        "proceeds_high": "66375.00",
+        "buyer_basis": "340019.21",
+        "profit": "-16785.46",
+        "roi": "-0.049366",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "310000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3050.00",
+        "proceeds_low": "91250.00",
+        "proceeds_expected": "91250.00",
+        "proceeds_high": "91250.00",
+        "buyer_basis": "365019.21",
+        "profit": "-41785.46",
+        "roi": "-0.114475",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "330000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3150.00",
+        "proceeds_low": "111150.00",
+        "proceeds_expected": "111150.00",
+        "proceeds_high": "111150.00",
+        "buyer_basis": "385019.21",
+        "profit": "-61785.46",
+        "roi": "-0.160474",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "350000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3250.00",
+        "proceeds_low": "131050.00",
+        "proceeds_expected": "131050.00",
+        "proceeds_high": "131050.00",
+        "buyer_basis": "405019.21",
+        "profit": "-81785.46",
+        "roi": "-0.201930",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "370000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3350.00",
+        "proceeds_low": "150950.00",
+        "proceeds_expected": "150950.00",
+        "proceeds_high": "150950.00",
+        "buyer_basis": "425019.21",
+        "profit": "-101785.46",
+        "roi": "-0.239484",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "390000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3450.00",
+        "proceeds_low": "170850.00",
+        "proceeds_expected": "170850.00",
+        "proceeds_high": "170850.00",
+        "buyer_basis": "445019.21",
+        "profit": "-121785.46",
+        "roi": "-0.273663",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "410000",
+        "scenario": "conservative",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3550.00",
+        "proceeds_low": "190750.00",
+        "proceeds_expected": "190750.00",
+        "proceeds_high": "190750.00",
+        "buyer_basis": "465019.21",
+        "profit": "-141785.46",
+        "roi": "-0.304902",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "245000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2725.00",
+        "proceeds_low": "26575.00",
+        "proceeds_expected": "26575.00",
+        "proceeds_high": "26575.00",
+        "buyer_basis": "289322.50",
+        "profit": "90952.50",
+        "roi": "0.314364",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "251710.52",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2758.55",
+        "proceeds_low": "33251.97",
+        "proceeds_expected": "33251.97",
+        "proceeds_high": "33251.97",
+        "buyer_basis": "296033.02",
+        "profit": "84241.98",
+        "roi": "0.284570",
+        "is_short_sale": false,
+        "label": "mao_flip"
+      },
+      {
+        "offer_price": "253952.50",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2769.76",
+        "proceeds_low": "35482.74",
+        "proceeds_expected": "35482.74",
+        "proceeds_high": "35482.74",
+        "buyer_basis": "298275.00",
+        "profit": "82000.00",
+        "roi": "0.274914",
+        "is_short_sale": false,
+        "label": "mao_cash"
+      },
+      {
+        "offer_price": "265000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2825.00",
+        "proceeds_low": "46475.00",
+        "proceeds_expected": "46475.00",
+        "proceeds_high": "46475.00",
+        "buyer_basis": "309322.50",
+        "profit": "70952.50",
+        "roi": "0.229380",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "285000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2925.00",
+        "proceeds_low": "66375.00",
+        "proceeds_expected": "66375.00",
+        "proceeds_high": "66375.00",
+        "buyer_basis": "329322.50",
+        "profit": "50952.50",
+        "roi": "0.154719",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "310000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3050.00",
+        "proceeds_low": "91250.00",
+        "proceeds_expected": "91250.00",
+        "proceeds_high": "91250.00",
+        "buyer_basis": "354322.50",
+        "profit": "25952.50",
+        "roi": "0.073245",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "330000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3150.00",
+        "proceeds_low": "111150.00",
+        "proceeds_expected": "111150.00",
+        "proceeds_high": "111150.00",
+        "buyer_basis": "374322.50",
+        "profit": "5952.50",
+        "roi": "0.015902",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "350000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3250.00",
+        "proceeds_low": "131050.00",
+        "proceeds_expected": "131050.00",
+        "proceeds_high": "131050.00",
+        "buyer_basis": "394322.50",
+        "profit": "-14047.50",
+        "roi": "-0.035624",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "370000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3350.00",
+        "proceeds_low": "150950.00",
+        "proceeds_expected": "150950.00",
+        "proceeds_high": "150950.00",
+        "buyer_basis": "414322.50",
+        "profit": "-34047.50",
+        "roi": "-0.082176",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "390000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3450.00",
+        "proceeds_low": "170850.00",
+        "proceeds_expected": "170850.00",
+        "proceeds_high": "170850.00",
+        "buyer_basis": "434322.50",
+        "profit": "-54047.50",
+        "roi": "-0.124441",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "410000",
+        "scenario": "expected",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3550.00",
+        "proceeds_low": "190750.00",
+        "proceeds_expected": "190750.00",
+        "proceeds_high": "190750.00",
+        "buyer_basis": "454322.50",
+        "profit": "-74047.50",
+        "roi": "-0.162984",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "245000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2725.00",
+        "proceeds_low": "26575.00",
+        "proceeds_expected": "26575.00",
+        "proceeds_high": "26575.00",
+        "buyer_basis": "283437.90",
+        "profit": "153878.35",
+        "roi": "0.542900",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "265000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2825.00",
+        "proceeds_low": "46475.00",
+        "proceeds_expected": "46475.00",
+        "proceeds_high": "46475.00",
+        "buyer_basis": "303437.90",
+        "profit": "133878.35",
+        "roi": "0.441205",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "285000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2925.00",
+        "proceeds_low": "66375.00",
+        "proceeds_expected": "66375.00",
+        "proceeds_high": "66375.00",
+        "buyer_basis": "323437.90",
+        "profit": "113878.35",
+        "roi": "0.352087",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "298569.83",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "2992.85",
+        "proceeds_low": "79876.98",
+        "proceeds_expected": "79876.98",
+        "proceeds_high": "79876.98",
+        "buyer_basis": "337007.73",
+        "profit": "100308.52",
+        "roi": "0.297645",
+        "is_short_sale": false,
+        "label": "mao_flip"
+      },
+      {
+        "offer_price": "304578.35",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3022.89",
+        "proceeds_low": "85855.46",
+        "proceeds_expected": "85855.46",
+        "proceeds_high": "85855.46",
+        "buyer_basis": "343016.25",
+        "profit": "94300.00",
+        "roi": "0.274914",
+        "is_short_sale": false,
+        "label": "mao_cash"
+      },
+      {
+        "offer_price": "310000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3050.00",
+        "proceeds_low": "91250.00",
+        "proceeds_expected": "91250.00",
+        "proceeds_high": "91250.00",
+        "buyer_basis": "348437.90",
+        "profit": "88878.35",
+        "roi": "0.255077",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "330000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3150.00",
+        "proceeds_low": "111150.00",
+        "proceeds_expected": "111150.00",
+        "proceeds_high": "111150.00",
+        "buyer_basis": "368437.90",
+        "profit": "68878.35",
+        "roi": "0.186947",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "350000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3250.00",
+        "proceeds_low": "131050.00",
+        "proceeds_expected": "131050.00",
+        "proceeds_high": "131050.00",
+        "buyer_basis": "388437.90",
+        "profit": "48878.35",
+        "roi": "0.125833",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "370000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3350.00",
+        "proceeds_low": "150950.00",
+        "proceeds_expected": "150950.00",
+        "proceeds_high": "150950.00",
+        "buyer_basis": "408437.90",
+        "profit": "28878.35",
+        "roi": "0.070704",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "390000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3450.00",
+        "proceeds_low": "170850.00",
+        "proceeds_expected": "170850.00",
+        "proceeds_high": "170850.00",
+        "buyer_basis": "428437.90",
+        "profit": "8878.35",
+        "roi": "0.020723",
+        "is_short_sale": false,
+        "label": null
+      },
+      {
+        "offer_price": "410000",
+        "scenario": "optimistic",
+        "confirmed_payoffs": "215700.00",
+        "potential_payoffs": "0.00",
+        "closing_costs": "3550.00",
+        "proceeds_low": "190750.00",
+        "proceeds_expected": "190750.00",
+        "proceeds_high": "190750.00",
+        "buyer_basis": "448437.90",
+        "profit": "-11121.65",
+        "roi": "-0.024801",
+        "is_short_sale": false,
+        "label": null
+      }
+    ],
+    "interpolatable": true
+  }
+}

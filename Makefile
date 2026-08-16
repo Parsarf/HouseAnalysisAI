@@ -30,4 +30,4 @@ backup:
 	bash scripts/backup.sh
 
 restore:
-	bash scripts/restore.sh $(BACKUP_DIR)
+	bash scripts/restore.sh $(BACKUP_DIR) $(TARGET_DIR)

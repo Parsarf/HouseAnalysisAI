@@ -1,0 +1,27 @@
+{
+  "response_id": "lien_unit_sample",
+  "model": "gpt-4o",
+  "prompt_version": "ffe7fb7fe8a89740",
+  "input_hash": "f7b1237e0047076f1ea5e3c06c1c6dbf42c7dc4a1851bc36c1b6f5d1a327a93f",
+  "response": {
+    "liens": [
+      {
+        "lien_type": "federal_tax",
+        "creditor_raw": "INTERNAL REVENUE SERVICE",
+        "debtor_name_raw": "JOHN A SMITH",
+        "amount_raw": "$48,210.50",
+        "amount_parsed": 48210.5,
+        "recording_date": "2022-03-14",
+        "recording_doc_number": "2022-0088123",
+        "status": "active",
+        "attachment_basis": "recorded_against_property",
+        "attachment_evidence": "Recorded against APN 4821-003-011, Lot 12, Tract 4455",
+        "attachment_confidence": 0.95,
+        "page_number": 1,
+        "snippet": "Recorded against APN 4821-003-011, Lot 12, Tract 4455",
+        "extraction_confidence": 0.97,
+        "null_reason": null
+      }
+    ]
+  }
+}

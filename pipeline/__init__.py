@@ -1,3 +1,5 @@
-from .orchestrator import Computation, recompute_property
+from .orchestrator import (Computation, Pipeline, UnitOutcome, DEFAULT_SCORING_CONFIG_ID,
+                           recompute_property)
 
-__all__ = ["Computation", "recompute_property"]
+__all__ = ["Computation", "Pipeline", "UnitOutcome", "DEFAULT_SCORING_CONFIG_ID",
+           "recompute_property"]

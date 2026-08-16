@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session
 ENQUEUE_SQL = text("""
 INSERT INTO jobs (id, name, payload, dedupe_key, max_attempts)
 VALUES (:id, :name, CAST(:payload AS jsonb), :dedupe_key, :max_attempts)
-ON CONFLICT (dedupe_key) DO UPDATE SET name = jobs.name
+ON CONFLICT (dedupe_key) DO UPDATE SET
+  name = jobs.name,
+  payload = CASE WHEN jobs.status IN ('queued','running') THEN jobs.payload ELSE EXCLUDED.payload END,
+  status = CASE WHEN jobs.status IN ('queued','running') THEN jobs.status ELSE 'queued' END,
+  attempts = CASE WHEN jobs.status IN ('queued','running') THEN jobs.attempts ELSE 0 END,
+  run_after = CASE WHEN jobs.status IN ('queued','running') THEN jobs.run_after ELSE now() END,
+  locked_at = CASE WHEN jobs.status IN ('queued','running') THEN jobs.locked_at ELSE NULL END,
+  completed_at = CASE WHEN jobs.status IN ('queued','running') THEN jobs.completed_at ELSE NULL END,
+  last_error = CASE WHEN jobs.status IN ('queued','running') THEN jobs.last_error ELSE NULL END
 RETURNING id, status
 """)
 
