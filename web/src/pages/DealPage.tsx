@@ -6,14 +6,31 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  createNote,
   getAnalysis,
+  getProperty,
+  listNotes,
+  listReports,
+  mergeProperties,
+  openDealSheet,
+  openNetSheet,
+  recomputeProperty,
+  resolveFlag,
   SCENARIOS,
+  submitFact,
+  unmergeProperties,
+  updateProperty,
   type AnalysisPayload,
+  type FactSubmission,
+  type NoteRecord,
+  type PropertyListItem,
+  type ReportRecord,
   type Scenario,
   type StrategyResult,
 } from "../api";
+import { useAuth } from "../auth";
 import { EvidenceDrawer } from "../components/EvidenceDrawer";
-import { formatDecimalString, formatPercentString, MoneyText } from "../components/Money";
+import { formatPercentString, MoneyText } from "../components/Money";
 import { OfferSimulator } from "../components/OfferSimulator";
 import { parseScore, ScoreBar } from "../components/ScoreBar";
 import {
@@ -39,6 +56,10 @@ const STRATEGY_LABELS: Record<string, string> = {
   foreclosure: "Foreclosure",
 };
 
+function money(value: string | null | undefined, estimated = false) {
+  return value == null ? null : { value, confidence: 1, source_kind: estimated ? "derived" as const : "report" as const, is_estimated: estimated };
+}
+
 function EvidenceButton(props: { onEvidence: (fieldPath: string) => void; fieldPath: string }) {
   return (
     <button
@@ -61,12 +82,20 @@ function SummaryStat(props: { label: string; children: ReactNode }) {
 }
 
 export function DealPage(props: { propertyId: string }) {
+  const { user } = useAuth();
   const { propertyId } = props;
   const [payload, setPayload] = useState<AnalysisPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>("expected");
   const [evidenceField, setEvidenceField] = useState<string | null>(null);
   const [activeStrategy, setActiveStrategy] = useState<string | null>(null);
+  const [property, setProperty] = useState<PropertyListItem | null>(null);
+  const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [reports, setReports] = useState<ReportRecord[]>([]);
+  const [noteBody, setNoteBody] = useState("");
+  const [operation, setOperation] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionPanel, setActionPanel] = useState<"override" | "merge" | "unmerge" | "net" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +111,39 @@ export function DealPage(props: { propertyId: string }) {
     };
   }, [propertyId]);
 
+  useEffect(() => {
+    let live = true;
+    Promise.all([getProperty(propertyId), listNotes(propertyId), listReports(propertyId)])
+      .then(([propertyData, noteData, reportData]) => { if (live) { setProperty(propertyData); setNotes(noteData.items); setReports(reportData.items); } })
+      .catch((reason: unknown) => live && setActionError(reason instanceof Error ? reason.message : "Unable to load property operations"));
+    return () => { live = false; };
+  }, [propertyId]);
+
   const strategiesForScenario = useMemo(
     () => (payload?.strategies ?? []).filter((s) => s.scenario === scenario),
     [payload, scenario],
   );
+
+  useEffect(() => {
+    if (activeStrategy && !strategiesForScenario.some((result) => result.strategy === activeStrategy)) setActiveStrategy(null);
+  }, [activeStrategy, strategiesForScenario]);
+
+  const saveProperty = async (changes: Parameters<typeof updateProperty>[1]) => {
+    if (!property) return;
+    const before = property;
+    const optimistic = { ...property, ...changes, ...(changes.pipeline_status ? { pipeline_status: changes.pipeline_status, status: changes.pipeline_status } : {}) };
+    setProperty(optimistic);
+    setActionError(null);
+    try { setProperty({ ...optimistic, ...(await updateProperty(propertyId, changes)) }); setOperation("Property updated"); }
+    catch (reason) { setProperty(before); setActionError(reason instanceof Error ? reason.message : "Update failed"); }
+  };
+
+  const addNote = async () => {
+    if (!noteBody.trim()) return;
+    setActionError(null);
+    try { const note = await createNote(propertyId, noteBody.trim()); setNotes((items) => [note, ...items]); setNoteBody(""); }
+    catch (reason) { setActionError(reason instanceof Error ? reason.message : "Unable to save note"); }
+  };
 
   if (error) {
     return (
@@ -122,11 +180,22 @@ export function DealPage(props: { propertyId: string }) {
           ← Portfolio
         </Link>
       </p>
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>{addressLine || "Unknown address"}</h2>
+      <div className="deal-heading">
+        <div>
+          <div className="eyebrow">Deal workspace</div>
+          <h1>{addressLine || "Unknown address"}</h1>
+        </div>
+        <div className="deal-heading-actions">
+          {property?.rank && <span className="deal-rank"><small>Portfolio rank</small><strong>#{property.rank}</strong></span>}
+          <button className="btn btn-secondary" onClick={() => openDealSheet(propertyId).catch((reason: Error) => setActionError(reason.message))}>Open deal sheet</button>
+          <button className="btn btn-primary" disabled={user.read_only} onClick={() => { setOperation("Queueing recompute…"); recomputeProperty(propertyId).then(() => setOperation("Recompute queued")).catch((reason: Error) => setActionError(reason.message)); }}>Recompute</button>
+        </div>
+      </div>
       <p style={{ ...mutedText, marginTop: 0 }}>
         {normalized?.apn ? `APN ${normalized.apn}` : "APN missing"}
         {payload.flags.length > 0 && ` · ${payload.flags.length} open flag${payload.flags.length === 1 ? "" : "s"}`}
       </p>
+      {(operation || actionError) && <div className={actionError ? "inline-error" : "operation-toast"}>{actionError ?? operation}</div>}
 
       {!underwriting && (
         <section style={card}>
@@ -143,18 +212,18 @@ export function DealPage(props: { propertyId: string }) {
           <h3 style={cardTitle}>Executive summary</h3>
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
             <SummaryStat label="Est. value (expected)">
-              {formatDecimalString(underwriting.value.v_expected)}
+              <MoneyText money={money(underwriting.value.v_expected, true)} />
               <EvidenceButton onEvidence={setEvidenceField} fieldPath="valuation.v_expected" />
             </SummaryStat>
             <SummaryStat label="Confirmed debt">
-              {formatDecimalString(underwriting.liabilities.confirmed)}
+              <MoneyText money={money(underwriting.liabilities.confirmed)} />
               <EvidenceButton onEvidence={setEvidenceField} fieldPath="liabilities.confirmed" />
             </SummaryStat>
             <SummaryStat label="Potential obligations">
-              {formatDecimalString(underwriting.liabilities.potential)}
+              <MoneyText money={money(underwriting.liabilities.potential, true)} />
             </SummaryStat>
             <SummaryStat label={`Equity (${scenario})`}>
-              {formatDecimalString(equity?.adjusted)}
+              <MoneyText money={money(equity?.adjusted, true)} />
               {equity?.equity_pct !== null && equity?.equity_pct !== undefined && (
                 <span style={{ fontSize: 13, color: palette.muted }}> ({formatPercentString(equity.equity_pct)})</span>
               )}
@@ -197,12 +266,12 @@ export function DealPage(props: { propertyId: string }) {
           </div>
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginTop: 12 }}>
             <SummaryStat label="Value band">
-              {formatDecimalString(underwriting.value.v_low)} – {formatDecimalString(underwriting.value.v_high)}
+              <MoneyText money={money(underwriting.value.v_low, true)} /> – <MoneyText money={money(underwriting.value.v_high, true)} />
             </SummaryStat>
             <SummaryStat label={`Value (${scenario})`}>
-              {formatDecimalString(underwriting.value.arv_by_scenario?.[scenario])}
+              <MoneyText money={money(underwriting.value.arv_by_scenario?.[scenario], true)} />
             </SummaryStat>
-            <SummaryStat label="Net realizable equity">{formatDecimalString(equity?.net_realizable)}</SummaryStat>
+            <SummaryStat label="Net realizable equity"><MoneyText money={money(equity?.net_realizable, true)} /></SummaryStat>
           </div>
           {costs && (
             <table style={{ ...table, marginTop: 12 }}>
@@ -217,11 +286,11 @@ export function DealPage(props: { propertyId: string }) {
               </thead>
               <tbody>
                 <tr>
-                  <td style={td}>{formatDecimalString(costs.acquisition)}</td>
-                  <td style={td}>{formatDecimalString(costs.repairs)}</td>
-                  <td style={td}>{formatDecimalString(costs.holding)}</td>
-                  <td style={td}>{formatDecimalString(costs.resale)}</td>
-                  <td style={td}>{formatDecimalString(costs.financing)}</td>
+                  <td style={td}><MoneyText money={money(costs.acquisition, true)} /></td>
+                  <td style={td}><MoneyText money={money(costs.repairs, true)} /></td>
+                  <td style={td}><MoneyText money={money(costs.holding, true)} /></td>
+                  <td style={td}><MoneyText money={money(costs.resale, true)} /></td>
+                  <td style={td}><MoneyText money={money(costs.financing, true)} /></td>
                 </tr>
               </tbody>
             </table>
@@ -233,6 +302,25 @@ export function DealPage(props: { propertyId: string }) {
       {normalized && (
         <section style={card}>
           <h3 style={cardTitle}>Financial breakdown</h3>
+          {underwriting && (
+            <div className="liability-summary">
+              <div><span>Confirmed</span><strong><MoneyText money={money(underwriting.liabilities.confirmed)} /></strong></div>
+              <div><span>Potential</span><strong><MoneyText money={money(underwriting.liabilities.potential, true)} /></strong></div>
+              <div><span>Maximum exposure</span><strong><MoneyText money={money(underwriting.liabilities.maximum, true)} /></strong></div>
+            </div>
+          )}
+          {underwriting && underwriting.liabilities.breakdown.length > 0 && (
+            <table style={{ ...table, marginBottom: 16 }}>
+              <thead><tr><th style={th}>Liability</th><th style={th}>Amount</th><th style={th}>Bucket</th><th style={th}>Attachment basis</th></tr></thead>
+              <tbody>{underwriting.liabilities.breakdown.map((entry, index) => {
+                const label = String(entry.label ?? entry.type ?? entry.lien_type ?? `Liability ${index + 1}`);
+                const amount = entry.amount == null ? null : String(entry.amount);
+                const bucket = String(entry.bucket ?? entry.category ?? "—");
+                const basis = String(entry.attachment_basis ?? "unknown");
+                return <tr key={`${label}-${index}`}><td style={td}>{label.replace(/_/g," ")}</td><td style={td}><MoneyText money={money(amount, true)} /></td><td style={td}>{bucket.replace(/_/g," ")}</td><td style={td}><span className={`attachment-badge attachment-${basis}`}>{basis.replace(/_/g," ")}</span></td></tr>;
+              })}</tbody>
+            </table>
+          )}
           {normalized.valuation_candidates.length > 0 && (
             <>
               <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Value candidates</h4>
@@ -256,7 +344,7 @@ export function DealPage(props: { propertyId: string }) {
                       </td>
                       <td style={td}>
                         {candidate.value_low || candidate.value_high
-                          ? `${formatDecimalString(candidate.value_low)} – ${formatDecimalString(candidate.value_high)}`
+                          ? <><MoneyText money={money(candidate.value_low, true)} /> – <MoneyText money={money(candidate.value_high, true)} /></>
                           : "—"}
                       </td>
                       <td style={td}>{candidate.as_of ?? "—"}</td>
@@ -380,12 +468,18 @@ export function DealPage(props: { propertyId: string }) {
                   )}
                 </p>
                 <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-                  <SummaryStat label="MAO">{formatDecimalString(result.mao)}</SummaryStat>
-                  <SummaryStat label="All-in basis">{formatDecimalString(result.all_in_basis)}</SummaryStat>
-                  <SummaryStat label="Profit">{formatDecimalString(result.profit)}</SummaryStat>
+                  <SummaryStat label="MAO"><MoneyText money={money(result.mao, true)} /></SummaryStat>
+                  <SummaryStat label="All-in basis"><MoneyText money={money(result.all_in_basis, true)} /></SummaryStat>
+                  <SummaryStat label="Profit"><MoneyText money={money(result.profit, true)} /></SummaryStat>
                   <SummaryStat label="ROI">{formatPercentString(result.roi)}</SummaryStat>
                   <SummaryStat label="Margin of safety">{formatPercentString(result.margin_of_safety)}</SummaryStat>
                 </div>
+                {(Object.keys(result.metrics).length > 0 || Object.keys(result.inputs_echo).length > 0) && (
+                  <div className="calculation-grid">
+                    {Object.keys(result.metrics).length > 0 && <div><h4>Strategy metrics</h4>{Object.entries(result.metrics).map(([name,value]) => <p key={name}><span>{name.replace(/_/g," ")}</span><strong>{value ?? "—"}</strong></p>)}</div>}
+                    {Object.keys(result.inputs_echo).length > 0 && <div><h4>Calculation inputs</h4>{Object.entries(result.inputs_echo).map(([name,value]) => <p key={name}><span>{name.replace(/_/g," ")}</span><strong>{value}</strong></p>)}</div>}
+                  </div>
+                )}
                 {result.notices.length > 0 && (
                   <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 13, color: palette.warn }}>
                     {result.notices.map((notice, index) => (
@@ -420,7 +514,7 @@ export function DealPage(props: { propertyId: string }) {
                   {event.date ?? "—"}
                 </span>
                 <span style={{ flex: 1 }}>
-                  <strong style={{ fontSize: 13 }}>{event.kind.replace(/_/g, " ")}</strong> — {event.label}
+                  <strong style={{ fontSize: 13 }}>{(event.kind ?? event.event_type ?? "event").replace(/_/g, " ")}</strong> — {event.label}
                 </span>
                 <span style={{ fontSize: 13 }}>
                   <MoneyText money={event.amount} />
@@ -481,24 +575,85 @@ export function DealPage(props: { propertyId: string }) {
           <h3 style={cardTitle}>Flags</h3>
           <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
             {[...payload.flags]
-              .sort((a, b) => Number(b.financial_impact ?? 0) - Number(a.financial_impact ?? 0))
+              .sort((a, b) => Number(b.financial_impact_usd ?? 0) - Number(a.financial_impact_usd ?? 0))
               .map((flag, index) => (
-                <li key={index} style={{ padding: "6px 0", borderBottom: `1px solid ${palette.subtle}`, fontSize: 14 }}>
-                  <strong style={{ color: severityColor(flag.severity) }}>{flag.type.replace(/_/g, " ")}</strong>
-                  {flag.is_gating && <span style={{ marginLeft: 8, fontSize: 12, color: palette.bad }}>gating</span>}
-                  {flag.financial_impact !== null && flag.financial_impact !== undefined && (
+                <li key={flag.id ?? index} className="deal-flag-row" style={{ padding: "8px 0", borderBottom: `1px solid ${palette.subtle}`, fontSize: 14 }}>
+                  <div><strong style={{ color: severityColor(flag.severity ?? "warning") }}>{flag.flag_type.replace(/_/g, " ")}</strong>
+                  {flag.status === "open" && <span style={{ marginLeft: 8, fontSize: 12, color: palette.bad }}>open</span>}
+                  {flag.financial_impact_usd !== null && flag.financial_impact_usd !== undefined && (
                     <span style={{ marginLeft: 8, fontSize: 12, color: palette.muted }}>
-                      impact {formatDecimalString(flag.financial_impact)}
+                      impact <MoneyText money={money(flag.financial_impact_usd, true)} />
                     </span>
-                  )}
+                  )}</div>
+                  {flag.status === "open" && <InlineFlagResolution flagId={flag.id} disabled={user.read_only} onResolved={() => setPayload({...payload,flags:payload.flags.map((item)=>item.id===flag.id?{...item,status:"resolved"}:item)})} onError={setActionError} />}
                 </li>
               ))}
           </ul>
         </section>
       )}
 
+      <div className="deal-operations-grid">
+        <section className="panel deal-edit-panel">
+          <div className="panel-heading"><div><span className="eyebrow">Triage</span><h2>Property workflow</h2></div>{property?.is_watchlisted && <span className="watch-status">★ Watchlisted</span>}</div>
+          {!property ? <p className="muted">Loading property controls…</p> : <div className="deal-edit-grid">
+            <label><span>Pipeline status</span><select className="select-input" disabled={user.read_only} value={property.pipeline_status ?? property.status ?? "new"} onChange={(event) => saveProperty({pipeline_status:event.target.value})}>{["new","reviewing","pursue","offer_made","under_contract","dead"].map((status) => <option key={status} value={status}>{status.replace(/_/g," ")}</option>)}</select></label>
+            <label><span>Gut rating</span><select className="select-input" disabled={user.read_only} value={property.gut_rating ?? ""} onChange={(event) => saveProperty({gut_rating:event.target.value ? Number(event.target.value) : null})}><option value="">Not rated</option>{[1,2,3,4,5].map((rating)=><option key={rating} value={rating}>{rating} / 5</option>)}</select></label>
+            <label><span>Next action</span><input className="text-input" disabled={user.read_only} value={property.next_action ?? ""} onChange={(event)=>setProperty({...property,next_action:event.target.value})} onBlur={(event)=>saveProperty({next_action:event.target.value||null})}/></label>
+            <label><span>Action date</span><input className="text-input" type="date" disabled={user.read_only} value={property.next_action_date ?? ""} onChange={(event)=>saveProperty({next_action_date:event.target.value||null})}/></label>
+            <label className="full"><span>Tags</span><input className="text-input" disabled={user.read_only} value={(property.tags??[]).join(", ")} onChange={(event)=>setProperty({...property,tags:event.target.value.split(",").map((tag)=>tag.trim()).filter(Boolean)})} onBlur={(event)=>saveProperty({tags:event.target.value.split(",").map((tag)=>tag.trim()).filter(Boolean)})}/></label>
+            <label className="check-row full"><input type="checkbox" disabled={user.read_only} checked={Boolean(property.is_watchlisted)} onChange={(event)=>saveProperty({is_watchlisted:event.target.checked})}/><span><strong>Add to watchlist</strong><small>Keep this opportunity visible during triage.</small></span></label>
+          </div>}
+        </section>
+
+        <section className="panel notes-panel">
+          <div className="panel-heading"><div><span className="eyebrow">Collaboration</span><h2>Notes</h2></div><span className="count-chip">{notes.length}</span></div>
+          <div className="note-compose"><textarea className="text-area" rows={3} value={noteBody} onChange={(event)=>setNoteBody(event.target.value)} placeholder={user.read_only?"Notes are disabled in read-only mode":"Add underwriting context or a next step…"} disabled={user.read_only}/><button className="btn btn-primary btn-small" disabled={user.read_only||!noteBody.trim()} onClick={addNote}>Add note</button></div>
+          <div className="note-list">{notes.length===0?<div className="empty-state compact">No notes yet.</div>:notes.map((note)=><article key={note.id}><p>{note.body}</p><time>{note.created_at?new Date(note.created_at).toLocaleString():"Just now"}</time></article>)}</div>
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="panel-heading"><div><span className="eyebrow">Source ledger</span><h2>Reports</h2></div><Link to="/batches">Add reports →</Link></div>
+        {reports.length===0?<div className="empty-state compact"><strong>No reports attached</strong><span>Upload a source document to begin extraction.</span></div>:<div className="table-wrap"><table className="data-table"><thead><tr><th>Type</th><th>Vendor</th><th>Status</th><th>Failure</th><th>Pages</th><th>OCR</th><th>Created</th></tr></thead><tbody>{reports.map((report)=><tr key={report.id}><td>{report.report_type?.replace(/_/g," ")??"Unclassified"}</td><td>{report.vendor??"—"}</td><td><span className={`status-pill status-${report.status}`}>{report.status.replace(/_/g," ")}</span></td><td>{report.failure_reason?.replace(/_/g," ")??"—"}</td><td>{report.page_count??"—"}</td><td>{report.ocr_applied?"Applied":"Digital text"}</td><td>{report.created_at?new Date(report.created_at).toLocaleDateString():"—"}</td></tr>)}</tbody></table></div>}
+      </section>
+
+      <section className="panel action-center">
+        <div><span className="eyebrow">Record operations</span><h2>Actions</h2><p>Advanced actions preserve source history and queue deterministic recomputation.</p></div>
+        <div className="action-buttons"><button className="btn btn-secondary" disabled={user.read_only} onClick={()=>setActionPanel("override")}>Add override fact</button><button className="btn btn-secondary" disabled={user.read_only} onClick={()=>setActionPanel("merge")}>Merge record</button><button className="btn btn-secondary" disabled={user.read_only} onClick={()=>setActionPanel("unmerge")}>Unmerge source</button><button className="btn btn-secondary" disabled={!underwriting} onClick={()=>setActionPanel("net")}>Open net sheet</button></div>
+      </section>
+      {actionPanel && <DealActionModal mode={actionPanel} propertyId={propertyId} scenario={scenario} reports={reports} onClose={()=>setActionPanel(null)} onMessage={(message)=>{setOperation(message);setActionPanel(null);}} onError={setActionError} />}
+
       {/* 7 (drawer). Evidence */}
       <EvidenceDrawer propertyId={propertyId} fieldPath={evidenceField} onClose={() => setEvidenceField(null)} />
     </section>
   );
+}
+
+function InlineFlagResolution(props: { flagId: string; disabled: boolean; onResolved: () => void; onError: (message: string) => void }) {
+  const [resolution,setResolution]=useState<"approve"|"reject"|"replace"|"dismiss">("approve");
+  const [value,setValue]=useState("");
+  const [busy,setBusy]=useState(false);
+  return <div className="inline-flag-controls"><select className="select-input" disabled={props.disabled} value={resolution} onChange={(event)=>setResolution(event.target.value as typeof resolution)}><option value="approve">Approve</option><option value="reject">Reject</option><option value="replace">Replace</option><option value="dismiss">Dismiss</option></select>{resolution==="replace"&&<input className="text-input" value={value} onChange={(event)=>setValue(event.target.value)} placeholder="Replacement"/>}<button className="btn btn-secondary btn-small" disabled={props.disabled||busy||(resolution==="replace"&&!value)} onClick={async()=>{setBusy(true);try{await resolveFlag(props.flagId,{resolution,resolved_value:resolution==="replace"?{value}:null});props.onResolved();}catch(reason){props.onError(reason instanceof Error?reason.message:"Resolution failed");}finally{setBusy(false);}}}>{busy?"Saving…":"Resolve"}</button></div>;
+}
+
+function DealActionModal(props: { mode: "override" | "merge" | "unmerge" | "net"; propertyId: string; scenario: Scenario; reports: ReportRecord[]; onClose: () => void; onMessage: (message: string) => void; onError: (message: string) => void }) {
+  const [target, setTarget] = useState("");
+  const [offer, setOffer] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fact, setFact] = useState({ report_id: props.reports[0]?.id ?? "", extraction_unit_id: "", field_path: "", value_text: "", snippet: "Human override" });
+  useEffect(() => { const close = (event: globalThis.KeyboardEvent) => event.key === "Escape" && props.onClose(); window.addEventListener("keydown",close); return ()=>window.removeEventListener("keydown",close); },[props]);
+  const submit = async () => {
+    setBusy(true); props.onError("");
+    try {
+      if (props.mode === "merge") { await mergeProperties({source_id:props.propertyId,target_id:target}); props.onMessage("Property merged into the target record"); }
+      if (props.mode === "unmerge") { await unmergeProperties({source_id:target,target_id:props.propertyId}); props.onMessage("Source property unmerged"); }
+      if (props.mode === "net") { await openNetSheet(props.propertyId,offer,props.scenario); props.onMessage("Net sheet opened in a new tab"); }
+      if (props.mode === "override") {
+        const body: FactSubmission = { report_id:fact.report_id, extraction_unit_id:fact.extraction_unit_id, entity_type:"property", entity_local_id:"property", field_path:fact.field_path, value_text:fact.value_text||null, value_raw:fact.value_text||null, page_number:1, snippet:fact.snippet, extraction_confidence:1, source_kind:"human" };
+        await submitFact(props.propertyId,body); props.onMessage("Override saved and recompute queued");
+      }
+    } catch (reason) { props.onError(reason instanceof Error?reason.message:"Action failed"); } finally { setBusy(false); }
+  };
+  const titles = {override:"Add override fact",merge:"Merge property record",unmerge:"Unmerge source record",net:"Open seller net sheet"};
+  return <div className="modal-backdrop" onMouseDown={(event)=>event.target===event.currentTarget&&props.onClose()}><div className="modal" role="dialog" aria-modal="true"><button className="modal-close" onClick={props.onClose}>×</button><span className="eyebrow">Advanced action</span><h2>{titles[props.mode]}</h2>{props.mode==="merge"&&<><p>Move this record into a canonical target property.</p><label className="field-label">Target property ID</label><input className="text-input" value={target} onChange={(event)=>setTarget(event.target.value)}/></>}{props.mode==="unmerge"&&<><p>Restore a source record previously merged into this property.</p><label className="field-label">Source property ID</label><input className="text-input" value={target} onChange={(event)=>setTarget(event.target.value)}/></>}{props.mode==="net"&&<><p>Generate the server-rendered HTML net sheet using an authoritative offer calculation.</p><label className="field-label">Offer price</label><input className="text-input" inputMode="decimal" value={offer} onChange={(event)=>setOffer(event.target.value)}/></>}{props.mode==="override"&&<><p>The current API requires source-ledger identifiers for an override. Use the extraction unit that produced the field being replaced.</p><label className="field-label">Report</label><select className="select-input" value={fact.report_id} onChange={(event)=>setFact({...fact,report_id:event.target.value})}><option value="">Select report</option>{props.reports.map((report)=><option key={report.id} value={report.id}>{report.report_type??report.id}</option>)}</select><label className="field-label">Extraction unit ID</label><input className="text-input" value={fact.extraction_unit_id} onChange={(event)=>setFact({...fact,extraction_unit_id:event.target.value})}/><label className="field-label">Field path</label><input className="text-input" placeholder="valuation.value" value={fact.field_path} onChange={(event)=>setFact({...fact,field_path:event.target.value})}/><label className="field-label">Replacement value</label><input className="text-input" value={fact.value_text} onChange={(event)=>setFact({...fact,value_text:event.target.value})}/><label className="field-label">Source note</label><input className="text-input" maxLength={200} value={fact.snippet} onChange={(event)=>setFact({...fact,snippet:event.target.value})}/></>}<div className="modal-actions"><button className="btn btn-ghost" onClick={props.onClose}>Cancel</button><button className="btn btn-primary" disabled={busy||((props.mode==="merge"||props.mode==="unmerge")&&!target)||(props.mode==="net"&&!offer)||(props.mode==="override"&&(!fact.report_id||!fact.extraction_unit_id||!fact.field_path||!fact.value_text))} onClick={submit}>{busy?"Working…":"Confirm action"}</button></div></div></div>;
 }

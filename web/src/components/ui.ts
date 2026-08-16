@@ -8,7 +8,7 @@ export const palette = {
   text: "#1c2330",
   muted: "#6b7280",
   border: "#d8dde4",
-  accent: "#1f5fa8",
+  accent: "#175c45",
   good: "#1a7f4b",
   warn: "#a15c07",
   bad: "#b3261e",
@@ -19,9 +19,10 @@ export const palette = {
 export const card: CSSProperties = {
   background: palette.surface,
   border: `1px solid ${palette.border}`,
-  borderRadius: 8,
-  padding: "16px 20px",
+  borderRadius: 14,
+  padding: "20px 22px",
   marginBottom: 16,
+  boxShadow: "0 1px 2px rgba(20,35,28,.04), 0 12px 30px rgba(20,35,28,.05)",
 };
 
 export const cardTitle: CSSProperties = {

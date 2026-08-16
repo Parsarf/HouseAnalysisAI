@@ -18,7 +18,7 @@ function CandidateRow(props: { candidate: EvidenceCandidate }) {
     <tr>
       <td style={td}>
         <strong>{c.value_text ?? c.value_parsed ?? c.value_raw ?? "—"}</strong>
-        {c.is_resolved && (
+        {(c.is_resolved || c.is_winner) && (
           <span style={{ marginLeft: 6, fontSize: 11, color: palette.good, fontWeight: 600 }}>resolved</span>
         )}
         {c.snippet && (
@@ -101,11 +101,15 @@ export function EvidenceDrawer(props: { propertyId: string; fieldPath: string | 
             <section style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12, color: palette.muted }}>Resolved value</div>
               <div style={{ fontSize: 20 }}>
-                <MoneyText money={state.data.resolved} cents />
+                {state.data.resolved ? <MoneyText money={state.data.resolved} cents /> : (() => {
+                  const winner = state.data.candidates.find((candidate) => candidate.is_winner || candidate.fact_id === state.data.resolution?.winning_fact_id);
+                  return winner?.value_parsed ?? winner?.value_text ?? winner?.value_raw ?? "Not resolved";
+                })()}
               </div>
-              {state.data.method && (
-                <div style={{ fontSize: 12, color: palette.muted, marginTop: 4 }}>method: {state.data.method}</div>
+              {(state.data.method || state.data.resolution?.method) && (
+                <div style={{ fontSize: 12, color: palette.muted, marginTop: 4 }}>method: {state.data.method ?? state.data.resolution?.method}</div>
               )}
+              {state.data.resolution && <div className="evidence-resolution"><span>Score {state.data.resolution.score ?? "—"}</span><span>{state.data.resolution.has_conflict ? "Conflict detected" : "No material conflict"}</span><span>{state.data.resolution.verification_state ?? "Unverified"}</span></div>}
             </section>
 
             <section style={{ marginBottom: 16 }}>
@@ -131,11 +135,11 @@ export function EvidenceDrawer(props: { propertyId: string; fieldPath: string | 
               )}
             </section>
 
-            {state.data.overrides.length > 0 && (
+            {(state.data.overrides?.length ?? 0) > 0 && (
               <section>
                 <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Human overrides</h4>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-                  {state.data.overrides.map((override, index) => (
+                  {state.data.overrides?.map((override, index) => (
                     <li key={index}>
                       {override.actor} {override.action}
                       {override.value ? ` → ${override.value}` : ""} on {override.at}

@@ -1,186 +1,75 @@
-// MSW handlers covering the implemented endpoints in api/app.py plus the
-// properties/analysis/offers/flags endpoints from spec §16 that the UI builds
-// against before the backend exists.
 import { http, HttpResponse } from "msw";
 import { analyses, batches, flags, properties } from "./data";
-import type { OfferRequest, PropertyPatch, ResolveFlagRequest } from "../api/types";
-import type { OfferPoint } from "../types";
+import type {
+  AssumptionSetRecord,
+  FilterClause,
+  NoteRecord,
+  OfferPoint,
+  OfferRequest,
+  PropertyPatch,
+  ResolveFlagRequest,
+  SavedView,
+} from "../api/types";
 
-// Relative paths work in the browser; Node tests need an absolute origin,
-// so handlers are built by createHandlers(origin) — see server.ts.
-
-function error(status: number, code: string, message: string) {
-  return HttpResponse.json({ error: { code, message, details: {} } }, { status });
+function error(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
+  return HttpResponse.json({ error: { code, message, details } }, { status });
 }
+function notFound(what: string) { return error(404, "not_found", `${what} not found`); }
 
-function notFound(what: string) {
-  return error(404, "not_found", `${what} not found`);
-}
+const savedViews: SavedView[] = [{ id: "00000000-0000-0000-0000-00000000d001", name: "Priority pursuits", filters: [{ field: "pipeline_status", op: "eq", value: "pursue" }], columns: {}, created_at: "2026-08-15T12:00:00Z" }];
+const notes: Record<string, NoteRecord[]> = { [properties[0].id]: [{ id: "00000000-0000-0000-0000-00000000e001", property_id: properties[0].id, body: "Trustee confirmed the sale date. Verify the reinstatement quote before submitting an offer.", created_at: "2026-08-15T18:20:00Z" }] };
+const assumptions: AssumptionSetRecord[] = [{ id: "00000000-0000-0000-0000-00000000a001", name: "Los Angeles baseline", version: 3, is_default: true, effective_from: "2026-08-01", params: { acquisition: { closing_pct: "0.018", inspection_flat: "750" }, repairs: { regional_index: "1.18", low_multiplier: "0.85", high_multiplier: "1.25" }, resale: { commission_pct: "0.05" } } }];
 
 export function createHandlers(origin = "") {
   const BASE = `${origin}/api`;
+  let authenticated = false;
+  let readOnly = false;
+  const requireAuth = () => authenticated ? null : error(401, "unauthorized", "authentication required");
+  const requireWrite = () => requireAuth() ?? (readOnly ? error(403, "read_only", "read-only user cannot mutate") : null);
   return [
-    http.get("/healthz", () => HttpResponse.json({ status: "ok" })),
+    http.get(`${origin}/healthz`, () => HttpResponse.json({ status: "ok" })),
+    http.post(`${BASE}/auth/login`, async ({ request }) => { const form = await request.formData(); if (form.get("password") !== "mock-password") return error(401, "invalid_input", "invalid credentials"); authenticated = true; readOnly = form.get("read_only") === "true"; return HttpResponse.json({ ok: true }); }),
+    http.get(`${BASE}/me`, () => requireAuth() ?? HttpResponse.json({ id: "owner", read_only: readOnly })),
+    http.post(`${BASE}/filter/validate`, async ({ request }) => { const auth = requireAuth(); if (auth) return auth; const filters = await request.json() as FilterClause[]; const allowed = new Set(["apn","address","city","state","zip5","pipeline_status","status","tags","next_action","next_action_date","gut_rating","is_watchlisted","lat","lng","created_at","updated_at"]); const invalid = filters.find((filter) => !allowed.has(filter.field)); return invalid ? error(422,"invalid_input",`unknown filter field '${invalid.field}'`) : HttpResponse.json({ valid: true, filters }); }),
 
-    http.post(`${BASE}/auth/login`, async ({ request }) => {
-    const form = await request.formData();
-    if (form.get("password") !== "mock-password") {
-      return error(401, "invalid_input", "invalid credentials");
-    }
-    return HttpResponse.json({ ok: true });
-  }),
+    http.post(`${BASE}/uploads`, async ({ request }) => { const auth = requireWrite(); if (auth) return auth; const form = await request.formData(); const files = form.getAll("files"); const batchId = crypto.randomUUID(); batches[batchId] = { id: batchId, name: String(form.get("batch_name") ?? "New upload"), status: "uploaded", total: files.length, completed: 0, failed: 0, estimated_cost_usd: null, actual_cost_usd: null, awaiting_confirmation: false }; return HttpResponse.json({ batch_id: batchId, report_ids: files.map(() => crypto.randomUUID()), count: files.length }); }),
+    http.post(`${BASE}/ingest/paste`, async ({ request }) => { const auth = requireWrite(); if (auth) return auth; const body = await request.json() as { text?: string; batch_name?: string }; if (!body.text?.trim()) return error(422,"invalid_input","text is required"); const batchId = crypto.randomUUID(); batches[batchId] = { id:batchId,name:body.batch_name??"Pasted report",status:"uploaded",total:1,completed:0,failed:0,estimated_cost_usd:null,actual_cost_usd:null,awaiting_confirmation:false }; return HttpResponse.json({batch_id:batchId,report_ids:[crypto.randomUUID()],count:1}); }),
+    http.get(`${BASE}/batches/:batchId`, ({ params }) => requireAuth() ?? (batches[String(params.batchId)] ? HttpResponse.json(batches[String(params.batchId)]) : notFound("batch"))),
+    http.post(`${BASE}/batches/:batchId/estimate`, ({ params }) => { const auth=requireAuth();if(auth)return auth;const batch=batches[String(params.batchId)];if(!batch)return notFound("batch");batch.status="awaiting_confirmation";batch.awaiting_confirmation=true;batch.estimated_cost_usd=(batch.total*.23).toFixed(2);return HttpResponse.json({batch_id:batch.id,report_count:batch.total,total_tokens:batch.total*76800,estimated_cost_usd:batch.estimated_cost_usd,awaiting_confirmation:true}); }),
+    http.post(`${BASE}/batches/:batchId/start`, ({ params }) => { const auth=requireWrite();if(auth)return auth;const batch=batches[String(params.batchId)];if(!batch)return notFound("batch");batch.status="running";batch.awaiting_confirmation=false;batch.actual_cost_usd="0.00";return HttpResponse.json(batch); }),
 
-    http.get(`${BASE}/me`, () => HttpResponse.json({ id: "owner", read_only: false })),
+    http.get(`${BASE}/properties`, ({ request }) => { const auth=requireAuth();if(auth)return auth;const url=new URL(request.url);let items=[...properties];const raw=url.searchParams.get("filters");if(raw){try{const clauses=JSON.parse(raw) as FilterClause[];for(const clause of clauses){if(clause.op!=="eq"&&clause.op!=="contains")continue;items=items.filter((item)=>{const field=clause.field==="pipeline_status"?(item.pipeline_status??item.status):clause.field==="address"?(item.address_line1??item.address):(item as unknown as Record<string,unknown>)[clause.field];if(Array.isArray(field))return field.includes(String(clause.value));return clause.op==="contains"?String(field??"").toLowerCase().includes(String(clause.value).toLowerCase()):String(field)===String(clause.value);});}}catch{/* malformed requests are covered by validation */}}return HttpResponse.json({items,next_cursor:null}); }),
+    http.get(`${BASE}/properties/:propertyId`, ({ params }) => { const auth=requireAuth();if(auth)return auth;const property=properties.find((item)=>item.id===params.propertyId);return property?HttpResponse.json({...property,latest_valuation:{value:"496000",confidence:.85,source_kind:"api",is_estimated:true}}):notFound("property"); }),
+    http.patch(`${BASE}/properties/:propertyId`, async ({ params, request }) => { const auth=requireWrite();if(auth)return auth;const property=properties.find((item)=>item.id===params.propertyId);if(!property)return notFound("property");const changes=await request.json() as PropertyPatch;if(changes.pipeline_status!==undefined){property.status=changes.pipeline_status;property.pipeline_status=changes.pipeline_status;}if(changes.tags!==undefined)property.tags=changes.tags;if(changes.gut_rating!==undefined)property.gut_rating=changes.gut_rating;if(changes.next_action!==undefined)property.next_action=changes.next_action;if(changes.next_action_date!==undefined)property.next_action_date=changes.next_action_date;if(changes.is_watchlisted!==undefined)property.is_watchlisted=changes.is_watchlisted;return HttpResponse.json(property); }),
+    http.post(`${BASE}/properties/quick-add`, async ({ request }) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as {address_line1?:string;city?:string;state?:string;zip5?:string;apn?:string};if(!body.address_line1)return error(422,"invalid_input","address_line1 is required");const property={id:crypto.randomUUID(),address:body.address_line1,address_line1:body.address_line1,apn:body.apn??null,city:body.city??null,state:body.state??null,zip5:body.zip5??null,status:"new",pipeline_status:"new",tags:[],gut_rating:null,is_watchlisted:false,open_flags:0};properties.unshift(property);return HttpResponse.json(property,{status:201}); }),
+    http.post(`${BASE}/properties/merge`, async ({ request }) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as {source_id:string;target_id:string};return HttpResponse.json({source_id:body.source_id,merged_into_id:body.target_id}); }),
+    http.post(`${BASE}/properties/unmerge`, async ({ request }) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as {source_id:string};return HttpResponse.json({source_id:body.source_id,merged_into_id:null}); }),
+    http.get(`${BASE}/properties/:propertyId/analysis`, ({ params, request }) => { const auth=requireAuth();if(auth)return auth;const analysis=analyses[String(params.propertyId)];if(!analysis)return notFound("analysis");return HttpResponse.json({...analysis,scenario:new URL(request.url).searchParams.get("scenario")??analysis.scenario}); }),
+    http.get(`${BASE}/properties/:propertyId/timeline`, ({ params }) => { const auth=requireAuth();if(auth)return auth;const analysis=analyses[String(params.propertyId)];return analysis?HttpResponse.json({property_id:analysis.property_id,timeline:analysis.timeline}):notFound("property"); }),
+    http.get(`${BASE}/properties/:propertyId/evidence/:fieldPath`, ({ params }) => { const auth=requireAuth();if(auth)return auth;const analysis=analyses[String(params.propertyId)];if(!analysis)return notFound("property");const factId=crypto.randomUUID();return HttpResponse.json({field_path:String(params.fieldPath),resolution:{method:"priority_and_corroboration",score:"0.91",has_conflict:false,verification_state:"corroborated",winning_fact_id:factId},candidates:[{fact_id:factId,value_raw:"$500,000",value_parsed:"500000",source_kind:"report",extraction_confidence:.9,page_number:3,snippet:`Reported ${String(params.fieldPath)} in the valuation summary`,report_id:crypto.randomUUID(),is_winner:true}]}); }),
+    http.get(`${BASE}/properties/:propertyId/reports`, ({ params }) => requireAuth() ?? HttpResponse.json({items:[{id:"00000000-0000-0000-0000-00000000r001".replace("r","1"),report_type:"property_profile",vendor:"First American",generated_date:"2026-08-12",status:"complete",failure_reason:null,page_count:18,ocr_applied:false,created_at:"2026-08-12T17:00:00Z",property_id:params.propertyId}]})),
+    http.get(`${BASE}/properties/:propertyId/notes`, ({ params }) => requireAuth() ?? HttpResponse.json({items:notes[String(params.propertyId)]??[]})),
+    http.post(`${BASE}/properties/:propertyId/notes`, async ({ params, request }) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as {body:string};const note={id:crypto.randomUUID(),property_id:String(params.propertyId),body:body.body,created_at:new Date().toISOString()};notes[String(params.propertyId)]=[note,...(notes[String(params.propertyId)]??[])];return HttpResponse.json(note); }),
+    http.post(`${BASE}/properties/:propertyId/offers`, async ({ params, request }) => { const auth=requireAuth();if(auth)return auth;const analysis=analyses[String(params.propertyId)];if(!analysis)return notFound("property");const offer=await request.json() as OfferRequest;const price=Number(offer.offer_price);const confirmed=180000;const closing=Math.round(price*.02);const proceeds=price-confirmed-closing;const point:OfferPoint={offer_price:Number(price).toFixed(2),scenario:offer.scenario??"expected",confirmed_payoffs:String(confirmed),potential_payoffs:"0",closing_costs:String(closing),proceeds_low:String(proceeds),proceeds_expected:String(proceeds),proceeds_high:String(proceeds),buyer_basis:String(price+44200),profit:String(496000-(price+73960)),roi:String((496000-(price+73960))/(price+44200)),is_short_sale:price<confirmed};return HttpResponse.json(point); }),
+    http.post(`${BASE}/properties/:propertyId/recompute`, ({ params }) => requireWrite() ?? (analyses[String(params.propertyId)]?HttpResponse.json({enqueued:true,job_id:crypto.randomUUID()}):notFound("property"))),
+    http.post(`${BASE}/properties/:propertyId/facts`, ({ params }) => requireWrite() ?? (analyses[String(params.propertyId)]?HttpResponse.json({id:crypto.randomUUID()}):notFound("property"))),
+    http.post(`${BASE}/properties/:propertyId/exports/deal-sheet`, ({ params }) => requireAuth() ?? new HttpResponse(`<html><head><title>ACQ Deal Sheet</title></head><body><h1>Deal sheet</h1><p>Property ${String(params.propertyId)}</p></body></html>`,{headers:{"Content-Type":"text/html"}})),
+    http.post(`${BASE}/properties/:propertyId/exports/net-sheet`, async ({ params,request }) => { const auth=requireAuth();if(auth)return auth;const body=await request.json() as OfferRequest;return new HttpResponse(`<html><head><title>ACQ Net Sheet</title></head><body><h1>Seller net sheet</h1><p>Property ${String(params.propertyId)}</p><p>Offer $${body.offer_price}</p></body></html>`,{headers:{"Content-Type":"text/html"}}); }),
 
-    http.post(`${BASE}/filter/validate`, async ({ request }) => {
-    const filters = await request.json();
-    return HttpResponse.json({ filters });
-  }),
-
-    http.post(`${BASE}/uploads`, async ({ request }) => {
-    const form = await request.formData();
-    const files = form.getAll("files");
-    const batchId = crypto.randomUUID();
-    batches[batchId] = {
-      id: batchId, status: "uploaded", total: files.length, completed: 0, failed: 0, estimated_cost_usd: null,
-    };
-    return HttpResponse.json({
-      batch_id: batchId,
-      report_ids: files.map(() => crypto.randomUUID()),
-      count: files.length,
-    });
-  }),
-
-    http.get(`${BASE}/batches/:batchId`, ({ params }) => {
-    const batch = batches[String(params.batchId)];
-    return batch ? HttpResponse.json(batch) : notFound("batch");
-  }),
-
-    http.get(`${BASE}/properties`, () => HttpResponse.json({ items: properties, next_cursor: null })),
-
-    http.get(`${BASE}/properties/:propertyId`, ({ params }) => {
-    const property = properties.find((item) => item.id === params.propertyId);
-    return property ? HttpResponse.json(property) : notFound("property");
-  }),
-
-    http.patch(`${BASE}/properties/:propertyId`, async ({ params, request }) => {
-    const property = properties.find((item) => item.id === params.propertyId);
-    if (!property) return notFound("property");
-    const changes = (await request.json()) as PropertyPatch;
-    if (changes.pipeline_status !== undefined) property.status = changes.pipeline_status;
-    if (changes.tags !== undefined) property.tags = changes.tags;
-    if (changes.gut_rating !== undefined) property.gut_rating = changes.gut_rating;
-    return HttpResponse.json(property);
-  }),
-
-    http.get(`${BASE}/properties/:propertyId/analysis`, ({ params, request }) => {
-    const analysis = analyses[String(params.propertyId)];
-    if (!analysis) return notFound("analysis");
-    const scenario = new URL(request.url).searchParams.get("scenario") ?? "expected";
-    return HttpResponse.json({ ...analysis, scenario });
-  }),
-
-    http.get(`${BASE}/properties/:propertyId/timeline`, ({ params }) => {
-    const analysis = analyses[String(params.propertyId)];
-    if (!analysis) return notFound("property");
-    return HttpResponse.json({ items: analysis.timeline });
-  }),
-
-    http.get(`${BASE}/properties/:propertyId/evidence/:fieldPath`, ({ params }) => {
-    const analysis = analyses[String(params.propertyId)];
-    if (!analysis) return notFound("property");
-    const fieldPath = String(params.fieldPath);
-    return HttpResponse.json({
-      property_id: analysis.property_id,
-      field_path: fieldPath,
-      resolved: { value: "500000", confidence: 0.9, source_kind: "report", is_estimated: false },
-      method: "priority",
-      candidates: [
-        {
-          fact_id: crypto.randomUUID(), value_raw: "$500,000", value_parsed: "500000",
-          source_kind: "report", extraction_confidence: 0.9, page_number: 3,
-          snippet: `estimated value of ${fieldPath}`, report_id: crypto.randomUUID(), is_resolved: true, score: "0.91",
-        },
-      ],
-      overrides: [],
-    });
-  }),
-
-    http.post(`${BASE}/properties/:propertyId/offers`, async ({ params, request }) => {
-    const analysis = analyses[String(params.propertyId)];
-    if (!analysis) return notFound("property");
-    const offer = (await request.json()) as OfferRequest;
-    const scenario = offer.scenario ?? "expected";
-    // Canned authoritative math for mocks only — the real engine lives server-side.
-    const grid = analysis.offers;
-    const nearest = grid?.points.reduce((best, point) =>
-      Math.abs(Number(point.offer_price) - Number(offer.offer_price)) <
-      Math.abs(Number(best.offer_price) - Number(offer.offer_price)) ? point : best,
-    );
-    const point: OfferPoint = nearest
-      ? { ...nearest, offer_price: offer.offer_price, scenario }
-      : {
-          offer_price: offer.offer_price, scenario,
-          confirmed_payoffs: "0", potential_payoffs: "0", closing_costs: "0",
-          proceeds_low: "0", proceeds_expected: "0", proceeds_high: "0",
-          buyer_basis: offer.offer_price, profit: "0", roi: null,
-          is_short_sale: false,
-        };
-    return HttpResponse.json(point);
-  }),
-
-    http.post(`${BASE}/properties/:propertyId/recompute`, ({ params }) => {
-    if (!analyses[String(params.propertyId)]) return notFound("property");
-    return HttpResponse.json({ enqueued: true });
-  }),
-
-    http.post(`${BASE}/properties/:propertyId/facts`, ({ params }) => {
-    if (!analyses[String(params.propertyId)]) return notFound("property");
-    return HttpResponse.json({ fact_id: crypto.randomUUID() });
-  }),
-
-    http.post(`${BASE}/properties/quick-add`, async ({ request }) => {
-    const body = (await request.json()) as { address_line1: string; city?: string; state?: string; zip5?: string };
-    const property = {
-      id: crypto.randomUUID(),
-      address: body.address_line1,
-      city: body.city ?? null,
-      state: body.state ?? null,
-      zip5: body.zip5 ?? null,
-      status: "new",
-      tags: [],
-      gut_rating: null,
-    };
-    properties.push(property);
-    return HttpResponse.json(property, { status: 201 });
-  }),
-
-    http.post(`${BASE}/properties/merge`, async ({ request }) => {
-    const { source_id, target_id } = (await request.json()) as { source_id: string; target_id: string };
-    const target = properties.find((item) => item.id === target_id);
-    const sourceIndex = properties.findIndex((item) => item.id === source_id);
-    if (!target || sourceIndex < 0) return notFound("property");
-    properties.splice(sourceIndex, 1);
-    return HttpResponse.json(target);
-  }),
-
-    http.post(`${BASE}/properties/unmerge`, () => HttpResponse.json({ unmerged: true })),
-
-    http.get(`${BASE}/flags`, ({ request }) => {
-    const status = new URL(request.url).searchParams.get("status") ?? "open";
-    return HttpResponse.json({ items: flags.filter((flag) => flag.status === status), next_cursor: null });
-  }),
-
-    http.post(`${BASE}/flags/:flagId/resolve`, async ({ params, request }) => {
-    const flag = flags.find((item) => item.id === params.flagId);
-    if (!flag) return notFound("flag");
-    const body = (await request.json()) as ResolveFlagRequest;
-    if (body.resolution !== "accept" && body.resolution !== "reject") {
-      return error(422, "invalid_input", "resolution must be accept or reject");
-    }
-    flag.status = "resolved";
-    return HttpResponse.json({ id: flag.id, status: "resolved", score_delta: "0", rank_delta: 0 });
-  }),
+    http.get(`${BASE}/flags`, ({ request }) => { const auth=requireAuth();if(auth)return auth;const url=new URL(request.url);const status=url.searchParams.get("status")??"open";const propertyId=url.searchParams.get("property_id");return HttpResponse.json({items:flags.filter((flag)=>(status==="all"||flag.status===status)&&(!propertyId||flag.property_id===propertyId))}); }),
+    http.post(`${BASE}/flags/:flagId/resolve`, async ({ params,request }) => { const auth=requireWrite();if(auth)return auth;const flag=flags.find((item)=>item.id===params.flagId);if(!flag)return notFound("flag");const body=await request.json() as ResolveFlagRequest;flag.status="resolved";flag.resolution=body.resolution;flag.note=body.note;flag.resolved_value=body.resolved_value;flag.resolved_at=new Date().toISOString();return HttpResponse.json({flag,recompute_enqueued:true,score_delta:"3",rank_delta:1}); }),
+    http.get(`${BASE}/saved-views`, () => requireAuth() ?? HttpResponse.json({items:savedViews})),
+    http.post(`${BASE}/saved-views`, async ({request}) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as {name:string;filters:FilterClause[];columns:Record<string,unknown>};const view={id:crypto.randomUUID(),...body,created_at:new Date().toISOString()};savedViews.unshift(view);return HttpResponse.json(view); }),
+    http.delete(`${BASE}/saved-views/:viewId`, ({params}) => { const auth=requireWrite();if(auth)return auth;const index=savedViews.findIndex((view)=>view.id===params.viewId);if(index>=0)savedViews.splice(index,1);return HttpResponse.json({deleted:String(params.viewId)}); }),
+    http.get(`${BASE}/rankings`, () => requireAuth() ?? HttpResponse.json({items:properties.map((property,index)=>({property_id:property.id,rank:index+1,prev_rank:index===0?2:1,score:property.overall_score??null})),ranked_at:"2026-08-16T15:30:00Z"})),
+    http.get(`${BASE}/dashboard`, () => requireAuth() ?? HttpResponse.json({total_properties:properties.length,by_status:{pursue:1,reviewing:1},open_flags:flags.filter((flag)=>flag.status==="open").length,failed_reports:1,missing_valuation_count:1,watchlisted:properties.filter((property)=>property.is_watchlisted).length})),
+    http.get(`${BASE}/changes`, () => requireAuth() ?? HttpResponse.json({items:[{id:"change-1",property_id:properties[0].id,change_type:"score_changed",field_path:"scores.overall",old_value:"61",new_value:"68",score_delta:"7",detected_at:"2026-08-16T14:20:00Z"},{id:"change-2",property_id:properties[1].id,change_type:"report_added",field_path:"reports.property_profile",old_value:null,new_value:"First American profile",score_delta:"0",detected_at:"2026-08-15T20:00:00Z"}]})),
+    http.get(`${BASE}/problems`, () => requireAuth() ?? HttpResponse.json({gating_flags:flags.filter((flag)=>flag.status==="open"),failed_reports:[{id:"00000000-0000-0000-0000-00000000fa11",batch_id:"00000000-0000-0000-0000-00000000ba70",failure_reason:"ocr_timeout",file_path:"reports/scan-102.pdf"}]})),
+    http.get(`${BASE}/assumption-sets`, () => requireAuth() ?? HttpResponse.json({items:assumptions})),
+    http.post(`${BASE}/assumption-sets/preview`, async ({request}) => { const auth=requireAuth();if(auth)return auth;const body=await request.json() as {property_id?:string};return HttpResponse.json({valid:true,underwriting:body.property_id?analyses[properties[0].id].underwriting:null}); }),
+    http.post(`${BASE}/assumption-sets`, async ({request}) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as {name:string;params:Record<string,unknown>;is_default:boolean};const item={id:crypto.randomUUID(),name:body.name,version:1,is_default:body.is_default,effective_from:new Date().toISOString().slice(0,10),params:body.params};assumptions.unshift(item);return HttpResponse.json({id:item.id,name:item.name,version:item.version}); }),
+    http.post(`${BASE}/realized-deals`, async ({request}) => { const auth=requireWrite();if(auth)return auth;const body=await request.json() as Record<string,unknown>;return HttpResponse.json({id:crypto.randomUUID(),...body}); }),
+    http.get(`${BASE}/exports/csv`, () => requireAuth() ?? new HttpResponse("id,address_line1,pipeline_status\n1,1 Main St,pursue\n",{headers:{"Content-Type":"text/csv","Content-Disposition":"attachment; filename=properties.csv"}})),
   ];
 }
 
