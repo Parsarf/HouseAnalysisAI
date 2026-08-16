@@ -18,5 +18,5 @@ class Computation:
 def recompute_property(property: NormalizedProperty, assumptions: AssumptionSet, scoring_config_id: UUID, purchase_price: Decimal) -> Computation:
     underwriting_result = underwrite(property, assumptions)
     strategy_results = all_strategies(property, underwriting_result, assumptions, purchase_price)
-    score_result = score(property, underwriting_result, scoring_config_id)
+    score_result = score(property, underwriting_result, scoring_config_id, strategy_results)
     return Computation(underwriting_result, strategy_results, score_result)
