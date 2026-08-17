@@ -7,6 +7,7 @@ pairs merge into a single ``<name>`` fact. Validation is *not* done here —
 drafts go through the gauntlet in ``validation.py``.
 """
 
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
@@ -31,6 +32,12 @@ UNIT_ENTITY_TYPES: dict[str, EntityType] = {
 }
 
 _PROVENANCE_KEYS = {"page_number", "snippet", "extraction_confidence", "null_reason"}
+
+
+def _safe_additional_fact_leaf(label: str, category: str | None) -> str:
+    descriptor = "_".join(part for part in (category, label) if part)
+    slug = re.sub(r"[^a-z0-9]+", "_", descriptor.casefold()).strip("_")
+    return f"detail_{slug or 'unmapped'}"
 
 
 def _date_fields(unit_type: str) -> set[str]:
@@ -144,4 +151,40 @@ def flatten_payload(
                 # schema stage of the gauntlet.
                 dropped += 1
                 continue
+
+    # Catch-all facts still become ordinary ExtractedFactDrafts and therefore
+    # pass through the same grounding and validation gauntlet as predefined
+    # fields. The ``detail_`` prefix prevents an unmapped fact from silently
+    # masquerading as a normalized/calculated property field downstream.
+    for index, item in enumerate(payload.get("additional_facts") or []):
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        label = item.get("label")
+        value = item.get("value")
+        page_number = item.get("source_page")
+        snippet = item.get("snippet")
+        if not label or value is None or page_number is None or not snippet:
+            dropped += 1
+            continue
+        category = item.get("category")
+        confidence = item.get("confidence")
+        entity_local_id = f"additional_facts[{index}]"
+        try:
+            drafts.append(ExtractedFactDraft(
+                report_id=report_id,
+                extraction_unit_id=extraction_unit_id,
+                entity_type=EntityType.PROPERTY,
+                entity_local_id=entity_local_id,
+                page_number=int(page_number),
+                snippet=str(snippet),
+                extraction_confidence=float(confidence) if confidence is not None else 0.0,
+                field_path=(
+                    f"{entity_local_id}."
+                    f"{_safe_additional_fact_leaf(str(label), str(category) if category else None)}"
+                ),
+                value_text=str(value),
+            ))
+        except Exception:
+            dropped += 1
     return drafts, dropped

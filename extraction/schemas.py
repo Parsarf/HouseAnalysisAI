@@ -10,7 +10,10 @@ the model never does arithmetic; ``flatten.py`` turns these objects into
 
 # Shared leaf fragments -------------------------------------------------------
 
-_NULL_REASON = {"enum": ["not_present", "illegible", "redacted", "conflicting_in_source", None]}
+_NULL_REASON = {
+    "type": ["string", "null"],
+    "enum": ["not_present", "illegible", "redacted", "conflicting_in_source", None],
+}
 
 _PROVENANCE = {
     "page_number": {"type": "integer", "minimum": 1},
@@ -18,7 +21,23 @@ _PROVENANCE = {
     "extraction_confidence": {"type": "number", "minimum": 0, "maximum": 1},
     "null_reason": _NULL_REASON,
 }
-_REQUIRED_PROVENANCE = ["page_number", "snippet", "extraction_confidence"]
+
+_ADDITIONAL_FACTS = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "value": {"type": ["string", "null"]},
+            "category": {"type": ["string", "null"]},
+            "source_page": {"type": ["integer", "null"], "minimum": 1},
+            "snippet": {"type": ["string", "null"], "maxLength": 200},
+            "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        },
+        "required": ["label", "value", "category", "source_page", "snippet", "confidence"],
+        "additionalProperties": False,
+    },
+}
 
 
 def _money(name: str) -> dict[str, dict]:
@@ -42,21 +61,28 @@ def _bool(name: str) -> dict[str, dict]:
 
 
 def _enum(name: str, values: list[str]) -> dict[str, dict]:
-    return {name: {"enum": values + [None]}}
+    return {name: {"type": ["string", "null"], "enum": values + [None]}}
 
 
-def _unit(key: str, properties: dict, required: list[str]) -> dict:
+def _unit(key: str, properties: dict) -> dict:
+    item_properties = {**properties, **_PROVENANCE}
     item = {
         "type": "object",
         "additionalProperties": False,
-        "required": required + _REQUIRED_PROVENANCE,
-        "properties": {**properties, **_PROVENANCE},
+        # OpenAI strict structured output requires every declared key to be
+        # required. Semantically optional values remain nullable instead.
+        "required": list(item_properties),
+        "properties": item_properties,
+    }
+    result_properties = {
+        key: {"type": "array", "items": item},
+        "additional_facts": _ADDITIONAL_FACTS,
     }
     return {
         "type": "object",
-        "required": [key],
+        "required": list(result_properties),
         "additionalProperties": False,
-        "properties": {key: {"type": "array", "items": item}},
+        "properties": result_properties,
     }
 
 
@@ -76,7 +102,6 @@ LIENS = _unit(
         **_text("attachment_evidence"),
         "attachment_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
     },
-    ["lien_type", "attachment_basis"],
 )
 
 PROPERTY_CORE = _unit(
@@ -88,7 +113,6 @@ PROPERTY_CORE = _unit(
         **_number("beds"), **_number("baths"), **_number("sqft"), **_number("lot_sqft"),
         **_number("year_built"), **_number("units"),
     },
-    [],
 )
 
 OWNERSHIP = _unit(
@@ -99,7 +123,6 @@ OWNERSHIP = _unit(
         **_bool("is_owner_occupied"), **_bool("is_absentee"),
         **_date("ownership_start_date"), **_money("purchase_price"),
     },
-    [],
 )
 
 MORTGAGES = _unit(
@@ -112,7 +135,6 @@ MORTGAGES = _unit(
         **_date("origination_date"), **_date("recording_date"), **_date("balance_as_of"),
         **_text("recording_doc_number"), **_bool("is_open"),
     },
-    ["position"],
 )
 
 FORECLOSURE = _unit(
@@ -125,7 +147,6 @@ FORECLOSURE = _unit(
         **_number("postponement_count"), **_number("rescission_count"),
         **_bool("is_active"),
     },
-    ["stage"],
 )
 
 BANKRUPTCY = _unit(
@@ -136,7 +157,6 @@ BANKRUPTCY = _unit(
         **_date("filing_date"), **_date("discharge_date"),
         **_text("case_number"), **_text("court"), **_text("debtor_name_raw"),
     },
-    ["chapter", "status"],
 )
 
 VALUATION = _unit(
@@ -147,7 +167,6 @@ VALUATION = _unit(
         **_date("as_of_date"),
         "reported_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
     },
-    ["valuation_type"],
 )
 
 COMPARABLES = _unit(
@@ -156,7 +175,6 @@ COMPARABLES = _unit(
         **_text("address"), **_date("sale_date"), **_money("price"),
         **_number("sqft"), **_number("beds"), **_number("baths"), **_number("distance_miles"),
     },
-    [],
 )
 
 LISTINGS = _unit(
@@ -166,7 +184,6 @@ LISTINGS = _unit(
         **_enum("status", ["active", "pending", "sold", "withdrawn", "expired", "cancelled", "unknown"]),
         **_number("dom"), **_text("mls_number"),
     },
-    ["status"],
 )
 
 TAX = _unit(
@@ -175,19 +192,16 @@ TAX = _unit(
         **_number("tax_year"), **_money("annual_taxes"), **_money("assessed_value"),
         **_money("delinquent_amount"), **_number("delinquent_years"),
     },
-    [],
 )
 
 RENTAL = _unit(
     "rentals",
     {**_money("rent_estimate"), **_text("source"), **_date("as_of_date")},
-    [],
 )
 
 CONDITION_SIGNALS = _unit(
     "condition_signals",
     {**_enum("condition", ["pristine", "cosmetic", "moderate", "heavy", "gut"]), **_text("evidence")},
-    ["condition"],
 )
 
 UNIT_SCHEMAS: dict[str, dict] = {

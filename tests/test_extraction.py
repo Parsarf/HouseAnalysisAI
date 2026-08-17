@@ -110,14 +110,49 @@ def session():
 
 # --- Schemas and routing ------------------------------------------------------
 
+def assert_openai_strict_schema(node, path="$"):
+    """Recursively enforce OpenAI strict structured-output object rules."""
+    if not isinstance(node, dict):
+        return
+    for index, branch in enumerate(node.get("anyOf", [])):
+        assert_openai_strict_schema(branch, f"{path}.anyOf[{index}]")
+    node_type = node.get("type")
+    if node_type == "object" or isinstance(node_type, list) and "object" in node_type:
+        properties = node.get("properties", {})
+        required = node.get("required", [])
+        assert len(required) == len(set(required)), f"duplicate required key at {path}"
+        assert set(required) == set(properties), f"required/properties mismatch at {path}"
+        assert node.get("additionalProperties") is False, f"open properties at {path}"
+        for name, child in properties.items():
+            assert_openai_strict_schema(child, f"{path}.{name}")
+    if node_type == "array":
+        assert_openai_strict_schema(node["items"], f"{path}[]")
+
+
 def test_twelve_unit_schemas():
     assert len(UNIT_SCHEMAS) == 12
     for schema in UNIT_SCHEMAS.values():
         assert schema["type"] == "object" and schema["additionalProperties"] is False
-        (key,) = schema["required"]
+        assert_openai_strict_schema(schema)
+        key = next(key for key in schema["properties"] if key != "additional_facts")
+        assert schema["required"] == [key, "additional_facts"]
         item = schema["properties"][key]["items"]
-        assert {"page_number", "snippet", "extraction_confidence"} <= set(item["required"])
+        assert set(item["required"]) == set(item["properties"])
         assert item["properties"]["snippet"]["maxLength"] == 200
+        for name, field_schema in item["properties"].items():
+            if name not in {"page_number", "snippet", "extraction_confidence"}:
+                assert "null" in field_schema.get("type", []), f"{key}.{name} is not nullable"
+        assert schema["properties"][key]["type"] == "array"
+        assert schema["properties"]["additional_facts"]["type"] == "array"
+
+
+def test_additional_facts_schema_preserves_source_provenance():
+    schema = schema_for("property_core")["properties"]["additional_facts"]["items"]
+    assert set(schema["required"]) == {
+        "label", "value", "category", "source_page", "snippet", "confidence",
+    }
+    assert schema["properties"]["source_page"]["type"] == ["integer", "null"]
+    assert schema["properties"]["snippet"]["type"] == ["string", "null"]
 
 
 def test_model_routing():
@@ -132,6 +167,16 @@ def test_schema_aliases():
     assert schema_for("lien") is schema_for("liens")
     assert schema_for("mortgage") is schema_for("mortgages")
     assert schema_for("owner_report") is schema_for("ownership")
+
+
+def test_extraction_prompt_requires_null_empty_arrays_and_no_fabrication():
+    prompt = load_prompt().lower()
+    assert "return null" in prompt
+    assert "return []" in prompt
+    assert "never fabricate" in prompt
+    assert "additional_facts" in prompt
+    assert "do not duplicate" in prompt
+    assert "do not calculate equity" in prompt
 
 
 # --- Provider client -----------------------------------------------------------
@@ -286,7 +331,7 @@ def flatten(payload, unit_type="liens"):
 
 
 def test_flatten_good_lien_all_active():
-    drafts, dropped = flatten({"liens": [GOOD_LIEN]})
+    drafts, dropped = flatten({"liens": [GOOD_LIEN], "additional_facts": []})
     assert dropped == 0
     outcome = run_gauntlet(drafts, PAGES)
     assert outcome.dropped == 0 and outcome.inactive == []
@@ -296,6 +341,131 @@ def test_flatten_good_lien_all_active():
     assert amount.value_parsed == Decimal("48210.5") and amount.value_raw == "$48,210.50"
     date_fact = next(f for f in outcome.active if f.field_path == "liens[0].recording_date")
     assert date_fact.value_date == date(2022, 3, 14)
+
+
+def test_full_information_document_extracts_known_values():
+    service = ExtractionService(make_provider([
+        {"liens": [GOOD_LIEN], "additional_facts": []},
+    ], []))
+
+    result = service.extract_unit(make_unit(), page_text_by_number=PAGES)
+
+    facts = {fact.field_path: fact for fact in result.facts}
+    assert facts["liens[0].amount"].value_parsed == Decimal("48210.5")
+    assert facts["liens[0].lien_type"].value_text == "federal_tax"
+    assert facts["liens[0].recording_date"].value_date == date(2022, 3, 14)
+
+
+def test_sparse_foreclosure_document_uses_null_for_missing_sale_date():
+    page = "Notice of Default recorded 2024-01-05"
+    event = {
+        "stage": "nod",
+        "nod_date": "2024-01-05",
+        "nts_date": None,
+        "original_sale_date": None,
+        "current_sale_date": None,
+        "published_bid_raw": None,
+        "published_bid_parsed": None,
+        "default_amount_raw": None,
+        "default_amount_parsed": None,
+        "default_as_of": None,
+        "trustee": None,
+        "trustee_sale_number": None,
+        "postponement_count_raw": None,
+        "postponement_count_parsed": None,
+        "rescission_count_raw": None,
+        "rescission_count_parsed": None,
+        "is_active": None,
+        "page_number": 1,
+        "snippet": page,
+        "extraction_confidence": 0.95,
+        "null_reason": "not_present",
+    }
+    calls = []
+    service = ExtractionService(make_provider([
+        {"foreclosure_events": [event], "additional_facts": []},
+    ], calls))
+
+    result = service.extract_unit(
+        make_unit(unit_type="foreclosure", text=page),
+        page_text_by_number={1: page},
+    )
+
+    current_sale_date = next(
+        fact for fact in result.facts if fact.field_path == "foreclosure_events[0].current_sale_date"
+    )
+    assert current_sale_date.value_date is None
+    assert current_sale_date.null_reason.value == "not_present"
+    assert any(fact.field_path.endswith(".stage") for fact in result.facts)
+    requested = calls[0]["response_format"]["json_schema"]["schema"]
+    foreclosure_item = requested["properties"]["foreclosure_events"]["items"]
+    assert "current_sale_date" in foreclosure_item["required"]
+    assert foreclosure_item["properties"]["current_sale_date"]["type"] == ["string", "null"]
+
+
+def test_extra_information_is_preserved_and_validated_as_source_evidence():
+    page = "PROPERTY NOTES\nZoning designation: R-3"
+    payload = {
+        "property": [],
+        "additional_facts": [{
+            "label": "Zoning designation",
+            "value": "R-3",
+            "category": "legal",
+            "source_page": 1,
+            "snippet": "Zoning designation: R-3",
+            "confidence": 0.93,
+        }],
+    }
+
+    drafts, dropped = flatten(payload, "property_core")
+    outcome = run_gauntlet(drafts, {1: page}, dropped=dropped)
+
+    assert outcome.dropped == 0
+    assert len(outcome.active) == 1
+    extra = outcome.active[0]
+    assert extra.entity_local_id == "additional_facts[0]"
+    assert extra.field_path == "additional_facts[0].detail_legal_zoning_designation"
+    assert extra.value_text == "R-3"
+    assert extra.page_number == 1
+    assert extra.snippet == "Zoning designation: R-3"
+
+
+def test_ungrounded_additional_information_cannot_bypass_validation():
+    payload = {
+        "property": [],
+        "additional_facts": [{
+            "label": "Estimated equity",
+            "value": "$500,000",
+            "category": "calculated",
+            "source_page": 1,
+            "snippet": "Estimated equity: $500,000",
+            "confidence": 0.99,
+        }],
+    }
+    drafts, dropped = flatten(payload, "property_core")
+
+    outcome = run_gauntlet(drafts, {1: "No equity calculation appears here"}, dropped=dropped)
+
+    assert outcome.active == []
+    assert outcome.counters["grounding_failed"] == 1
+
+
+def test_no_evidence_document_returns_empty_collections_without_invented_facts():
+    calls = []
+    service = ExtractionService(make_provider([
+        {"liens": [], "additional_facts": []},
+    ], calls))
+
+    result = service.extract_unit(
+        make_unit(text="No lien, debt, value, or date evidence is present."),
+        page_text_by_number={1: "No lien, debt, value, or date evidence is present."},
+    )
+
+    assert result.facts == []
+    assert result.inactive == []
+    assert calls[0]["response_format"]["json_schema"]["schema"]["required"] == [
+        "liens", "additional_facts",
+    ]
 
 
 def test_poisoned_response_zero_facts_right_counters():
