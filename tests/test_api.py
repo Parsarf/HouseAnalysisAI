@@ -11,6 +11,7 @@ import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,6 +24,7 @@ from sqlalchemy.sql.elements import (
     UnaryExpression,
 )
 
+from api import deps as api_deps
 from api.app import app
 from api.deps import get_queue, get_session
 from api.filters import translate_filters
@@ -348,6 +350,24 @@ def test_unhandled_exception_never_leaks_text(session, queue):
     assert "boom-sensitive-internal-detail" not in response.text
 
 
+def test_session_dependency_logs_commit(monkeypatch, session, caplog):
+    monkeypatch.setattr(api_deps, "SessionLocal", lambda: session)
+    request = SimpleNamespace(
+        method="POST", url=SimpleNamespace(path=f"/api/batches/{BATCH_ID}/start")
+    )
+    dependency = api_deps.get_session(request)
+    assert next(dependency) is session
+
+    with caplog.at_level("INFO"), pytest.raises(StopIteration):
+        next(dependency)
+
+    record = next(record for record in caplog.records
+                  if record.message == "database transaction committed")
+    assert record.request_method == "POST"
+    assert record.request_path.endswith("/start")
+    assert record.transaction_status == "committed"
+
+
 # --- filter grammar -----------------------------------------------------------------
 
 def test_translate_filters_produces_real_criteria():
@@ -620,7 +640,7 @@ def test_saved_views_roundtrip_and_validation(client):
 
 # --- batches ----------------------------------------------------------------------------
 
-def test_batch_estimate_and_start(client, session, queue):
+def test_batch_estimate_and_start(client, session, queue, caplog):
     session.add(dbm.Batch(id=BATCH_ID, name="jan", file_count=2, total_count=2, status="uploaded"))
     report1 = dbm.Report(id=uuid4(), batch_id=BATCH_ID, file_path="/a.pdf", sha256="1" * 64, status="uploaded")
     report2 = dbm.Report(id=uuid4(), batch_id=BATCH_ID, file_path="/b.pdf", sha256="2" * 64, status="uploaded")
@@ -638,14 +658,54 @@ def test_batch_estimate_and_start(client, session, queue):
     assert estimate["awaiting_confirmation"] is True
     assert session.get(dbm.Batch, BATCH_ID).status == "awaiting_confirmation"
 
-    started = client.post(f"/api/batches/{BATCH_ID}/start").json()
+    with caplog.at_level("INFO"):
+        started = client.post(f"/api/batches/{BATCH_ID}/start").json()
     assert started["status"] == "running"
     assert started["awaiting_confirmation"] is False
     assert [job["name"] for job in queue.jobs] == ["extract_unit", "extract_unit"]
+    records = [record for record in caplog.records if record.name == "api.routes_portfolio"]
+    assert "batch start received" in [record.message for record in records]
+    eligible = next(record for record in records
+                    if record.message == "batch eligible extraction units")
+    assert eligible.batch_id == BATCH_ID
+    assert eligible.eligible_units == 2
+    inserted = [record for record in records
+                if record.message == "batch extraction job inserted"]
+    assert len(inserted) == 2
+    assert all(record.job_name == "extract_unit" for record in inserted)
+    assert all(record.job_status == "queued" for record in inserted)
+    staged = next(record for record in records
+                  if record.message == "batch start transaction staged")
+    assert staged.queued_jobs == 2
 
     status = client.get(f"/api/batches/{BATCH_ID}").json()
     assert status["status"] == "running" and status["total"] == 2
     assert client.post(f"/api/batches/{uuid4()}/estimate").status_code == 404
+
+
+def test_batch_start_rejects_zero_eligible_units(client, session, queue):
+    session.add(dbm.Batch(
+        id=BATCH_ID, name="empty", file_count=1, total_count=1,
+        status="awaiting_confirmation", awaiting_confirmation=True,
+    ))
+    session.add(dbm.Report(
+        id=uuid4(), batch_id=BATCH_ID, file_path="/classified.pdf",
+        sha256="a" * 64, status="classified",
+    ))
+
+    response = client.post(f"/api/batches/{BATCH_ID}/start")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["details"] == {
+        "report_count": 1,
+        "report_statuses": {"classified": 1},
+        "unit_count": 0,
+        "unit_statuses": {},
+    }
+    assert queue.jobs == []
+    batch = session.get(dbm.Batch, BATCH_ID)
+    assert batch.status == "awaiting_confirmation"
+    assert batch.awaiting_confirmation is True
 
 
 # --- merge / quick-add / recompute / facts ------------------------------------------------

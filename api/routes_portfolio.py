@@ -1,5 +1,6 @@
 """Portfolio-level endpoints: batches, flags, saved views, rankings, dashboard,
 problems, changes, assumption sets, exports, realized deals (WP-11, spec §16)."""
+import logging
 import tempfile
 from collections import Counter
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ from .filters import translate_filters
 from .serializers import dump
 
 router = APIRouter(prefix="/api", tags=["portfolio"])
+log = logging.getLogger(__name__)
 
 PRICE_PER_1K_TOKENS = Decimal("0.003")
 DEFAULT_EXPORT_COLUMNS = ["id", "address_line1", "city", "state", "zip5", "pipeline_status", "tags"]
@@ -97,19 +99,34 @@ def batch_estimate(batch_id: UUID, session: Session = Depends(get_session),
 def batch_start(batch_id: UUID, session: Session = Depends(get_session),
                 queue: PostgresJobQueue = Depends(get_queue), user: User = Depends(write_user)) -> dict:
     batch = _batch_or_404(session, batch_id)
+    log.info("batch start received", extra={"batch_id": batch_id})
     if not batch.awaiting_confirmation:
         raise AcqError(ErrorCode.CONFLICT, "batch is not awaiting confirmation",
                        {"status": batch.status})
     reports = session.query(dbm.Report).filter(dbm.Report.batch_id == batch_id).all()
     report_ids = [report.id for report in reports]
-    units = (session.query(dbm.ExtractionUnit)
-             .filter(dbm.ExtractionUnit.report_id.in_(report_ids),
-                     dbm.ExtractionUnit.status == "queued").all()) if report_ids else []
+    all_units = (session.query(dbm.ExtractionUnit)
+                 .filter(dbm.ExtractionUnit.report_id.in_(report_ids)).all()) if report_ids else []
+    units = [unit for unit in all_units if unit.status == "queued"]
+    log.info("batch eligible extraction units", extra={
+        "batch_id": batch_id,
+        "eligible_units": len(units),
+        "queued_jobs": 0,
+    })
     if not units:
-        batch.status = "failed"
-        batch.awaiting_confirmation = False
-        session.flush()
-        return _batch_payload(batch)
+        unit_statuses = Counter(unit.status or "unset" for unit in all_units)
+        report_statuses = Counter(report.status or "unset" for report in reports)
+        log.warning("batch start rejected; no queued extraction units", extra={
+            "batch_id": batch_id,
+            "eligible_units": 0,
+            "queued_jobs": 0,
+        })
+        raise AcqError(ErrorCode.CONFLICT, "batch has no queued extraction units", {
+            "report_count": len(reports),
+            "report_statuses": dict(report_statuses),
+            "unit_count": len(all_units),
+            "unit_statuses": dict(unit_statuses),
+        })
     batch.awaiting_confirmation = False
     batch.status = "running"
     batch.total_count = len(units)
@@ -119,9 +136,23 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
         if report.status != "failed":
             report.status = "extracting"
     for unit in units:
-        enqueue(session, queue, "extract_unit", {"unit_id": str(unit.id)},
-                f"extract_unit:{unit.id}")
+        job_id = enqueue(session, queue, "extract_unit", {"unit_id": str(unit.id)},
+                         f"extract_unit:{unit.id}")
+        job = session.get(dbm.Job, job_id)
+        log.info("batch extraction job inserted", extra={
+            "batch_id": batch_id,
+            "unit_id": unit.id,
+            "job_id": job_id,
+            "job_name": "extract_unit",
+            "job_status": job.status if job is not None else "queued",
+            "queued_jobs": 1,
+        })
     session.flush()
+    log.info("batch start transaction staged", extra={
+        "batch_id": batch_id,
+        "eligible_units": len(units),
+        "queued_jobs": len(units),
+    })
     return _batch_payload(batch)
 
 

@@ -5,22 +5,36 @@ every DB-touching endpoint takes the session via ``Depends`` instead of opening
 its own, so the whole surface runs offline under FastAPI's TestClient.
 """
 import json
+import logging
 from collections.abc import Iterator
 from uuid import UUID
 
+from fastapi import Request
 from sqlalchemy.orm import Session
 
 from common.db import SessionLocal
 from jobs.postgres import PostgresJobQueue
 
+log = logging.getLogger(__name__)
 
-def get_session() -> Iterator[Session]:
+
+def get_session(request: Request) -> Iterator[Session]:
     session = SessionLocal()
     try:
         yield session
         session.commit()
+        log.info("database transaction committed", extra={
+            "request_method": request.method,
+            "request_path": request.url.path,
+            "transaction_status": "committed",
+        })
     except Exception:
         session.rollback()
+        log.exception("database transaction rolled back", extra={
+            "request_method": request.method,
+            "request_path": request.url.path,
+            "transaction_status": "rolled_back",
+        })
         raise
     finally:
         session.close()

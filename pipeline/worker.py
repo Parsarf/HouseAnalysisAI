@@ -175,6 +175,13 @@ class Worker:
         with self._session_factory() as session:
             return int(recover(session))
 
+    def claimable_summary(self) -> dict[str, int]:
+        summarize = getattr(self.queue, "claimable_summary", None)
+        if summarize is None:
+            return {}
+        with self._session_factory() as session:
+            return dict(summarize(session))
+
 
 def _job_context(session, job: dict) -> dict:
     data = _payload(job["payload"])

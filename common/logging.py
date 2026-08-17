@@ -14,7 +14,9 @@ class JsonFormatter(logging.Formatter):
         }
         for key in (
             "property_id", "report_id", "unit_id", "job_id", "job_name",
-            "batch_id", "document_path", "storage_backend",
+            "job_status", "batch_id", "document_path", "storage_backend",
+            "eligible_units", "queued_jobs", "claimable_jobs", "claimable_types",
+            "request_method", "request_path", "transaction_status", "dedupe_key",
         ):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)

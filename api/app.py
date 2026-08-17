@@ -21,6 +21,7 @@ from starlette.middleware.cors import CORSMiddleware
 from auth.dependencies import User, current_user, make_session, write_user
 from auth.service import verify_password
 from common.errors import AcqError, ErrorCode
+from common.logging import configure_logging
 from common.settings import settings
 from common.storage import get_document_storage
 from contracts import ErrorDetail, ErrorEnvelope, FilterClause
@@ -34,6 +35,7 @@ from .routes_portfolio import router as portfolio_router
 from .routes_properties import router as properties_router
 from .serializers import dump
 
+configure_logging()
 app = FastAPI(title="ACQ", version="0.1.0")
 if settings.cors_origins:
     app.add_middleware(

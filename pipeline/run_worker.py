@@ -29,7 +29,11 @@ def main() -> None:
             continue
         now = time.monotonic()
         if now - last_idle_log >= 60:
-            log.info("worker idle; polling for queued jobs")
+            claimable = worker.claimable_summary()
+            log.info("queue poll", extra={
+                "claimable_jobs": sum(claimable.values()),
+                "claimable_types": claimable,
+            })
             last_idle_log = now
         if not worked:
             time.sleep(1)

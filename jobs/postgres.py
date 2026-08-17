@@ -1,8 +1,12 @@
+import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+log = logging.getLogger(__name__)
 
 ENQUEUE_SQL = text("""
 INSERT INTO jobs (id, name, payload, dedupe_key, max_attempts)
@@ -32,17 +36,50 @@ WHERE id IN (SELECT id FROM next_job)
 RETURNING id, name, payload, attempts, max_attempts
 """)
 
+CLAIMABLE_SUMMARY_SQL = text("""
+SELECT name, count(*) AS count
+FROM jobs
+WHERE status = 'queued' AND run_after <= now()
+GROUP BY name
+ORDER BY name
+""")
+
+
+@dataclass(frozen=True)
+class EnqueueResult:
+    id: UUID
+    status: str
+
 
 class PostgresJobQueue:
     """Production queue primitive. Claiming is atomic and concurrency-safe."""
 
     def enqueue(self, session: Session, name: str, payload: str, dedupe_key: str, max_attempts: int = 5) -> UUID:
+        return self.enqueue_with_status(
+            session, name, payload, dedupe_key, max_attempts=max_attempts
+        ).id
+
+    def enqueue_with_status(
+        self, session: Session, name: str, payload: str, dedupe_key: str,
+        max_attempts: int = 5,
+    ) -> EnqueueResult:
         row = session.execute(ENQUEUE_SQL, {"id": uuid4(), "name": name, "payload": payload, "dedupe_key": dedupe_key, "max_attempts": max_attempts}).mappings().one()
-        return row["id"]
+        result = EnqueueResult(id=row["id"], status=row["status"])
+        log.info("queue job upserted", extra={
+            "job_id": result.id,
+            "job_name": name,
+            "job_status": result.status,
+            "dedupe_key": dedupe_key,
+        })
+        return result
 
     def claim(self, session: Session) -> dict | None:
         row = session.execute(CLAIM_SQL).mappings().first()
         return dict(row) if row else None
+
+    def claimable_summary(self, session: Session) -> dict[str, int]:
+        rows = session.execute(CLAIMABLE_SUMMARY_SQL).mappings().all()
+        return {str(row["name"]): int(row["count"]) for row in rows}
 
     def recover_stale(self, session: Session, *, minutes: int = 15) -> int:
         """Release jobs orphaned by a worker crash or Railway redeploy."""

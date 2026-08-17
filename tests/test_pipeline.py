@@ -675,6 +675,13 @@ class FakeQueue:
         job["status"] = "dead" if attempts >= max_attempts else "queued"
         job["error"] = error
 
+    def claimable_summary(self, session):
+        counts = {}
+        for job in self.jobs:
+            if job["status"] == "queued":
+                counts[job["name"]] = counts.get(job["name"], 0) + 1
+        return counts
+
     def _get(self, job_id):
         return next(job for job in self.jobs if job["id"] == job_id)
 
@@ -724,6 +731,17 @@ def test_worker_logs_job_lifecycle(caplog):
 
     assert "job found" in caplog.messages
     assert "job completion" in caplog.messages
+
+
+def test_worker_reports_claimable_job_kinds():
+    queue = FakeQueue([
+        _job("extract_unit", {"unit_id": str(uuid4())}),
+        _job("extract_unit", {"unit_id": str(uuid4())}),
+        _job("ingest_document", {"report_id": str(uuid4())}),
+    ])
+    worker = Worker({}, queue=queue, session_factory=lambda: nullcontext(None))
+
+    assert worker.claimable_summary() == {"extract_unit": 2, "ingest_document": 1}
 
 
 # ------------------------------------------------------------------ pure compute core
