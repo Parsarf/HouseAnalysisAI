@@ -78,7 +78,7 @@ def _queue_extraction_units(
     storage: DocumentStorage | None = None,
 ) -> int:
     """Create typed extraction units and enqueue them once per report."""
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     if classifier is None or sectioner is None or match_rate is None:
         # The standalone text/OCR path intentionally stops before classification;
         # the production pipeline always supplies all four composition hooks.
@@ -87,12 +87,38 @@ def _queue_extraction_units(
     if not session.get_bind().dialect.has_table(connection, "extraction_units"):
         raise AcqError(ErrorCode.INTERNAL, "extraction_units table is unavailable",
                        {"report_id": str(report.id), "required_migration": "extraction_units"})
-    if session.scalar(select(ExtractionUnit.id).where(ExtractionUnit.report_id == report.id).limit(1)):
-        return 0
+    already_created = int(session.scalar(
+        select(func.count(ExtractionUnit.id)).where(ExtractionUnit.report_id == report.id)
+    ) or 0)
+    log.info("document classification started", extra={
+        "batch_id": report.batch_id,
+        "report_id": report.id,
+        "document_path": report.file_path,
+        "unit_count": already_created,
+    })
     result = classifier("\n\f\n".join(pages), filename=Path(report.file_path).name, pages=pages)
     units = sectioner(pages)
     if not units:
         return 0
+    if already_created:
+        # Re-ingestion of a report that already has units (job retry, or the same
+        # document re-uploaded into a new batch). Do not duplicate the units, but
+        # still apply classification so the report reaches `classified`; returning
+        # 0 here previously made the caller treat the run as incomplete.
+        report.report_type = result.report_type
+        report.vendor = result.vendor
+        report.classification_confidence = result.confidence
+        report.section_match_rate = match_rate(units)
+        report.status = ReportStatus.CLASSIFIED.value
+        session.flush()
+        log.info("document classification completed", extra={
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+            "report_status_after": report.status,
+            "unit_count": already_created,
+        })
+        return already_created
     storage = storage or get_document_storage()
     for index, section in enumerate(units):
         unit_id = uuid4()
@@ -119,6 +145,13 @@ def _queue_extraction_units(
     report.section_match_rate = match_rate(units)
     report.status = ReportStatus.CLASSIFIED.value
     session.flush()
+    log.info("document classification completed", extra={
+        "batch_id": report.batch_id,
+        "report_id": report.id,
+        "document_path": report.file_path,
+        "report_status_after": report.status,
+        "unit_count": len(units),
+    })
     return len(units)
 
 
@@ -168,6 +201,12 @@ def run_ingest(
         raise RuntimeError("PyMuPDF is required for document ingestion") from exc
     try:
         with storage.materialize(report.file_path) as pdf:
+            log.info("stored document materialized", extra={
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "storage_backend": "s3" if report.file_path.startswith("s3://") else "filesystem",
+            })
             try:
                 document = fitz.open(pdf)
             except Exception:  # noqa: BLE001 — PyMuPDF raises several types for malformed files

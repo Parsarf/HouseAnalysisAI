@@ -122,6 +122,28 @@ def test_register_pdf_dedupe_returns_existing(session, tmp_path):
     assert len(list((tmp_path / "docs").iterdir())) == 1  # zero new documents on disk
 
 
+def test_dedupe_reupload_repoints_report_at_the_new_batch(session, tmp_path):
+    source = make_digital_pdf(tmp_path / "dedupe.pdf")
+    first_batch = uuid4()
+    second_batch = uuid4()
+    report, created = register_pdf(
+        session, source, tmp_path / "docs", batch_id=first_batch,
+    )
+    assert created
+    report.status = ReportStatus.CLASSIFIED.value
+
+    duplicate, created = register_pdf(
+        session, source, tmp_path / "docs", batch_id=second_batch,
+    )
+
+    assert duplicate.id == report.id
+    assert created is False
+    assert duplicate.batch_id == second_batch
+    assert session.scalar(
+        select(Report).where(Report.batch_id == second_batch)
+    ) is not None
+
+
 def test_failed_duplicate_reupload_restores_storage_and_requeues(session, tmp_path):
     source = make_digital_pdf(tmp_path / "a.pdf")
     first, created = register_pdf(session, source, tmp_path / "docs", batch_id=uuid4())
@@ -212,6 +234,32 @@ def test_ingest_logs_report_and_created_unit_state(session, tmp_path, monkeypatc
     assert committed.report_status_before == ReportStatus.UPLOADED.value
     assert committed.report_status_after == ReportStatus.CLASSIFIED.value
     assert committed.unit_statuses == {"queued": 1}
+
+
+def test_reingesting_a_report_with_units_still_reaches_classified(session, tmp_path):
+    pdf = make_digital_pdf(tmp_path / "reingest.pdf")
+    report = add_report(session, pdf)
+
+    run_ingest(
+        session, report, classifier=classify, sectioner=section_pages,
+        section_matcher=section_match_rate,
+    )
+    original_units = session.query(ExtractionUnit).filter(
+        ExtractionUnit.report_id == report.id
+    ).count()
+    assert original_units > 0
+    assert report.status == ReportStatus.CLASSIFIED.value
+
+    report.status = ReportStatus.UPLOADED.value
+    run_ingest(
+        session, report, classifier=classify, sectioner=section_pages,
+        section_matcher=section_match_rate,
+    )
+
+    assert session.query(ExtractionUnit).filter(
+        ExtractionUnit.report_id == report.id
+    ).count() == original_units
+    assert report.status == ReportStatus.CLASSIFIED.value
 
 
 def test_batch_refresh_commits_uploaded_when_units_are_ready(

@@ -5,6 +5,7 @@ Every error leaves the process as one structured envelope
 frontend, and internal exception text never crosses the boundary.
 """
 import json
+import logging
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
@@ -36,6 +37,7 @@ from .routes_properties import router as properties_router
 from .serializers import dump
 
 configure_logging()
+log = logging.getLogger(__name__)
 app = FastAPI(title="ACQ", version="0.1.0")
 if settings.cors_origins:
     app.add_middleware(
@@ -139,6 +141,12 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
     batch = dbm.Batch(id=batch_id, name=batch_name, file_count=len(files),
                       total_count=len(files), status="ingesting")
     session.add(batch)
+    log.info("PDF upload received", extra={
+        "batch_id": batch_id,
+        "batch_status_after": batch.status,
+        "file_count": len(files),
+        "storage_backend": settings.storage_backend,
+    })
     reports = []
     for upload_file in files:
         with NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -146,12 +154,39 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
                 tmp.write(chunk)
             temp_path = Path(tmp.name)
         try:
-            report, created = register_pdf(session, temp_path, root, batch_id=batch_id, storage=storage)
+            report, created = register_pdf(
+                session, temp_path, root, batch_id=batch_id, storage=storage,
+            )
         finally:
             temp_path.unlink(missing_ok=True)
         reports.append(str(report.id))
-        if created:
-            enqueue(session, queue, "ingest_document", {"report_id": str(report.id)}, f"ingest:{report.id}")
+        log.info("uploaded report registered", extra={
+            "batch_id": batch_id,
+            "report_id": report.id,
+            "report_status_after": report.status,
+            "document_path": report.file_path,
+            "report_created": created,
+            "storage_backend": settings.storage_backend,
+        })
+        # Enqueue unconditionally, including for deduplicated reports: the job is
+        # idempotent (dedupe_key `ingest:{report_id}`) and it is what advances the
+        # batch off `ingesting`. Gating on `created` left re-uploaded batches stuck.
+        job_id = enqueue(
+            session, queue, "ingest_document", {"report_id": str(report.id)},
+            f"ingest:{report.id}",
+        )
+        log.info("report ingestion job enqueued", extra={
+            "batch_id": batch_id,
+            "report_id": report.id,
+            "job_id": job_id,
+            "job_name": "ingest_document",
+            "document_path": report.file_path,
+        })
+    if hasattr(session, "info"):
+        session.info["transaction_log_context"] = {
+            "batch_id": batch_id,
+            "batch_status_after": batch.status,
+        }
     return {"batch_id": str(batch_id), "report_ids": reports, "count": len(reports)}
 
 

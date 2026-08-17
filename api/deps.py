@@ -23,10 +23,12 @@ def get_session(request: Request) -> Iterator[Session]:
     try:
         yield session
         session.commit()
+        context = getattr(session, "info", {}).pop("transaction_log_context", {})
         log.info("database transaction committed", extra={
             "request_method": request.method,
             "request_path": request.url.path,
             "transaction_status": "committed",
+            **context,
         })
     except Exception:
         session.rollback()

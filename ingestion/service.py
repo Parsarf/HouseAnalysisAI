@@ -83,6 +83,12 @@ def register_pdf(
             existing.is_scanned = False
             existing.ocr_applied = False
             return existing, True
+        # A byte-identical re-upload into a new batch must re-point the report
+        # at that batch. Leaving batch_id on the previous batch orphans the new
+        # one: it owns zero reports, so no ingest job is ever created for it and
+        # nothing can move it off `ingesting`.
+        if batch_id is not None and existing.batch_id != batch_id:
+            existing.batch_id = batch_id
         return existing, False
     report_id, file_ref = store_pdf(source, document_root, storage=storage)
     report = Report(
