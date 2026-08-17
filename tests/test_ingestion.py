@@ -233,6 +233,16 @@ def test_ingest_logs_report_and_created_unit_state(session, tmp_path, monkeypatc
                      if record.message == "report ingestion transaction committed")
     assert committed.report_status_before == ReportStatus.UPLOADED.value
     assert committed.report_status_after == ReportStatus.CLASSIFIED.value
+    required = {
+        "document_materialized", "pdf_opened", "scan_detected",
+        "classification_started", "classification_completed", "sectioning_completed",
+        "units_created", "report_status_transition", "ingestion_committed",
+    }
+    records = [record for record in caplog.records
+               if getattr(record, "event", None) in required]
+    assert required == {record.event for record in records}
+    assert all(record.report_id == report.id for record in records)
+    assert all(record.batch_id == batch.id for record in records)
     assert committed.unit_statuses == {"queued": 1}
 
 
@@ -472,15 +482,28 @@ class FakePartialBackend:
         return OcrResult(["ocr text one", "ocr text two"], None, partial=True)
 
 
-def test_scanned_pdf_partial_ocr_marks_reason_but_completes(session, tmp_path):
+def test_scanned_pdf_partial_ocr_marks_reason_but_completes(session, tmp_path, caplog):
     pdf = make_scanned_pdf(tmp_path / "scan.pdf")
     report = add_report(session, pdf)
     report.failure_reason = None
-    run_ingest(session, report, ocr_backend=FakePartialBackend())
+    with caplog.at_level("INFO"):
+        run_ingest(session, report, ocr_backend=FakePartialBackend())
     assert report.status == "text_extracted"
     assert report.ocr_applied is True
     assert report.failure_reason == ErrorCode.PARTIAL_OCR.value
     assert get_page_text(report.file_path, 1) == "ocr text one"
+    scan = next(record for record in caplog.records
+                if getattr(record, "event", None) == "scan_detected")
+    assert scan.report_id == report.id
+    assert scan.is_scanned is True
+    assert scan.median_text_chars >= 0
+    assert 0 <= scan.empty_page_ratio <= 1
+    completed = next(record for record in caplog.records
+                     if getattr(record, "event", None) == "ocr_completed")
+    assert completed.report_id == report.id
+    assert completed.ocr_backend == "fake"
+    assert completed.ocr_backend_available is True
+    assert completed.ocr_partial is True
 
 
 @pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract not installed")

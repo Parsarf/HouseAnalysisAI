@@ -9,6 +9,7 @@ responses from ``fixtures/recorded_responses/``.
 
 import hashlib
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -16,6 +17,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
+from urllib.parse import urlparse
 from uuid import UUID
 
 from common.errors import AcqError, ErrorCode
@@ -46,6 +48,7 @@ _FALLBACK_PRICING = (Decimal("2.50"), Decimal("10.00"))
 # with this client's default Chat Completions configuration. Omitting the field
 # lets the provider apply its supported default.
 _DEFAULT_TEMPERATURE_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -195,7 +198,18 @@ class ProviderClient:
             body = json.dumps(payload).encode()
             try:
                 status, response = self.transport("POST", url, headers, body, self.timeout)
-            except Exception:
+            except Exception as exc:
+                log.warning("provider transport failed", extra={
+                    "event": "provider_transport_failed",
+                    "stage": "extraction_request",
+                    "success": False,
+                    "model": model,
+                    "provider_host": urlparse(self.base_url).hostname,
+                    "provider_status_code": 0,
+                    "retry_count": attempts - 1,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                }, exc_info=True)
                 status, response = 0, {}
             if status == 200:
                 break
@@ -206,13 +220,32 @@ class ProviderClient:
             ):
                 payload.pop("temperature")
                 retried_without_temperature = True
+                log.info("provider request retried without temperature", extra={
+                    "event": "provider_compatibility_retry",
+                    "stage": "extraction_request",
+                    "success": True,
+                    "model": model,
+                    "provider_host": urlparse(self.base_url).hostname,
+                    "provider_status_code": status,
+                    "retry_count": attempts,
+                })
                 continue
             retryable = status == 429 or status >= 500 or status == 0
             if not retryable:
                 message = (response.get("error") or {}).get("message", f"HTTP {status}")
-                raise AcqError(ErrorCode.EXTRACTION_FAILED, f"provider rejected the request: {message}")
+                raise AcqError(
+                    ErrorCode.EXTRACTION_FAILED,
+                    f"provider rejected the request: {message}",
+                    {"provider_status_code": status, "model": model,
+                     "retry_count": attempts - 1},
+                )
             if attempts > self.max_retries:
-                raise AcqError(ErrorCode.RETRY_EXHAUSTED, f"provider still failing after {attempts - 1} retries")
+                raise AcqError(
+                    ErrorCode.RETRY_EXHAUSTED,
+                    f"provider still failing after {attempts - 1} retries",
+                    {"provider_status_code": status, "model": model,
+                     "retry_count": attempts - 1},
+                )
             self.sleep(self.base_delay * (2 ** (attempts - 1)))
         content = (response.get("choices") or [{}])[0].get("message", {}).get("content")
         try:

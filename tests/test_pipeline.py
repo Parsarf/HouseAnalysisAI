@@ -453,6 +453,42 @@ def test_extract_unit_persists_facts_and_recomputes_when_complete():
     assert len(factory.state.facts[property_id]) == 2 * len(property_facts(property_id, uuid4(), report_id))
 
 
+def test_final_batch_completion_emits_correlated_analysis_trace(caplog):
+    pipeline, factory = make_pipeline(extractor=lambda unit: [])
+    property_id = seed_property(factory.state, with_facts=False)
+    batch_id = uuid4()
+    factory.state.batches[batch_id] = {
+        "id": batch_id, "status": "extracting", "total_count": 1,
+        "completed_count": 0, "failed_count": 0,
+        "awaiting_confirmation": False, "spent_usd": Decimal(0),
+        "budget_limit_usd": None,
+    }
+    (unit_id,) = _seed_units(factory.state, property_id, 1, batch=batch_id)
+    report_id = factory.state.units[unit_id]["report_id"]
+
+    with caplog.at_level("INFO"):
+        pipeline.extract_unit(unit_id)
+
+    stages = {
+        getattr(record, "stage", None)
+        for record in caplog.records
+        if getattr(record, "event", None) == "analysis_stage_completed"
+    }
+    assert {
+        "facts_persisted", "normalization_validation", "financial_calculations",
+        "scoring", "strategy_ranking", "final_fan_in",
+    } <= stages
+    completed = next(record for record in caplog.records
+                     if getattr(record, "event", None) == "batch_completed")
+    assert completed.batch_id == batch_id
+    assert completed.report_id == report_id
+    assert completed.unit_id == unit_id
+    assert completed.final_status == "complete"
+    assert completed.total_count == 1
+    assert completed.completed_count == 1
+    assert completed.failed_count == 0
+
+
 def test_extract_unit_retry_does_not_duplicate_facts():
     pipeline, factory = make_pipeline(extractor=lambda unit: [])
     property_id = seed_property(factory.state, with_facts=False)
@@ -706,7 +742,7 @@ def test_worker_runs_recompute_job_end_to_end():
     assert worker.run_once() is False  # queue drained
 
 
-def test_worker_requeues_failed_job_then_dead_letters():
+def test_worker_requeues_failed_job_then_dead_letters(caplog):
     queue = FakeQueue([_job("recompute_property", {"property_id": str(uuid4())})])
 
     def boom(payload):
@@ -714,11 +750,21 @@ def test_worker_requeues_failed_job_then_dead_letters():
 
     worker = Worker({"recompute_property": boom}, queue=queue,
                     session_factory=lambda: nullcontext(None))
-    worker.run_once()
+    with caplog.at_level("INFO"):
+        worker.run_once()
     assert queue.jobs[0]["status"] == "queued"  # retry with attempts < max
     assert queue.jobs[0]["error"] == "boom"
     worker.run_once()
     assert queue.jobs[0]["status"] == "dead"
+    retried = next(record for record in caplog.records
+                   if getattr(record, "event", None) == "job_retry_scheduled")
+    terminal = next(record for record in caplog.records
+                    if getattr(record, "event", None) == "job_failed_permanently")
+    assert retried.job_status == "queued"
+    assert retried.attempt == 1
+    assert terminal.job_status == "dead"
+    assert terminal.attempt == 2
+    assert terminal.exc_info is not None
 
 
 def test_worker_logs_job_lifecycle(caplog):
@@ -731,6 +777,14 @@ def test_worker_logs_job_lifecycle(caplog):
 
     assert "job found" in caplog.messages
     assert "job completion" in caplog.messages
+    claimed = next(record for record in caplog.records
+                   if getattr(record, "event", None) == "worker_job_claimed")
+    completed = next(record for record in caplog.records
+                     if getattr(record, "event", None) == "worker_job_completed")
+    assert claimed.job_id == queue.jobs[0]["id"]
+    assert claimed.attempt == 1
+    assert completed.job_id == claimed.job_id
+    assert completed.job_status == "complete"
 
 
 def test_worker_reports_claimable_job_kinds():

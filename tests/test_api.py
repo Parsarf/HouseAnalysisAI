@@ -25,6 +25,7 @@ from sqlalchemy.sql.elements import (
 )
 
 from api import deps as api_deps
+from api import routes_portfolio
 from api.app import app
 from api.deps import get_queue, get_session
 from api.filters import translate_filters
@@ -709,6 +710,7 @@ def test_batch_start_rejects_zero_eligible_units(client, session, queue):
 
 
 def test_batch_get_serializes_persisted_post_ingestion_status(client, session, caplog):
+    routes_portfolio._BATCH_STATUS_LOG_STATE.clear()
     session.add(dbm.Batch(
         id=BATCH_ID, name="ready", file_count=1, total_count=1,
         completed_count=0, failed_count=0, status="uploaded",
@@ -716,12 +718,18 @@ def test_batch_get_serializes_persisted_post_ingestion_status(client, session, c
 
     with caplog.at_level("INFO"):
         response = client.get(f"/api/batches/{BATCH_ID}")
+        repeated = client.get(f"/api/batches/{BATCH_ID}")
 
     assert response.status_code == 200
+    assert repeated.status_code == 200
     assert response.json()["status"] == "uploaded"
-    record = next(record for record in caplog.records if record.message == "batch status read")
+    records = [record for record in caplog.records if record.message == "batch status read"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.event == "batch_status_returned"
     assert record.batch_id == BATCH_ID
     assert record.batch_status_after == "uploaded"
+    assert record.report_count == 0
 
 
 # --- merge / quick-add / recompute / facts ------------------------------------------------

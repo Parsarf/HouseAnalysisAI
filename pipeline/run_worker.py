@@ -14,19 +14,29 @@ def main() -> None:
     configure_logging()
     worker = default_worker()
     ocr_backend = get_backend()
-    log.info("worker startup", extra={"storage_backend": settings.storage_backend,
+    log.info("worker startup", extra={"event": "worker_startup",
+                                      "stage": "worker_startup",
+                                      "storage_backend": settings.storage_backend,
                                       "document_path": str(settings.document_root),
                                       "ocr_backend": ocr_backend.name,
                                       "ocr_backend_available": ocr_backend.available()})
     recovered = worker.recover_stale()
     if recovered:
-        log.warning("recovered stale running jobs", extra={"job_id": f"count:{recovered}"})
+        log.warning("recovered stale running jobs", extra={"event": "stale_jobs_recovered",
+                                                            "stage": "queue_recovery",
+                                                            "job_id": f"count:{recovered}"})
     last_idle_log = 0.0
     while True:
         try:
             worked = worker.run_once()
-        except Exception:
-            log.exception("worker polling failed")
+        except Exception as error:
+            log.exception("worker polling failed", extra={
+                "event": "worker_poll_failed",
+                "stage": "queue_poll",
+                "success": False,
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            })
             time.sleep(5)
             continue
         if worked:
@@ -35,6 +45,8 @@ def main() -> None:
         if now - last_idle_log >= 60:
             claimable = worker.claimable_summary()
             log.info("queue poll", extra={
+                "event": "queue_poll",
+                "stage": "queue_poll",
                 "claimable_jobs": sum(claimable.values()),
                 "claimable_types": claimable,
             })

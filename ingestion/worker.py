@@ -32,14 +32,19 @@ def _fail(report: Report, code: ErrorCode) -> None:
     _mark_failure_reason(report, code)
 
 
-def is_scanned(pages: list[str]) -> bool:
-    """Spec §4.3: median chars/page < 100, or more than 40% of pages empty."""
+def _scan_metrics(pages: list[str]) -> tuple[bool, int, float]:
     if not pages:
-        return False
+        return False, 0, 0.0
     lengths = sorted(len(page.strip()) for page in pages)
     median = lengths[(len(lengths) - 1) // 2]
     empty = sum(1 for length in lengths if length == 0)
-    return median < 100 or empty > len(pages) * 0.4
+    empty_ratio = empty / len(pages)
+    return median < 100 or empty_ratio > 0.4, median, empty_ratio
+
+
+def is_scanned(pages: list[str]) -> bool:
+    """Spec §4.3: median chars/page < 100, or more than 40% of pages empty."""
+    return _scan_metrics(pages)[0]
 
 
 def _write_pages(storage: DocumentStorage, report_ref: str, pages: list[str]) -> None:
@@ -91,13 +96,63 @@ def _queue_extraction_units(
         select(func.count(ExtractionUnit.id)).where(ExtractionUnit.report_id == report.id)
     ) or 0)
     log.info("document classification started", extra={
+        "event": "classification_started",
+        "stage": "classification",
+        "success": True,
         "batch_id": report.batch_id,
         "report_id": report.id,
         "document_path": report.file_path,
-        "unit_count": already_created,
+        "existing_unit_count": already_created,
     })
-    result = classifier("\n\f\n".join(pages), filename=Path(report.file_path).name, pages=pages)
-    units = sectioner(pages)
+    try:
+        result = classifier(
+            "\n\f\n".join(pages), filename=Path(report.file_path).name, pages=pages,
+        )
+    except Exception as exc:
+        log.exception("document classification failed", extra={
+            "event": "classification_failed",
+            "stage": "classification",
+            "success": False,
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+        })
+        raise
+    log.info("document classification completed", extra={
+        "event": "classification_completed",
+        "stage": "classification",
+        "success": True,
+        "batch_id": report.batch_id,
+        "report_id": report.id,
+        "detected_report_type": result.report_type,
+        "vendor": result.vendor,
+        "confidence": result.confidence,
+    })
+    try:
+        units = sectioner(pages)
+    except Exception as exc:
+        log.exception("document sectioning failed", extra={
+            "event": "sectioning_failed",
+            "stage": "sectioning",
+            "success": False,
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+        })
+        raise
+    log.info("document sectioning completed", extra={
+        "event": "sectioning_completed",
+        "stage": "sectioning",
+        "success": bool(units),
+        "batch_id": report.batch_id,
+        "report_id": report.id,
+        "section_count": len(units),
+        "existing_unit_count": already_created,
+    })
     if not units:
         return 0
     if already_created:
@@ -112,11 +167,16 @@ def _queue_extraction_units(
         report.status = ReportStatus.CLASSIFIED.value
         session.flush()
         log.info("document classification completed", extra={
+            "event": "units_created",
+            "stage": "sectioning",
+            "success": True,
             "batch_id": report.batch_id,
             "report_id": report.id,
             "document_path": report.file_path,
             "report_status_after": report.status,
             "unit_count": already_created,
+            "existing_unit_count": already_created,
+            "units_created": 0,
         })
         return already_created
     storage = storage or get_document_storage()
@@ -131,6 +191,7 @@ def _queue_extraction_units(
         session.add(unit)
         session.flush()
         log.info("extraction unit created", extra={
+            "event": "extraction_unit_created",
             "batch_id": report.batch_id,
             "report_id": report.id,
             "unit_id": unit.id,
@@ -146,11 +207,16 @@ def _queue_extraction_units(
     report.status = ReportStatus.CLASSIFIED.value
     session.flush()
     log.info("document classification completed", extra={
+        "event": "units_created",
+        "stage": "sectioning",
+        "success": True,
         "batch_id": report.batch_id,
         "report_id": report.id,
         "document_path": report.file_path,
         "report_status_after": report.status,
         "unit_count": len(units),
+        "existing_unit_count": 0,
+        "units_created": len(units),
     })
     return len(units)
 
@@ -199,9 +265,14 @@ def run_ingest(
         import fitz
     except ImportError as exc:
         raise RuntimeError("PyMuPDF is required for document ingestion") from exc
+    materialized = False
     try:
         with storage.materialize(report.file_path) as pdf:
+            materialized = True
             log.info("stored document materialized", extra={
+                "event": "document_materialized",
+                "stage": "document_materialization",
+                "success": True,
                 "batch_id": report.batch_id,
                 "report_id": report.id,
                 "document_path": report.file_path,
@@ -209,15 +280,41 @@ def run_ingest(
             })
             try:
                 document = fitz.open(pdf)
-            except Exception:  # noqa: BLE001 — PyMuPDF raises several types for malformed files
+            except Exception:
+                log.exception("PDF open failed", extra={
+                    "event": "pdf_open_failed",
+                    "stage": "pdf_open",
+                    "success": False,
+                    "batch_id": report.batch_id,
+                    "report_id": report.id,
+                    "document_path": report.file_path,
+                })
                 _fail(report, ErrorCode.CORRUPT)
                 return report
+            log.info("PDF opened", extra={
+                "event": "pdf_opened",
+                "stage": "pdf_open",
+                "success": True,
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "page_count": len(document),
+            })
             return _run_document_ingest(session, report, document, pdf, storage,
                                         ocr_backend=ocr_backend, address=address, apn=apn,
                                         fips=fips, zip5=zip5, identity_resolver=identity_resolver,
                                         classifier=classifier, sectioner=sectioner,
                                         section_matcher=section_matcher, enqueue=enqueue)
     except FileNotFoundError as exc:
+        log.exception("stored document materialization failed", extra={
+            "event": "document_materialization_failed",
+            "stage": "document_materialization",
+            "success": False,
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+            "storage_backend": "s3" if report.file_path.startswith("s3://") else "filesystem",
+        })
         raise AcqError(
             ErrorCode.EXTRACTION_FAILED,
             "stored document is unavailable to the worker",
@@ -226,8 +323,32 @@ def run_ingest(
     except AcqError:
         raise
     except OSError:
+        log.exception("document read failed", extra={
+            "event": "document_read_failed",
+            "stage": "document_materialization",
+            "success": False,
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+        })
         _fail(report, ErrorCode.CORRUPT)
         return report
+    except Exception as exc:
+        if not materialized:
+            log.exception("stored document materialization failed", extra={
+                "event": "document_materialization_failed",
+                "stage": "document_materialization",
+                "success": False,
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "storage_backend": (
+                    "s3" if report.file_path.startswith("s3://") else "filesystem"
+                ),
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+        raise
 
 
 def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
@@ -242,18 +363,33 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
             return report
         try:
             pages = [page.get_text() for page in document]
-        except Exception:  # noqa: BLE001 — a page that fails mid-extraction means the file is corrupt
+        except Exception as exc:
+            log.exception("PDF text extraction failed", extra={
+                "event": "pdf_read_failed",
+                "stage": "pdf_read",
+                "success": False,
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
             _fail(report, ErrorCode.CORRUPT)
             return report
         report.page_count = len(pages)
-        report.is_scanned = is_scanned(pages)
+        report.is_scanned, median_text_chars, empty_page_ratio = _scan_metrics(pages)
         ocr_backend_name = "not_required"
         ocr_backend_available = False
         log.info("document scan detection completed", extra={
+            "event": "scan_detected",
+            "stage": "scan_detection",
+            "success": True,
             "batch_id": report.batch_id,
             "report_id": report.id,
             "document_path": report.file_path,
             "is_scanned": report.is_scanned,
+            "median_text_chars": median_text_chars,
+            "empty_page_ratio": empty_page_ratio,
             "report_status_after": report.status,
         })
         if report.is_scanned:
@@ -261,6 +397,9 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
             ocr_backend_name = backend.name
             ocr_backend_available = backend.available()
             log.info("OCR backend selected", extra={
+                "event": "ocr_decision",
+                "stage": "ocr",
+                "success": ocr_backend_available,
                 "batch_id": report.batch_id,
                 "report_id": report.id,
                 "document_path": report.file_path,
@@ -274,6 +413,9 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
                 report.status = ReportStatus.OCR_PENDING.value
                 _write_pages(storage, report.file_path, pages)
                 log.warning("OCR decision completed without an available backend", extra={
+                    "event": "ocr_unavailable",
+                    "stage": "ocr",
+                    "success": False,
                     "batch_id": report.batch_id,
                     "report_id": report.id,
                     "document_path": report.file_path,
@@ -281,11 +423,53 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
                     "ocr_backend": ocr_backend_name,
                     "ocr_backend_available": False,
                     "ocr_applied": False,
+                    "ocr_started": False,
+                    "ocr_completed": False,
+                    "ocr_partial": False,
                     "report_status_after": report.status,
                 })
                 return report
-            result = backend.ocr_pdf(pdf, pdf.parent)
+            log.info("OCR started", extra={
+                "event": "ocr_started",
+                "stage": "ocr",
+                "success": True,
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "ocr_backend": ocr_backend_name,
+                "ocr_backend_available": True,
+                "ocr_started": True,
+            })
+            try:
+                result = backend.ocr_pdf(pdf, pdf.parent)
+            except Exception:
+                log.exception("OCR failed", extra={
+                    "event": "ocr_failed",
+                    "stage": "ocr",
+                    "success": False,
+                    "batch_id": report.batch_id,
+                    "report_id": report.id,
+                    "document_path": report.file_path,
+                    "ocr_backend": ocr_backend_name,
+                    "ocr_backend_available": True,
+                    "ocr_started": True,
+                    "ocr_completed": False,
+                })
+                raise
             report.ocr_applied = True
+            log.info("OCR completed", extra={
+                "event": "ocr_completed",
+                "stage": "ocr",
+                "success": True,
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "ocr_backend": ocr_backend_name,
+                "ocr_backend_available": True,
+                "ocr_started": True,
+                "ocr_completed": True,
+                "ocr_partial": result.partial,
+            })
             if result.ocr_path is not None:
                 report.ocr_path = storage.save_file(result.ocr_path,
                                                     storage.child(report.file_path, "ocr.pdf"))
@@ -296,6 +480,9 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
         _write_pages(storage, report.file_path, pages)
         report.status = ReportStatus.TEXT_EXTRACTED.value
         log.info("OCR decision completed", extra={
+            "event": "ocr_decision_completed",
+            "stage": "ocr",
+            "success": True,
             "batch_id": report.batch_id,
             "report_id": report.id,
             "document_path": report.file_path,
@@ -303,6 +490,8 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
             "ocr_backend": ocr_backend_name,
             "ocr_backend_available": ocr_backend_available,
             "ocr_applied": report.ocr_applied,
+            "ocr_started": report.is_scanned and report.ocr_applied,
+            "ocr_completed": report.is_scanned and report.ocr_applied,
             "report_status_after": report.status,
         })
     finally:
@@ -326,6 +515,8 @@ def ingest_document(payload: dict, **hooks) -> Report:
             raise ValueError("report not found")
         status_before = report.status
         log.info("report ingestion state before", extra={
+            "event": "report_status_observed",
+            "stage": "ingestion",
             "batch_id": report.batch_id,
             "report_id": report.id,
             "report_status_before": status_before,
@@ -353,9 +544,18 @@ def ingest_document(payload: dict, **hooks) -> Report:
                 for status in sorted({unit.status for unit in units})
             },
         }
-        log.info("report ingestion state after", extra=committed)
+        log.info("report ingestion state after", extra={
+            **committed,
+            "event": "report_status_transition",
+            "stage": "ingestion",
+            "success": report.status != ReportStatus.FAILED.value,
+        })
     log.info("report ingestion transaction committed", extra={
+        "event": "ingestion_committed",
+        "stage": "ingestion",
+        "success": True,
         **committed,
         "transaction_status": "committed",
+        "unit_count": sum(committed.get("unit_statuses", {}).values()),
     })
     return report

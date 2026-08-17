@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import shutil
 import zipfile
 from pathlib import Path
@@ -12,6 +13,26 @@ from common.errors import AcqError, ErrorCode
 from common.storage import DocumentStorage, LocalFilesystemStorage, S3Storage, document_key
 from contracts import ReportStatus
 from db.models import Report
+
+log = logging.getLogger(__name__)
+
+
+def _storage_backend(storage: DocumentStorage | None) -> str:
+    return "s3" if isinstance(storage, S3Storage) else "filesystem"
+
+
+def _log_registration(report: Report, *, created: bool, previous_batch_id: UUID | None) -> None:
+    log.info("report created or deduplicated", extra={
+        "event": "report_registered",
+        "batch_id": report.batch_id,
+        "report_id": report.id,
+        "report_created": created,
+        "previous_batch_id": previous_batch_id,
+        "final_batch_id": report.batch_id,
+        "report_status_after": report.status,
+        "document_path": report.file_path,
+        "sha256": report.sha256,
+    })
 
 
 def sha256_file(path: Path) -> str:
@@ -71,6 +92,7 @@ def register_pdf(
     existing = find_by_sha256(session, digest)
     if existing is not None:
         storage = storage or LocalFilesystemStorage(document_root)
+        previous_batch_id = existing.batch_id
         backend_changed = isinstance(storage, S3Storage) != existing.file_path.startswith("s3://")
         if existing.status == ReportStatus.FAILED.value or backend_changed:
             _report_id, file_ref = store_pdf(source, document_root, report_id=existing.id,
@@ -82,6 +104,15 @@ def register_pdf(
             existing.page_count = None
             existing.is_scanned = False
             existing.ocr_applied = False
+            log.info("file saved to document storage", extra={
+                "event": "file_saved",
+                "batch_id": existing.batch_id,
+                "report_id": existing.id,
+                "storage_backend": _storage_backend(storage),
+                "document_path": existing.file_path,
+                "storage_operation": "replaced",
+            })
+            _log_registration(existing, created=True, previous_batch_id=previous_batch_id)
             return existing, True
         # A byte-identical re-upload into a new batch must re-point the report
         # at that batch. Leaving batch_id on the previous batch orphans the new
@@ -89,6 +120,15 @@ def register_pdf(
         # nothing can move it off `ingesting`.
         if batch_id is not None and existing.batch_id != batch_id:
             existing.batch_id = batch_id
+        log.info("existing document storage reused", extra={
+            "event": "file_saved",
+            "batch_id": existing.batch_id,
+            "report_id": existing.id,
+            "storage_backend": _storage_backend(storage),
+            "document_path": existing.file_path,
+            "storage_operation": "reused",
+        })
+        _log_registration(existing, created=False, previous_batch_id=previous_batch_id)
         return existing, False
     report_id, file_ref = store_pdf(source, document_root, storage=storage)
     report = Report(
@@ -107,7 +147,17 @@ def register_pdf(
         existing = find_by_sha256(session, digest)
         if existing is None:
             raise
+        _log_registration(existing, created=False, previous_batch_id=existing.batch_id)
         return existing, False
+    log.info("file saved to document storage", extra={
+        "event": "file_saved",
+        "batch_id": report.batch_id,
+        "report_id": report.id,
+        "storage_backend": _storage_backend(storage),
+        "document_path": report.file_path,
+        "storage_operation": "created",
+    })
+    _log_registration(report, created=True, previous_batch_id=None)
     return report, True
 
 

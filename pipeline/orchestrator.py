@@ -116,6 +116,21 @@ def _facts_and_meta(result: object) -> tuple[list, Decimal | None, str | None, s
             getattr(result, "model", None), getattr(result, "prompt_version", None))
 
 
+def _finish_unit_with_trace(store, unit_id: UUID, facts: list, context: dict, **metadata):
+    try:
+        return store.finish_unit(unit_id, facts, **metadata)
+    except Exception as exc:
+        log.exception("extracted facts persistence failed", extra={
+            **context,
+            "event": "analysis_stage_failed",
+            "stage": "facts_persisted",
+            "success": False,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+        })
+        raise
+
+
 class Pipeline:
     """The WP-10 orchestrator. One instance wires one store factory."""
 
@@ -130,7 +145,8 @@ class Pipeline:
 
     def recompute(self, property_id, *, reason: str = "manual",
                   purchase_price: Decimal | None = None,
-                  assumption_set_id: UUID | None = None) -> Computation:
+                  assumption_set_id: UUID | None = None,
+                  trace_context: dict | None = None) -> Computation:
         """Load → normalize → compute → persist → emit flags.
 
         Idempotent: derived rows are replaced, flags dedupe by key, and the
@@ -138,6 +154,7 @@ class Pipeline:
         advisory lock.
         """
         property_id = UUID(str(property_id))
+        context = {"property_id": property_id, **(trace_context or {})}
         with self._store_factory() as store:
             store.acquire_property_lock(property_id)
             if store.get_property(property_id) is None:
@@ -145,16 +162,69 @@ class Pipeline:
             facts = store.load_facts(property_id)
             assumptions = store.load_assumptions(assumption_set_id)
             scoring_config_id, config = store.active_scoring_config()
-            record = resolve_facts(property_id, facts,
-                                   ocr_applied=store.reports_ocr_applied(property_id))
+            try:
+                record = resolve_facts(
+                    property_id, facts,
+                    ocr_applied=store.reports_ocr_applied(property_id),
+                )
+            except Exception as exc:
+                log.exception("property normalization failed", extra={
+                    **context,
+                    "event": "analysis_stage_failed",
+                    "stage": "normalization_validation",
+                    "success": False,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                })
+                raise
+            log.info("property normalization completed", extra={
+                **context,
+                "event": "analysis_stage_completed",
+                "stage": "normalization_validation",
+                "success": True,
+            })
             price = _purchase_price(record, purchase_price)
-            computation = recompute_property(record, assumptions, scoring_config_id, price,
-                                             config=config)
-            store.replace_results(property_id, computation, purchase_price=price)
-            store.persist_flags(property_id, _flag_requests(record, assumptions, computation))
-            store.mark_recomputed(property_id, computation.underwriting.status)
+            try:
+                computation = recompute_property(record, assumptions, scoring_config_id, price,
+                                                 config=config)
+            except Exception as exc:
+                log.exception("financial, scoring, or strategy analysis failed", extra={
+                    **context,
+                    "event": "analysis_stage_failed",
+                    "stage": "financial_scoring_strategy",
+                    "success": False,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                })
+                raise
+            for stage in ("financial_calculations", "scoring", "strategy_ranking"):
+                log.info("analysis stage completed", extra={
+                    **context,
+                    "event": "analysis_stage_completed",
+                    "stage": stage,
+                    "success": True,
+                })
+            try:
+                store.replace_results(property_id, computation, purchase_price=price)
+                store.persist_flags(property_id, _flag_requests(record, assumptions, computation))
+                store.mark_recomputed(property_id, computation.underwriting.status)
+            except Exception as exc:
+                log.exception("analysis persistence failed", extra={
+                    **context,
+                    "event": "analysis_stage_failed",
+                    "stage": "analysis_persistence",
+                    "success": False,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                })
+                raise
             log.info("recomputed property %s (reason=%s, status=%s)",
-                     property_id, reason, computation.underwriting.status)
+                     property_id, reason, computation.underwriting.status, extra={
+                         **context,
+                         "event": "analysis_completed",
+                         "stage": "analysis_persistence",
+                         "success": True,
+                     })
             return computation
 
     # ------------------------------------------------------------- extract_unit
@@ -170,10 +240,16 @@ class Pipeline:
         unit_id = UUID(str(unit_id))
         extract = extractor or self._extractor
         blocked: AcqError | None = None
+        facts = []
         with self._store_factory() as store:
             unit = store.get_unit(unit_id)
             if unit is None:
                 raise AcqError(ErrorCode.NOT_FOUND, f"extraction unit {unit_id} not found")
+            trace_context = {
+                "batch_id": unit.get("batch_id"),
+                "report_id": unit.get("report_id"),
+                "unit_id": unit_id,
+            }
             if unit["status"] in ("queued", "running"):
                 batch_id = unit["batch_id"]
                 if batch_id is not None and store.batch_is_paused(batch_id):
@@ -189,25 +265,77 @@ class Pipeline:
                         blocked = AcqError(ErrorCode.BUDGET_PAUSED,
                                            "batch budget exhausted", {"batch_id": str(batch_id)})
                     else:
-                        outcome = store.finish_unit(unit_id, facts, cost_usd=cost,
-                                                    model=model, prompt_version=prompt_version)
+                        outcome = _finish_unit_with_trace(
+                            store, unit_id, facts, trace_context, cost_usd=cost,
+                            model=model, prompt_version=prompt_version,
+                        )
             else:
                 # Retry of an already-finished unit: never re-extract or duplicate
                 # facts, but still evaluate the fan-in so a crash between
                 # finish_unit and recompute resumes correctly.
-                outcome = store.finish_unit(unit_id, [])
+                outcome = _finish_unit_with_trace(store, unit_id, [], trace_context)
         if blocked is not None:
             raise blocked
+        log.info("extracted facts persisted", extra={
+            **trace_context,
+            "event": "analysis_stage_completed",
+            "stage": "facts_persisted",
+            "success": True,
+            "fact_count": len(facts) if outcome.transitioned else 0,
+            "outstanding_units": outcome.outstanding,
+            "transitioned": outcome.transitioned,
+        })
         if outcome.transitioned and outcome.batch_id is not None:
             with self._store_factory() as store:
-                batch_machine.unit_finished(store, outcome.batch_id)
+                batch_status = batch_machine.unit_finished(store, outcome.batch_id)
+                batch = store.get_batch(outcome.batch_id)
+                log.info("batch extraction progress updated", extra={
+                    **trace_context,
+                    "event": "batch_status_changed",
+                    "stage": "batch_refresh",
+                    "success": True,
+                    "batch_status_after": batch_status,
+                    "total_count": batch.get("total_count") if batch else None,
+                    "completed_count": batch.get("completed_count") if batch else None,
+                    "failed_count": batch.get("failed_count") if batch else None,
+                })
         if outcome.property_id is not None and outcome.outstanding == 0:
-            self.recompute(outcome.property_id, reason="extraction_complete")
+            self.recompute(
+                outcome.property_id, reason="extraction_complete", trace_context=trace_context,
+            )
         if outcome.batch_id is not None:
             with self._store_factory() as store:
                 batch = store.get_batch(outcome.batch_id)
                 if batch is not None and batch.get("status") == "computing":
-                    batch_machine.mark_complete(store, outcome.batch_id)
+                    try:
+                        batch_machine.mark_complete(store, outcome.batch_id)
+                        final_batch = store.get_batch(outcome.batch_id)
+                    except Exception as exc:
+                        log.exception("final extraction fan-in failed", extra={
+                            **trace_context,
+                            "event": "analysis_stage_failed",
+                            "stage": "final_fan_in",
+                            "success": False,
+                            "error_type": type(exc).__name__,
+                            "error_message": str(exc),
+                        })
+                        raise
+                    log.info("final extraction fan-in completed", extra={
+                        **trace_context,
+                        "event": "analysis_stage_completed",
+                        "stage": "final_fan_in",
+                        "success": True,
+                    })
+                    log.info("batch marked complete", extra={
+                        **trace_context,
+                        "event": "batch_completed",
+                        "stage": "final_fan_in",
+                        "success": True,
+                        "final_status": final_batch.get("status") if final_batch else "complete",
+                        "total_count": final_batch.get("total_count") if final_batch else None,
+                        "completed_count": final_batch.get("completed_count") if final_batch else None,
+                        "failed_count": final_batch.get("failed_count") if final_batch else None,
+                    })
         return outcome
 
     # ------------------------------------------------------------- rank / changes / nightly
@@ -215,7 +343,14 @@ class Pipeline:
     def rank_scope(self, scope_type: str = "portfolio", scope_id=None) -> int:
         """Materialize one rankings snapshot for a scope (delegates to WP-8)."""
         with self._store_factory() as store:
-            return store.rank_scope(scope_type, UUID(str(scope_id)) if scope_id else None)
+            ranked = store.rank_scope(scope_type, UUID(str(scope_id)) if scope_id else None)
+            log.info("ranking scope completed", extra={
+                "event": "analysis_stage_completed",
+                "stage": "strategy_ranking",
+                "success": True,
+                "unit_count": ranked,
+            })
+            return ranked
 
     def detect_changes(self, property_id, *, before: NormalizedProperty | None = None,
                        source_report_id=None) -> list:

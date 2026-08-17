@@ -9,6 +9,7 @@ import json
 import logging
 from collections.abc import Callable
 from decimal import Decimal
+from urllib.parse import urlparse
 from uuid import UUID
 
 from classification import classify, section_match_rate, section_pages
@@ -46,8 +47,17 @@ def _extractor(unit: dict):
         "report_id": unit.get("report_id"),
         "batch_id": unit.get("batch_id"),
         "document_path": unit.get("text_path"),
+        "unit_type": unit.get("unit_type"),
+        "token_estimate": unit.get("token_estimate") or 0,
     }
-    log.info("extraction started", extra=context)
+    provider = ProviderClient()
+    context.update({
+        "model": provider.model_for(unit["unit_type"]),
+        "provider_host": urlparse(provider.base_url).hostname,
+    })
+    log.info("extraction started", extra={
+        **context, "event": "extract_started", "stage": "extraction", "success": True,
+    })
     try:
         with get_document_storage().materialize(unit["text_path"]) as text_path:
             text = text_path.read_text()
@@ -63,11 +73,24 @@ def _extractor(unit: dict):
         # Pipeline.SqlStore owns fact persistence, budget reservation, and the
         # extraction-unit transition. Keep this adapter side-effect free so a
         # retry cannot insert the same fact ledger twice.
-        result = ExtractionService(ProviderClient()).extract_unit(request)
-    except Exception:
-        log.exception("extraction failed", extra=context)
+        result = ExtractionService(provider).extract_unit(request)
+    except Exception as exc:
+        log.exception("extraction failed", extra={
+            **context,
+            "event": "extract_failed",
+            "stage": "extraction",
+            "success": False,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+        })
         raise
-    log.info("extraction completed", extra=context)
+    log.info("extraction completed", extra={
+        **context,
+        "event": "extract_completed",
+        "stage": "extraction",
+        "success": True,
+        "model_used": result.model,
+    })
     return result
 
 
@@ -80,7 +103,9 @@ def _handle_ingest_document(payload) -> None:
             raise PermanentJobFailure(f"report {report_id} not found")
         context = {"report_id": report.id, "batch_id": report.batch_id,
                    "document_path": report.file_path}
-    log.info("document ingestion started", extra=context)
+    log.info("document ingestion started", extra={
+        **context, "event": "ingestion_started", "stage": "ingestion", "success": True,
+    })
     report = ingest_document(data, identity_resolver=attach_report,
                              classifier=classify, sectioner=section_pages,
                              section_matcher=section_match_rate)
@@ -94,6 +119,9 @@ def _handle_ingest_document(payload) -> None:
             f"extraction units={unit_count}"
         )
     log.info("document ingestion completed", extra={
+        "event": "ingestion_completed",
+        "stage": "ingestion",
+        "success": True,
         **context,
         "report_status_after": report.status,
         "unit_statuses": {"queued": unit_count},
@@ -157,12 +185,20 @@ class Worker:
             job = self.queue.claim(session)
             if not job:
                 return False
-            context = {"job_id": job["id"], "job_name": job["name"]}
+            context = {
+                "job_id": job["id"],
+                "job_name": job["name"],
+                "attempt": job["attempts"],
+                "max_attempts": job["max_attempts"],
+                "stage": "job_handler",
+            }
             try:
                 context.update(_job_context(session, job))
             except Exception:
                 log.warning("unable to load job context", extra=context, exc_info=True)
-            log.info("job found", extra=context)
+            log.info("job found", extra={
+                **context, "event": "worker_job_claimed", "success": True,
+            })
             try:
                 self.handlers[job["name"]](job["payload"])
             except Exception as exc:
@@ -171,11 +207,25 @@ class Worker:
                 self.queue.fail(session, job["id"], attempts, job["max_attempts"], str(exc))
                 if terminal:
                     _mark_terminal_failure(session, job, exc)
-                log.exception("job failed permanently" if terminal else "job failed; retry scheduled",
-                              extra=context)
+                log.exception(
+                    "job failed permanently" if terminal else "job failed; retry scheduled",
+                    extra={
+                        **context,
+                        "event": "job_failed_permanently" if terminal else "job_retry_scheduled",
+                        "success": False,
+                        "job_status": "dead" if terminal else "queued",
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    },
+                )
             else:
                 self.queue.complete(session, job["id"])
-                log.info("job completion", extra=context)
+                log.info("job completion", extra={
+                    **context,
+                    "event": "worker_job_completed",
+                    "success": True,
+                    "job_status": "complete",
+                })
             return True
 
     def recover_stale(self) -> int:
@@ -240,9 +290,24 @@ def _mark_terminal_failure(session, job: dict, exc: Exception) -> None:
                               .count())
             batch.failed_count = max(batch.failed_count or 0, failed_reports)
         batch.status = "failed"
-    log.error("domain records marked failed", extra={**_job_context(session, job),
-                                                     "job_id": job["id"],
-                                                     "job_name": job["name"]})
+    failure_context = {
+        **_job_context(session, job),
+        "event": "batch_failed" if batch is not None else "domain_record_failed",
+        "stage": "job_handler",
+        "success": False,
+        "job_id": job["id"],
+        "job_name": job["name"],
+        "error_type": type(exc).__name__,
+        "error_message": str(exc),
+    }
+    if batch is not None:
+        failure_context.update({
+            "final_status": batch.status,
+            "total_count": batch.total_count,
+            "completed_count": batch.completed_count,
+            "failed_count": batch.failed_count,
+        })
+    log.exception("domain records marked failed", extra=failure_context)
 
 
 def _refresh_batch_after_ingest(report: Report) -> tuple[str, int]:
@@ -270,10 +335,18 @@ def _refresh_batch_after_ingest(report: Report) -> tuple[str, int]:
         current_report_units = sum(unit.report_id == report.id for unit in units)
         session.flush()
         committed = {
+            "event": "batch_status_changed" if status_before != batch.status else "batch_status_refreshed",
+            "stage": "batch_refresh",
+            "success": True,
             "batch_id": batch.id,
             "report_id": report.id,
             "batch_status_before": status_before,
             "batch_status_after": batch.status,
+            "total_count": batch.total_count,
+            "completed_count": batch.completed_count,
+            "failed_count": batch.failed_count,
+            "report_count": len(reports),
+            "unit_count": len(units),
             "report_statuses": {
                 status: sum(row.status == status for row in reports)
                 for status in sorted({row.status for row in reports})
@@ -286,7 +359,9 @@ def _refresh_batch_after_ingest(report: Report) -> tuple[str, int]:
         log.info("batch status recomputed after ingestion", extra=committed)
     log.info("batch ingestion state committed", extra={
         **committed,
+        "event": "ingestion_transaction_committed",
         "transaction_status": "committed",
+        "report_status_after": report.status,
     })
     return str(committed["batch_status_after"]), current_report_units
 

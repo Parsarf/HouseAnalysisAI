@@ -141,33 +141,29 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
     batch = dbm.Batch(id=batch_id, name=batch_name, file_count=len(files),
                       total_count=len(files), status="ingesting")
     session.add(batch)
-    log.info("PDF upload received", extra={
-        "batch_id": batch_id,
-        "batch_status_after": batch.status,
-        "file_count": len(files),
-        "storage_backend": settings.storage_backend,
-    })
     reports = []
     for upload_file in files:
+        file_size = 0
         with NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             while chunk := await upload_file.read(1024 * 1024):
                 tmp.write(chunk)
+                file_size += len(chunk)
             temp_path = Path(tmp.name)
+        log.info("PDF upload request received", extra={
+            "event": "upload_received",
+            "batch_id": batch_id,
+            "upload_filename": upload_file.filename,
+            "file_size": file_size,
+            "file_count": len(files),
+            "batch_status_after": batch.status,
+        })
         try:
-            report, created = register_pdf(
+            report, _created = register_pdf(
                 session, temp_path, root, batch_id=batch_id, storage=storage,
             )
         finally:
             temp_path.unlink(missing_ok=True)
         reports.append(str(report.id))
-        log.info("uploaded report registered", extra={
-            "batch_id": batch_id,
-            "report_id": report.id,
-            "report_status_after": report.status,
-            "document_path": report.file_path,
-            "report_created": created,
-            "storage_backend": settings.storage_backend,
-        })
         # Enqueue unconditionally, including for deduplicated reports: the job is
         # idempotent (dedupe_key `ingest:{report_id}`) and it is what advances the
         # batch off `ingesting`. Gating on `created` left re-uploaded batches stuck.
@@ -176,14 +172,23 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
             f"ingest:{report.id}",
         )
         log.info("report ingestion job enqueued", extra={
+            "event": "ingest_job_created",
             "batch_id": batch_id,
             "report_id": report.id,
             "job_id": job_id,
             "job_name": "ingest_document",
+            # The queue persistence layer emits the authoritative status for
+            # this same job_id. Avoid a second database read here so alternate
+            # queue implementations remain supported.
+            "job_status": "queued",
+            "dedupe_key": f"ingest:{report.id}",
             "document_path": report.file_path,
         })
     if hasattr(session, "info"):
         session.info["transaction_log_context"] = {
+            "event": "upload_committed",
+            "stage": "upload_transaction",
+            "success": True,
             "batch_id": batch_id,
             "batch_status_after": batch.status,
         }

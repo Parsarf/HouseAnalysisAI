@@ -25,6 +25,7 @@ def get_session(request: Request) -> Iterator[Session]:
         session.commit()
         context = getattr(session, "info", {}).pop("transaction_log_context", {})
         log.info("database transaction committed", extra={
+            "event": "database_transaction_committed",
             "request_method": request.method,
             "request_path": request.url.path,
             "transaction_status": "committed",
@@ -33,6 +34,9 @@ def get_session(request: Request) -> Iterator[Session]:
     except Exception:
         session.rollback()
         log.exception("database transaction rolled back", extra={
+            "event": "database_transaction_rolled_back",
+            "stage": "database_transaction",
+            "success": False,
             "request_method": request.method,
             "request_path": request.url.path,
             "transaction_status": "rolled_back",

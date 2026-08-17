@@ -66,6 +66,7 @@ class PostgresJobQueue:
         row = session.execute(ENQUEUE_SQL, {"id": uuid4(), "name": name, "payload": payload, "dedupe_key": dedupe_key, "max_attempts": max_attempts}).mappings().one()
         result = EnqueueResult(id=row["id"], status=row["status"])
         log.info("queue job upserted", extra={
+            "event": "queue_job_upserted",
             "job_id": result.id,
             "job_name": name,
             "job_status": result.status,

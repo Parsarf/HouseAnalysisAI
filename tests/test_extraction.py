@@ -454,6 +454,49 @@ def test_extract_unit_persists_facts_and_unit_cost(session):
     assert row.prompt_version == result.prompt_version
 
 
+def test_extraction_success_emits_correlated_lifecycle_events(caplog):
+    batch_id, report_id, unit_id = uuid4(), uuid4(), uuid4()
+    unit = make_unit(id=unit_id, report_id=report_id, batch_id=batch_id)
+    service = ExtractionService(make_provider([{"liens": [GOOD_LIEN]}], []))
+
+    with caplog.at_level("INFO"):
+        service.extract_unit(unit, page_text_by_number=PAGES)
+
+    request = next(record for record in caplog.records
+                   if getattr(record, "event", None) == "extraction_request")
+    response = next(record for record in caplog.records
+                    if getattr(record, "event", None) == "extraction_response")
+    validated = next(record for record in caplog.records
+                     if getattr(record, "stage", None) == "normalization_validation")
+    for record in (request, response, validated):
+        assert record.batch_id == batch_id
+        assert record.report_id == report_id
+        assert record.unit_id == unit_id
+    assert request.provider_host == "api.openai.com"
+    assert response.success is True
+    assert not hasattr(response, "api_key")
+
+
+def test_extraction_failure_emits_safe_correlated_error(caplog):
+    batch_id, report_id, unit_id = uuid4(), uuid4(), uuid4()
+    unit = make_unit(id=unit_id, report_id=report_id, batch_id=batch_id)
+    service = ExtractionService(make_provider([400], []))
+
+    with caplog.at_level("INFO"), pytest.raises(AcqError):
+        service.extract_unit(unit, page_text_by_number=PAGES)
+
+    failed = next(record for record in caplog.records
+                  if getattr(record, "event", None) == "extraction_response")
+    assert failed.batch_id == batch_id
+    assert failed.report_id == report_id
+    assert failed.unit_id == unit_id
+    assert failed.success is False
+    assert failed.provider_status_code == 400
+    assert failed.error_type == "AcqError"
+    assert failed.exc_info is not None
+    assert not hasattr(failed, "api_key")
+
+
 def test_budget_gate_pauses_before_provider_call(session):
     batch = Batch(id=uuid4(), budget_limit_usd=Decimal("0.00"), spent_usd=Decimal("0.00"))
     session.add(batch)

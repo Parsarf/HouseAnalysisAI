@@ -189,25 +189,44 @@ def assert_batch_uploaded(harness, batch_id, report_id):
         return len(units)
 
 
-def test_fresh_unique_pdf_upload_progresses_to_uploaded(upload_ingestion_harness):
-    result = upload(upload_ingestion_harness, "fresh")
+def test_fresh_unique_pdf_upload_progresses_to_uploaded(upload_ingestion_harness, caplog):
+    with caplog.at_level("INFO"):
+        result = upload(upload_ingestion_harness, "fresh")
+        report_id = result["report_ids"][0]
+        assert_batch_uploaded(upload_ingestion_harness, result["batch_id"], report_id)
+
     report_id = result["report_ids"][0]
     job = upload_ingestion_harness.queue.jobs[f"ingest:{report_id}"]
     assert json.loads(job["payload"]) == {"report_id": report_id}
-    assert job["status"] == "queued"
-
-    assert_batch_uploaded(upload_ingestion_harness, result["batch_id"], report_id)
     assert job["status"] == "complete"
+    events = {getattr(record, "event", None) for record in caplog.records}
+    required = {
+        "upload_received", "file_saved", "report_registered", "ingest_job_created",
+        "worker_job_claimed", "document_materialized", "pdf_opened", "scan_detected",
+        "classification_completed", "sectioning_completed", "units_created",
+        "report_status_transition", "ingestion_transaction_committed",
+        "batch_status_returned",
+    }
+    assert required <= events
+    correlated = [
+        record for record in caplog.records
+        if getattr(record, "event", None) in required and hasattr(record, "batch_id")
+    ]
+    assert correlated
+    assert all(str(record.batch_id) == result["batch_id"] for record in correlated)
 
 
-def test_identical_pdf_reupload_as_new_batch_progresses_to_uploaded(upload_ingestion_harness):
+def test_identical_pdf_reupload_as_new_batch_progresses_to_uploaded(
+    upload_ingestion_harness, caplog,
+):
     first = upload(upload_ingestion_harness, "first")
     report_id = first["report_ids"][0]
     original_unit_count = assert_batch_uploaded(
         upload_ingestion_harness, first["batch_id"], report_id,
     )
 
-    second = upload(upload_ingestion_harness, "second")
+    with caplog.at_level("INFO"):
+        second = upload(upload_ingestion_harness, "second")
     assert second["batch_id"] != first["batch_id"]
     assert second["report_ids"] == [report_id]
     assert upload_ingestion_harness.queue.jobs[f"ingest:{report_id}"]["status"] == "queued"
@@ -215,6 +234,19 @@ def test_identical_pdf_reupload_as_new_batch_progresses_to_uploaded(upload_inges
     assert assert_batch_uploaded(
         upload_ingestion_harness, second["batch_id"], report_id,
     ) == original_unit_count
+    registered = next(
+        record for record in reversed(caplog.records)
+        if getattr(record, "event", None) == "report_registered"
+    )
+    assert registered.report_created is False
+    assert str(registered.previous_batch_id) == first["batch_id"]
+    assert str(registered.final_batch_id) == second["batch_id"]
+    requeued = next(
+        record for record in reversed(caplog.records)
+        if getattr(record, "event", None) == "ingest_job_created"
+    )
+    assert str(requeued.batch_id) == second["batch_id"]
+    assert str(requeued.report_id) == report_id
 
 
 @pytest.mark.integration

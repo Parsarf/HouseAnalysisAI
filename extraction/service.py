@@ -6,9 +6,11 @@ run offline (SQLite in memory or a fake). The budget gate calls
 failed (spec §19).
 """
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from decimal import Decimal
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
@@ -30,6 +32,7 @@ BudgetReserve = Callable[[Session, UUID, Decimal], bool]
 # as the conservative bound. Refined by classification's token estimates.
 _ESTIMATED_INPUT_PRICE_PER_TOKEN = Decimal("0.0000025")
 _ESTIMATED_OUTPUT_PRICE_PER_TOKEN = Decimal("0.00001")
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -131,13 +134,73 @@ class ExtractionService:
     ) -> tuple[GauntletOutcome, ExtractionResult]:
         """Provider call + gauntlet, without persistence. Returns the gauntlet
         outcome and the public result; persistence is the caller's choice."""
-        response = self.provider.complete(
-            unit.unit_type, unit.text, subject=_subject_line(unit), system_prompt=load_prompt()
-        )
-        drafts, dropped = flatten_payload(
-            unit.unit_type, response.payload, report_id=unit.report_id, extraction_unit_id=unit.id
-        )
-        outcome = run_gauntlet(drafts, page_text_by_number or _default_page_text(unit), dropped=dropped)
+        model = self.provider.model_for(unit.unit_type)
+        context = {
+            "batch_id": unit.batch_id,
+            "report_id": unit.report_id,
+            "unit_id": unit.id,
+            "event": "extraction_request",
+            "stage": "extraction_request",
+            "model": model,
+            "provider_host": urlparse(self.provider.base_url).hostname,
+            "unit_type": unit.unit_type,
+            "token_estimate": unit.token_estimate,
+        }
+        log.info("provider extraction request started", extra={**context, "success": True})
+        try:
+            response = self.provider.complete(
+                unit.unit_type, unit.text, subject=_subject_line(unit), system_prompt=load_prompt()
+            )
+        except Exception as exc:
+            details = exc.details if isinstance(exc, AcqError) else {}
+            log.exception("provider extraction response failed", extra={
+                **context,
+                "event": "extraction_response",
+                "success": False,
+                "provider_status_code": details.get("provider_status_code"),
+                "retry_count": details.get("retry_count", 0),
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+            raise
+        log.info("provider extraction response completed", extra={
+            **context,
+            "event": "extraction_response",
+            "success": True,
+            "model_used": response.model,
+            "retry_count": max(0, response.attempts - 1),
+            "provider_status_code": 200,
+        })
+        try:
+            drafts, dropped = flatten_payload(
+                unit.unit_type, response.payload,
+                report_id=unit.report_id, extraction_unit_id=unit.id,
+            )
+            outcome = run_gauntlet(
+                drafts, page_text_by_number or _default_page_text(unit), dropped=dropped,
+            )
+        except Exception as exc:
+            log.exception("normalization and validation failed", extra={
+                "event": "analysis_stage_failed",
+                "stage": "normalization_validation",
+                "success": False,
+                "batch_id": unit.batch_id,
+                "report_id": unit.report_id,
+                "unit_id": unit.id,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+            raise
+        log.info("normalization and validation completed", extra={
+            "event": "analysis_stage_completed",
+            "stage": "normalization_validation",
+            "success": True,
+            "batch_id": unit.batch_id,
+            "report_id": unit.report_id,
+            "unit_id": unit.id,
+            "fact_count": len(outcome.active),
+            "inactive_fact_count": len(outcome.inactive),
+        })
         result = ExtractionResult(
             outcome.active, outcome.dropped, prompt_version(),
             inactive=outcome.inactive, counters=outcome.counters,

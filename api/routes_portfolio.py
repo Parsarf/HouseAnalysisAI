@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from threading import Lock
 from uuid import UUID, uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -42,6 +43,18 @@ log = logging.getLogger(__name__)
 
 PRICE_PER_1K_TOKENS = Decimal("0.003")
 DEFAULT_EXPORT_COLUMNS = ["id", "address_line1", "city", "state", "zip5", "pipeline_status", "tags"]
+_BATCH_STATUS_LOG_STATE: dict[UUID, tuple] = {}
+_BATCH_STATUS_LOG_LOCK = Lock()
+
+
+def _batch_status_changed(batch_id: UUID, state: tuple) -> bool:
+    with _BATCH_STATUS_LOG_LOCK:
+        if _BATCH_STATUS_LOG_STATE.get(batch_id) == state:
+            return False
+        if len(_BATCH_STATUS_LOG_STATE) >= 4096:
+            _BATCH_STATUS_LOG_STATE.clear()
+        _BATCH_STATUS_LOG_STATE[batch_id] = state
+        return True
 
 
 def _batch_or_404(session: Session, batch_id: UUID) -> dbm.Batch:
@@ -64,11 +77,19 @@ def batch_status(batch_id: UUID, session: Session = Depends(get_session),
                  user: User = Depends(current_user)) -> dict:
     batch = _batch_or_404(session, batch_id)
     payload = _batch_payload(batch)
-    log.info("batch status read", extra={
-        "batch_id": batch_id,
-        "batch_status_after": batch.status,
-        "transaction_status": "database_read",
-    })
+    report_count = session.query(dbm.Report).filter(dbm.Report.batch_id == batch_id).count()
+    state = (batch.status, batch.total_count, batch.completed_count, batch.failed_count, report_count)
+    if _batch_status_changed(batch_id, state):
+        log.info("batch status read", extra={
+            "event": "batch_status_returned",
+            "batch_id": batch_id,
+            "batch_status_after": batch.status,
+            "total_count": batch.total_count,
+            "completed_count": batch.completed_count,
+            "failed_count": batch.failed_count,
+            "report_count": report_count,
+            "transaction_status": "database_read",
+        })
     return payload
 
 
@@ -97,6 +118,14 @@ def batch_estimate(batch_id: UUID, session: Session = Depends(get_session),
     batch.awaiting_confirmation = True
     batch.status = "awaiting_confirmation"
     session.flush()
+    log.info("batch extraction estimate completed", extra={
+        "event": "batch_estimated",
+        "batch_id": batch_id,
+        "eligible_units": len(units),
+        "report_count": len(reports),
+        "estimated_cost_usd": estimated,
+        "batch_status_after": batch.status,
+    })
     return dump(BatchEstimate(batch_id=batch_id, report_count=len(reports),
                               total_tokens=total_tokens, estimated_cost_usd=estimated,
                               awaiting_confirmation=True))
@@ -106,7 +135,10 @@ def batch_estimate(batch_id: UUID, session: Session = Depends(get_session),
 def batch_start(batch_id: UUID, session: Session = Depends(get_session),
                 queue: PostgresJobQueue = Depends(get_queue), user: User = Depends(write_user)) -> dict:
     batch = _batch_or_404(session, batch_id)
-    log.info("batch start received", extra={"batch_id": batch_id})
+    log.info("batch start received", extra={
+        "event": "batch_start_received",
+        "batch_id": batch_id,
+    })
     if not batch.awaiting_confirmation:
         raise AcqError(ErrorCode.CONFLICT, "batch is not awaiting confirmation",
                        {"status": batch.status})
@@ -116,6 +148,7 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
                  .filter(dbm.ExtractionUnit.report_id.in_(report_ids)).all()) if report_ids else []
     units = [unit for unit in all_units if unit.status == "queued"]
     log.info("batch eligible extraction units", extra={
+        "event": "extraction_units_eligible",
         "batch_id": batch_id,
         "eligible_units": len(units),
         "queued_jobs": 0,
@@ -124,6 +157,9 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
         unit_statuses = Counter(unit.status or "unset" for unit in all_units)
         report_statuses = Counter(report.status or "unset" for report in reports)
         log.warning("batch start rejected; no queued extraction units", extra={
+            "event": "batch_start_rejected",
+            "stage": "extraction_start",
+            "success": False,
             "batch_id": batch_id,
             "eligible_units": 0,
             "queued_jobs": 0,
@@ -147,19 +183,35 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
                          f"extract_unit:{unit.id}")
         job = session.get(dbm.Job, job_id)
         log.info("batch extraction job inserted", extra={
+            "event": "extract_job_created",
             "batch_id": batch_id,
+            "report_id": unit.report_id,
             "unit_id": unit.id,
             "job_id": job_id,
             "job_name": "extract_unit",
             "job_status": job.status if job is not None else "queued",
+            "dedupe_key": f"extract_unit:{unit.id}",
             "queued_jobs": 1,
         })
     session.flush()
     log.info("batch start transaction staged", extra={
+        "event": "batch_start_staged",
         "batch_id": batch_id,
         "eligible_units": len(units),
         "queued_jobs": len(units),
+        "jobs_inserted": len(units),
+        "batch_status_after": batch.status,
     })
+    if hasattr(session, "info"):
+        session.info["transaction_log_context"] = {
+            "event": "batch_start_committed",
+            "stage": "extraction_start",
+            "success": True,
+            "batch_id": batch_id,
+            "batch_status_after": batch.status,
+            "eligible_units": len(units),
+            "jobs_inserted": len(units),
+        }
     return _batch_payload(batch)
 
 
