@@ -1,5 +1,6 @@
 import json
 import logging
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -83,7 +84,7 @@ def _queue_extraction_units(
     storage: DocumentStorage | None = None,
 ) -> int:
     """Create typed extraction units and enqueue them once per report."""
-    from sqlalchemy import func, select
+    from sqlalchemy import select
     if classifier is None or sectioner is None or match_rate is None:
         # The standalone text/OCR path intentionally stops before classification;
         # the production pipeline always supplies all four composition hooks.
@@ -92,9 +93,11 @@ def _queue_extraction_units(
     if not session.get_bind().dialect.has_table(connection, "extraction_units"):
         raise AcqError(ErrorCode.INTERNAL, "extraction_units table is unavailable",
                        {"report_id": str(report.id), "required_migration": "extraction_units"})
-    already_created = int(session.scalar(
-        select(func.count(ExtractionUnit.id)).where(ExtractionUnit.report_id == report.id)
-    ) or 0)
+    existing_units = list(session.scalars(
+        select(ExtractionUnit).where(ExtractionUnit.report_id == report.id)
+        .order_by(ExtractionUnit.created_at, ExtractionUnit.id)
+    ).all())
+    already_created = len(existing_units)
     log.info("document classification started", extra={
         "event": "classification_started",
         "stage": "classification",
@@ -152,20 +155,35 @@ def _queue_extraction_units(
         "report_id": report.id,
         "section_count": len(units),
         "existing_unit_count": already_created,
+        "unit_ids": [str(unit.id) for unit in existing_units],
+        "unit_statuses": dict(Counter(unit.status or "unset" for unit in existing_units)),
     })
     if not units:
         return 0
     if already_created:
         # Re-ingestion of a report that already has units (job retry, or the same
         # document re-uploaded into a new batch). Do not duplicate the units, but
-        # still apply classification so the report reaches `classified`; returning
-        # 0 here previously made the caller treat the run as incomplete.
+        # make those units eligible for the new batch's explicit /start step and
+        # still apply classification so the report reaches `classified`.
+        statuses_before = Counter(unit.status or "unset" for unit in existing_units)
+        for unit in existing_units:
+            unit.status = "queued"
         report.report_type = result.report_type
         report.vendor = result.vendor
         report.classification_confidence = result.confidence
         report.section_match_rate = match_rate(units)
         report.status = ReportStatus.CLASSIFIED.value
         session.flush()
+        log.info("existing extraction units requeued", extra={
+            "event": "units_requeued",
+            "stage": "sectioning",
+            "success": True,
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "unit_ids": [str(unit.id) for unit in existing_units],
+            "unit_statuses_before": dict(statuses_before),
+            "unit_statuses": dict(Counter(unit.status or "unset" for unit in existing_units)),
+        })
         log.info("document classification completed", extra={
             "event": "units_created",
             "stage": "sectioning",
@@ -177,9 +195,12 @@ def _queue_extraction_units(
             "unit_count": already_created,
             "existing_unit_count": already_created,
             "units_created": 0,
+            "unit_ids": [str(unit.id) for unit in existing_units],
+            "unit_statuses": dict(Counter(unit.status or "unset" for unit in existing_units)),
         })
         return already_created
     storage = storage or get_document_storage()
+    created_units = []
     for index, section in enumerate(units):
         unit_id = uuid4()
         unit_path = storage.save_text(section.text,
@@ -190,6 +211,7 @@ def _queue_extraction_units(
             text_path=unit_path, token_estimate=section.token_estimate, status="queued")
         session.add(unit)
         session.flush()
+        created_units.append(unit)
         log.info("extraction unit created", extra={
             "event": "extraction_unit_created",
             "batch_id": report.batch_id,
@@ -217,6 +239,8 @@ def _queue_extraction_units(
         "unit_count": len(units),
         "existing_unit_count": 0,
         "units_created": len(units),
+        "unit_ids": [str(unit.id) for unit in created_units],
+        "unit_statuses": dict(Counter(unit.status or "unset" for unit in created_units)),
     })
     return len(units)
 

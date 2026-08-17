@@ -117,6 +117,7 @@ def upload_ingestion_harness(monkeypatch, tmp_path):
     Batch.__table__.create(engine)
     Report.__table__.create(engine)
     ExtractionUnit.__table__.create(engine)
+    Job.__table__.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
     storage = object.__new__(S3Storage)
@@ -189,7 +190,9 @@ def assert_batch_uploaded(harness, batch_id, report_id):
         return len(units)
 
 
-def test_fresh_unique_pdf_upload_progresses_to_uploaded(upload_ingestion_harness, caplog):
+def test_fresh_unique_pdf_ingests_estimates_and_starts_extraction(
+    upload_ingestion_harness, caplog,
+):
     with caplog.at_level("INFO"):
         result = upload(upload_ingestion_harness, "fresh")
         report_id = result["report_ids"][0]
@@ -199,6 +202,48 @@ def test_fresh_unique_pdf_upload_progresses_to_uploaded(upload_ingestion_harness
     job = upload_ingestion_harness.queue.jobs[f"ingest:{report_id}"]
     assert json.loads(job["payload"]) == {"report_id": report_id}
     assert job["status"] == "complete"
+    with upload_ingestion_harness.session_factory() as session:
+        units = session.query(ExtractionUnit).filter(
+            ExtractionUnit.report_id == UUID(report_id)
+        ).all()
+        assert units
+        assert {unit.status for unit in units} == {"queued"}
+        unit_ids = {str(unit.id) for unit in units}
+        assert {str(unit.report_id) for unit in units} == {report_id}
+
+    with caplog.at_level("INFO"):
+        estimate = upload_ingestion_harness.client.post(
+            f"/api/batches/{result['batch_id']}/estimate"
+        )
+        assert estimate.status_code == 200
+        started = upload_ingestion_harness.client.post(
+            f"/api/batches/{result['batch_id']}/start"
+        )
+    assert started.status_code == 200
+    assert started.json()["status"] == "running"
+    extract_jobs = [
+        queued for queued in upload_ingestion_harness.queue.jobs.values()
+        if queued["name"] == "extract_unit"
+    ]
+    assert {json.loads(queued["payload"])["unit_id"] for queued in extract_jobs} == unit_ids
+    assert {queued["status"] for queued in extract_jobs} == {"queued"}
+    sectioned = next(record for record in caplog.records
+                     if getattr(record, "event", None) == "sectioning_completed")
+    assert sectioned.section_count == 1
+    assert sectioned.existing_unit_count == 0
+    assert str(sectioned.batch_id) == result["batch_id"]
+    assert str(sectioned.report_id) == report_id
+    created = next(record for record in caplog.records
+                   if getattr(record, "event", None) == "units_created")
+    assert created.units_created == 1
+    assert set(created.unit_ids) == unit_ids
+    assert created.unit_statuses == {"queued": 1}
+    eligible = next(record for record in caplog.records
+                    if getattr(record, "event", None) == "extraction_units_eligible")
+    assert eligible.eligible_unit_count == 1
+    assert set(eligible.unit_ids) == unit_ids
+    assert eligible.unit_statuses == {"queued": 1}
+    assert eligible.excluded_unit_statuses == {}
     events = {getattr(record, "event", None) for record in caplog.records}
     required = {
         "upload_received", "file_saved", "report_registered", "ingest_job_created",
@@ -247,6 +292,45 @@ def test_identical_pdf_reupload_as_new_batch_progresses_to_uploaded(
     )
     assert str(requeued.batch_id) == second["batch_id"]
     assert str(requeued.report_id) == report_id
+
+
+def test_reingested_nonqueued_units_are_eligible_for_start(upload_ingestion_harness):
+    first = upload(upload_ingestion_harness, "first-extracted")
+    report_id = first["report_ids"][0]
+    assert_batch_uploaded(upload_ingestion_harness, first["batch_id"], report_id)
+    with upload_ingestion_harness.session_factory() as session:
+        original_units = session.query(ExtractionUnit).filter(
+            ExtractionUnit.report_id == UUID(report_id)
+        ).all()
+        assert original_units
+        for unit in original_units:
+            unit.status = "extracted"
+        original_unit_ids = {str(unit.id) for unit in original_units}
+        session.commit()
+
+    second = upload(upload_ingestion_harness, "second-reingested")
+    assert second["report_ids"] == [report_id]
+    assert_batch_uploaded(upload_ingestion_harness, second["batch_id"], report_id)
+    with upload_ingestion_harness.session_factory() as session:
+        persisted_units = session.query(ExtractionUnit).filter(
+            ExtractionUnit.report_id == UUID(report_id)
+        ).all()
+        assert {str(unit.id) for unit in persisted_units} == original_unit_ids
+        assert {unit.status for unit in persisted_units} == {"queued"}
+
+    estimate = upload_ingestion_harness.client.post(
+        f"/api/batches/{second['batch_id']}/estimate"
+    )
+    assert estimate.status_code == 200
+    started = upload_ingestion_harness.client.post(
+        f"/api/batches/{second['batch_id']}/start"
+    )
+    assert started.status_code == 200
+    extract_jobs = [
+        queued for queued in upload_ingestion_harness.queue.jobs.values()
+        if queued["name"] == "extract_unit"
+    ]
+    assert {json.loads(queued["payload"])["unit_id"] for queued in extract_jobs} == original_unit_ids
 
 
 @pytest.mark.integration

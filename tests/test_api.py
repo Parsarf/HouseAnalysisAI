@@ -709,6 +709,38 @@ def test_batch_start_rejects_zero_eligible_units(client, session, queue):
     assert batch.awaiting_confirmation is True
 
 
+def test_batch_start_logs_exact_nonqueued_statuses(client, session, queue, caplog):
+    session.add(dbm.Batch(
+        id=BATCH_ID, name="nonqueued", file_count=1, total_count=1,
+        status="awaiting_confirmation", awaiting_confirmation=True,
+    ))
+    report = dbm.Report(
+        id=uuid4(), batch_id=BATCH_ID, file_path="/classified.pdf",
+        sha256="b" * 64, status="classified",
+    )
+    unit = dbm.ExtractionUnit(
+        id=uuid4(), report_id=report.id, unit_type="combined",
+        page_start=1, page_end=1, status="extracted",
+    )
+    session.add(report)
+    session.add(unit)
+
+    with caplog.at_level("INFO"):
+        response = client.post(f"/api/batches/{BATCH_ID}/start")
+
+    assert response.status_code == 409
+    eligible = next(record for record in caplog.records
+                    if getattr(record, "event", None) == "extraction_units_eligible")
+    assert eligible.eligible_unit_count == 0
+    assert eligible.unit_ids == []
+    assert eligible.unit_statuses == {"extracted": 1}
+    assert eligible.excluded_unit_statuses == {"extracted": 1}
+    rejected = next(record for record in caplog.records
+                    if getattr(record, "event", None) == "batch_start_rejected")
+    assert rejected.unit_ids == [str(unit.id)]
+    assert rejected.excluded_unit_statuses == {"extracted": 1}
+
+
 def test_batch_get_serializes_persisted_post_ingestion_status(client, session, caplog):
     routes_portfolio._BATCH_STATUS_LOG_STATE.clear()
     session.add(dbm.Batch(

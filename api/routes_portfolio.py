@@ -147,14 +147,21 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
     all_units = (session.query(dbm.ExtractionUnit)
                  .filter(dbm.ExtractionUnit.report_id.in_(report_ids)).all()) if report_ids else []
     units = [unit for unit in all_units if unit.status == "queued"]
+    unit_statuses = Counter(unit.status or "unset" for unit in all_units)
+    excluded_unit_statuses = Counter(
+        unit.status or "unset" for unit in all_units if unit.status != "queued"
+    )
     log.info("batch eligible extraction units", extra={
         "event": "extraction_units_eligible",
         "batch_id": batch_id,
         "eligible_units": len(units),
+        "eligible_unit_count": len(units),
         "queued_jobs": 0,
+        "unit_ids": [str(unit.id) for unit in units],
+        "unit_statuses": dict(unit_statuses),
+        "excluded_unit_statuses": dict(excluded_unit_statuses),
     })
     if not units:
-        unit_statuses = Counter(unit.status or "unset" for unit in all_units)
         report_statuses = Counter(report.status or "unset" for report in reports)
         log.warning("batch start rejected; no queued extraction units", extra={
             "event": "batch_start_rejected",
@@ -162,7 +169,11 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
             "success": False,
             "batch_id": batch_id,
             "eligible_units": 0,
+            "eligible_unit_count": 0,
             "queued_jobs": 0,
+            "unit_ids": [str(unit.id) for unit in all_units],
+            "unit_statuses": dict(unit_statuses),
+            "excluded_unit_statuses": dict(excluded_unit_statuses),
         })
         raise AcqError(ErrorCode.CONFLICT, "batch has no queued extraction units", {
             "report_count": len(reports),
