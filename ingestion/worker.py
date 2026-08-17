@@ -98,10 +98,19 @@ def _queue_extraction_units(
         unit_id = uuid4()
         unit_path = storage.save_text(section.text,
                                       storage.child(report.file_path, f"units/{index + 1:04d}.txt"))
-        session.add(ExtractionUnit(
+        unit = ExtractionUnit(
             id=unit_id, report_id=report.id, unit_type=section.unit_type,
             page_start=section.page_start, page_end=section.page_end,
-            text_path=unit_path, token_estimate=section.token_estimate, status="queued"))
+            text_path=unit_path, token_estimate=section.token_estimate, status="queued")
+        session.add(unit)
+        session.flush()
+        log.info("extraction unit created", extra={
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "unit_id": unit.id,
+            "unit_status": unit.status,
+            "document_path": unit.text_path,
+        })
         if enqueue is not None:
             enqueue(session, "extract_unit", {"unit_id": str(unit_id)}, f"extract_unit:{unit_id}")
     report.report_type = result.report_type
@@ -232,11 +241,19 @@ def ingest_document(payload: dict, **hooks) -> Report:
     if isinstance(payload, str):
         payload = json.loads(payload)
     report_id = payload["report_id"]
+    committed = {}
     with db_session() as session:
         report = session.get(Report, UUID(str(report_id)))
         if report is None:
             raise ValueError("report not found")
-        return run_ingest(
+        status_before = report.status
+        log.info("report ingestion state before", extra={
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "report_status_before": status_before,
+            "document_path": report.file_path,
+        })
+        report = run_ingest(
             session,
             report,
             address=payload.get("address"),
@@ -246,3 +263,21 @@ def ingest_document(payload: dict, **hooks) -> Report:
             storage=get_document_storage(),
             **hooks,
         )
+        session.flush()
+        units = session.query(ExtractionUnit).filter(ExtractionUnit.report_id == report.id).all()
+        committed = {
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "report_status_before": status_before,
+            "report_status_after": report.status,
+            "unit_statuses": {
+                status: sum(unit.status == status for unit in units)
+                for status in sorted({unit.status for unit in units})
+            },
+        }
+        log.info("report ingestion state after", extra=committed)
+    log.info("report ingestion transaction committed", extra={
+        **committed,
+        "transaction_status": "committed",
+    })
+    return report

@@ -87,8 +87,18 @@ def _handle_ingest_document(payload) -> None:
     if report.status == ReportStatus.FAILED.value:
         raise PermanentJobFailure(
             f"document ingestion failed: {report.failure_reason or ErrorCode.EXTRACTION_FAILED.value}")
-    _refresh_batch_after_ingest(report)
-    log.info("document ingestion completed", extra=context)
+    batch_status, unit_count = _refresh_batch_after_ingest(report)
+    if report.status != ReportStatus.CLASSIFIED.value or unit_count == 0:
+        raise PermanentJobFailure(
+            f"document ingestion incomplete: report status={report.status}, "
+            f"extraction units={unit_count}"
+        )
+    log.info("document ingestion completed", extra={
+        **context,
+        "report_status_after": report.status,
+        "unit_statuses": {"queued": unit_count},
+        "batch_status_after": batch_status,
+    })
 
 
 def _handle_extract_unit(payload) -> None:
@@ -235,20 +245,50 @@ def _mark_terminal_failure(session, job: dict, exc: Exception) -> None:
                                                      "job_name": job["name"]})
 
 
-def _refresh_batch_after_ingest(report: Report) -> None:
+def _refresh_batch_after_ingest(report: Report) -> tuple[str, int]:
     if report.batch_id is None:
-        return
+        return "unbatched", 0
+    committed = {}
+    current_report_units = 0
     with db_session() as session:
         batch = session.get(Batch, report.batch_id)
         if batch is None:
-            return
+            return "missing", 0
         reports = session.query(Report).filter(Report.batch_id == batch.id).all()
+        report_ids = [row.id for row in reports]
+        units = (session.query(ExtractionUnit)
+                 .filter(ExtractionUnit.report_id.in_(report_ids)).all()) if report_ids else []
+        unit_report_ids = {unit.report_id for unit in units}
         pending = [row for row in reports if row.status in (
-            ReportStatus.UPLOADED.value, ReportStatus.OCR_PENDING.value)]
+            ReportStatus.UPLOADED.value, ReportStatus.OCR_PENDING.value,
+        ) or (row.status != ReportStatus.FAILED.value and row.id not in unit_report_ids)]
         failed = [row for row in reports if row.status == ReportStatus.FAILED.value]
+        status_before = batch.status
         batch.failed_count = len(failed)
         if not pending:
             batch.status = "failed" if len(failed) == len(reports) else "uploaded"
+        current_report_units = sum(unit.report_id == report.id for unit in units)
+        session.flush()
+        committed = {
+            "batch_id": batch.id,
+            "report_id": report.id,
+            "batch_status_before": status_before,
+            "batch_status_after": batch.status,
+            "report_statuses": {
+                status: sum(row.status == status for row in reports)
+                for status in sorted({row.status for row in reports})
+            },
+            "unit_statuses": {
+                status: sum(unit.status == status for unit in units)
+                for status in sorted({unit.status for unit in units})
+            },
+        }
+        log.info("batch status recomputed after ingestion", extra=committed)
+    log.info("batch ingestion state committed", extra={
+        **committed,
+        "transaction_status": "committed",
+    })
+    return str(committed["batch_status_after"]), current_report_units
 
 
 def default_worker() -> Worker:

@@ -15,11 +15,14 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from classification import classify, section_match_rate, section_pages
 from common.errors import AcqError, ErrorCode
-from db.models import Batch, Report
+from contracts import ReportStatus
+from db.models import Batch, ExtractionUnit, Report
 from ingestion import get_page_text, ingest_paste, register_pdf, scan_inbox, worker
 from ingestion.ocr import NullBackend, OcrResult
 from ingestion.worker import ingest_document, is_scanned, run_ingest
+from pipeline import worker as pipeline_worker
 
 PAGE_TEXT = "123 Main Street parcel report. " * 30  # ~900 chars, clearly digital
 
@@ -31,6 +34,7 @@ def session():
     )
     Report.__table__.create(engine)
     Batch.__table__.create(engine)
+    ExtractionUnit.__table__.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as session:
         yield session
@@ -177,6 +181,148 @@ def test_ingest_accepts_json_string_payload(session, tmp_path, monkeypatch):
     report = add_report(session, pdf)
     run_job(monkeypatch, session, json.dumps({"report_id": str(report.id)}))
     assert report.status == "text_extracted"
+
+
+def test_ingest_logs_report_and_created_unit_state(session, tmp_path, monkeypatch, caplog):
+    pdf = make_digital_pdf(tmp_path / "classified.pdf")
+    batch = Batch(id=uuid4(), name="classified", file_count=1, total_count=1,
+                  status="ingesting")
+    session.add(batch)
+    report = add_report(session, pdf, batch_id=batch.id)
+
+    @contextmanager
+    def fake_db_session():
+        yield session
+
+    monkeypatch.setattr(worker, "db_session", fake_db_session)
+    with caplog.at_level("INFO"):
+        result = ingest_document(
+            {"report_id": str(report.id)}, classifier=classify,
+            sectioner=section_pages, section_matcher=section_match_rate,
+        )
+
+    unit = session.query(ExtractionUnit).filter(ExtractionUnit.report_id == report.id).one()
+    assert result.status == ReportStatus.CLASSIFIED.value
+    assert unit.status == "queued"
+    assert "report ingestion state before" in caplog.messages
+    assert "extraction unit created" in caplog.messages
+    assert "report ingestion state after" in caplog.messages
+    committed = next(record for record in caplog.records
+                     if record.message == "report ingestion transaction committed")
+    assert committed.report_status_before == ReportStatus.UPLOADED.value
+    assert committed.report_status_after == ReportStatus.CLASSIFIED.value
+    assert committed.unit_statuses == {"queued": 1}
+
+
+def test_batch_refresh_commits_uploaded_when_units_are_ready(
+    session, tmp_path, monkeypatch, caplog,
+):
+    pdf = make_digital_pdf(tmp_path / "ready.pdf")
+    batch = Batch(id=uuid4(), name="ready", file_count=1, total_count=1,
+                  status="ingesting")
+    session.add(batch)
+    report = add_report(session, pdf, batch_id=batch.id)
+    report.status = ReportStatus.CLASSIFIED.value
+    session.add(ExtractionUnit(
+        id=uuid4(), report_id=report.id, unit_type="combined", page_start=1,
+        page_end=1, text_path=str(tmp_path / "unit.txt"), token_estimate=10,
+        status="queued",
+    ))
+    session.flush()
+
+    @contextmanager
+    def fake_db_session():
+        yield session
+
+    monkeypatch.setattr(pipeline_worker, "db_session", fake_db_session)
+    with caplog.at_level("INFO"):
+        status, unit_count = pipeline_worker._refresh_batch_after_ingest(report)
+
+    assert status == "uploaded"
+    assert unit_count == 1
+    assert batch.status == "uploaded"
+    committed = next(record for record in caplog.records
+                     if record.message == "batch ingestion state committed")
+    assert committed.batch_status_before == "ingesting"
+    assert committed.batch_status_after == "uploaded"
+    assert committed.report_statuses == {"classified": 1}
+    assert committed.unit_statuses == {"queued": 1}
+
+
+def test_ingest_job_rejects_ocr_pending_without_units(session, tmp_path, monkeypatch):
+    pdf = make_digital_pdf(tmp_path / "pending.pdf")
+    batch = Batch(id=uuid4(), name="pending", file_count=1, total_count=1,
+                  status="ingesting")
+    session.add(batch)
+    report = add_report(session, pdf, batch_id=batch.id)
+
+    @contextmanager
+    def fake_db_session():
+        yield session
+
+    def incomplete_ingest(payload, **hooks):
+        report.status = ReportStatus.OCR_PENDING.value
+        return report
+
+    monkeypatch.setattr(pipeline_worker, "db_session", fake_db_session)
+    monkeypatch.setattr(pipeline_worker, "ingest_document", incomplete_ingest)
+    monkeypatch.setattr(
+        pipeline_worker, "_refresh_batch_after_ingest", lambda row: ("ingesting", 0)
+    )
+
+    with pytest.raises(pipeline_worker.PermanentJobFailure, match="ocr_pending"):
+        pipeline_worker._handle_ingest_document({"report_id": str(report.id)})
+
+
+def test_worker_marks_incomplete_ingestion_batch_failed(session, tmp_path, monkeypatch):
+    pdf = make_digital_pdf(tmp_path / "incomplete.pdf")
+    batch = Batch(id=uuid4(), name="incomplete", file_count=1, total_count=1,
+                  status="ingesting", failed_count=0)
+    session.add(batch)
+    report = add_report(session, pdf, batch_id=batch.id)
+
+    @contextmanager
+    def fake_db_session():
+        yield session
+
+    def incomplete_ingest(payload, **hooks):
+        report.status = ReportStatus.OCR_PENDING.value
+        return report
+
+    class Queue:
+        def __init__(self):
+            self.job = {
+                "id": uuid4(), "name": "ingest_document",
+                "payload": {"report_id": str(report.id)}, "status": "queued",
+                "attempts": 0, "max_attempts": 5,
+            }
+
+        def claim(self, active_session):
+            self.job["status"] = "running"
+            self.job["attempts"] += 1
+            return self.job
+
+        def fail(self, active_session, job_id, attempts, max_attempts, error):
+            self.job["status"] = "dead" if attempts >= max_attempts else "queued"
+
+        def complete(self, active_session, job_id):
+            self.job["status"] = "complete"
+
+    monkeypatch.setattr(pipeline_worker, "db_session", fake_db_session)
+    monkeypatch.setattr(pipeline_worker, "ingest_document", incomplete_ingest)
+    monkeypatch.setattr(
+        pipeline_worker, "_refresh_batch_after_ingest", lambda row: ("ingesting", 0)
+    )
+    queue = Queue()
+    pipeline_worker.Worker(
+        {"ingest_document": pipeline_worker._handle_ingest_document},
+        queue=queue, session_factory=fake_db_session,
+    ).run_once()
+
+    assert queue.job["status"] == "dead"
+    assert report.status == ReportStatus.FAILED.value
+    assert batch.status == "failed"
+    assert batch.failed_count == 1
 
 
 def test_ingest_missing_report_raises(session, monkeypatch):

@@ -62,7 +62,14 @@ def _batch_payload(batch: dbm.Batch) -> dict:
 @router.get("/batches/{batch_id}")
 def batch_status(batch_id: UUID, session: Session = Depends(get_session),
                  user: User = Depends(current_user)) -> dict:
-    return _batch_payload(_batch_or_404(session, batch_id))
+    batch = _batch_or_404(session, batch_id)
+    payload = _batch_payload(batch)
+    log.info("batch status read", extra={
+        "batch_id": batch_id,
+        "batch_status_after": batch.status,
+        "transaction_status": "database_read",
+    })
+    return payload
 
 
 @router.post("/batches/{batch_id}/estimate")
