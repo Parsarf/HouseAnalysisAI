@@ -136,18 +136,56 @@ def test_schema_aliases():
 
 # --- Provider client -----------------------------------------------------------
 
-def test_provider_request_uses_tool_mode_and_temperature_zero():
+def test_provider_request_uses_tool_mode_and_temperature_zero_when_supported():
     calls = []
-    provider = make_provider([{"liens": []}], calls, frontier_model="frontier-x")
+    provider = make_provider([{"liens": []}], calls, frontier_model="gpt-4o")
     provider.complete("liens", PAGE, subject="Subject: 1 Main St", system_prompt=load_prompt())
     body = calls[0]
-    assert body["model"] == "frontier-x"
+    assert body["model"] == "gpt-4o"
     assert body["temperature"] == 0
     fmt = body["response_format"]
     assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True
     assert fmt["json_schema"]["schema"] == schema_for("liens")
     assert body["messages"][0]["role"] == "system"
     assert "Subject: 1 Main St" in body["messages"][1]["content"]
+
+
+@pytest.mark.parametrize("model", ["gpt-5", "gpt-5-mini", "openai/gpt-5-mini", "o3"])
+def test_provider_omits_temperature_for_default_only_models(model):
+    calls = []
+    provider = make_provider([{"liens": []}], calls, frontier_model=model)
+
+    provider.complete("liens", PAGE, system_prompt=load_prompt())
+
+    assert calls[0]["model"] == model
+    assert "temperature" not in calls[0]
+
+
+def test_provider_retries_alias_without_temperature_when_provider_rejects_it():
+    calls = []
+
+    def transport(method, url, headers, body, timeout):
+        calls.append(json.loads(body))
+        if len(calls) == 1:
+            return 400, {"error": {"message": (
+                "Unsupported value: 'temperature' does not support 0 with this model. "
+                "Only the default (1) value is supported."
+            )}}
+        return 200, {
+            "choices": [{"message": {"content": json.dumps({"liens": []})}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 25},
+        }
+
+    provider = ProviderClient(
+        api_key="test-key", frontier_model="provider/latest",
+        transport=transport, sleep=lambda _: None,
+    )
+
+    response = provider.complete("liens", PAGE, system_prompt=load_prompt())
+
+    assert calls[0]["temperature"] == 0
+    assert "temperature" not in calls[1]
+    assert response.attempts == 2
 
 
 def test_provider_env_configuration(monkeypatch):

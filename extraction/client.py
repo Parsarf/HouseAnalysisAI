@@ -42,6 +42,11 @@ MODEL_PRICING: dict[str, tuple[Decimal, Decimal]] = {
 }
 _FALLBACK_PRICING = (Decimal("2.50"), Decimal("10.00"))
 
+# These reasoning-model families reject custom sampling temperatures when used
+# with this client's default Chat Completions configuration. Omitting the field
+# lets the provider apply its supported default.
+_DEFAULT_TEMPERATURE_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
 
 @dataclass(frozen=True)
 class ExtractionResult:
@@ -79,6 +84,24 @@ def compute_cost(model: str, usage: dict[str, int]) -> Decimal:
 
 # transport(method, url, headers, body, timeout) -> (status, response_json)
 Transport = Callable[[str, str, dict[str, str], bytes, float], tuple[int, dict]]
+
+
+def _supports_temperature_zero(model: str) -> bool:
+    """Return whether this model should receive the deterministic temperature."""
+    model_name = model.rsplit("/", 1)[-1].lower()
+    return not model_name.startswith(_DEFAULT_TEMPERATURE_MODEL_PREFIXES)
+
+
+def _is_temperature_compatibility_error(status: int, response: dict) -> bool:
+    """Recognize the provider error used by aliases that require the default."""
+    if status != 400:
+        return False
+    message = str((response.get("error") or {}).get("message", "")).lower()
+    return "temperature" in message and (
+        "only the default" in message
+        or "does not support" in message
+        or "unsupported value" in message
+    )
 
 
 def _urllib_transport(method: str, url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, dict]:
@@ -155,25 +178,35 @@ class ProviderClient:
     def _call_with_retries(self, model: str, schema: dict, unit_type: str, messages: list[dict]) -> tuple[dict, int, dict[str, int]]:
         payload = {
             "model": model,
-            "temperature": 0,
             "messages": messages,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": f"{unit_type}_extraction", "schema": schema, "strict": True},
             },
         }
+        if _supports_temperature_zero(model):
+            payload["temperature"] = 0
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
-        body = json.dumps(payload).encode()
         url = f"{self.base_url}/chat/completions"
         attempts = 0
+        retried_without_temperature = False
         while True:
             attempts += 1
+            body = json.dumps(payload).encode()
             try:
                 status, response = self.transport("POST", url, headers, body, self.timeout)
             except Exception:
                 status, response = 0, {}
             if status == 200:
                 break
+            if (
+                "temperature" in payload
+                and not retried_without_temperature
+                and _is_temperature_compatibility_error(status, response)
+            ):
+                payload.pop("temperature")
+                retried_without_temperature = True
+                continue
             retryable = status == 429 or status >= 500 or status == 0
             if not retryable:
                 message = (response.get("error") or {}).get("message", f"HTTP {status}")
