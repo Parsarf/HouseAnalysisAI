@@ -208,13 +208,42 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
             return report
         report.page_count = len(pages)
         report.is_scanned = is_scanned(pages)
+        ocr_backend_name = "not_required"
+        ocr_backend_available = False
+        log.info("document scan detection completed", extra={
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+            "is_scanned": report.is_scanned,
+            "report_status_after": report.status,
+        })
         if report.is_scanned:
             backend = ocr_backend if ocr_backend is not None else get_backend()
-            if not backend.available():
+            ocr_backend_name = backend.name
+            ocr_backend_available = backend.available()
+            log.info("OCR backend selected", extra={
+                "batch_id": report.batch_id,
+                "report_id": report.id,
+                "document_path": report.file_path,
+                "is_scanned": True,
+                "ocr_backend": ocr_backend_name,
+                "ocr_backend_available": ocr_backend_available,
+            })
+            if not ocr_backend_available:
                 # No OCR tooling installed: keep what little text exists and
                 # leave the report queued for OCR rather than failing it.
                 report.status = ReportStatus.OCR_PENDING.value
                 _write_pages(storage, report.file_path, pages)
+                log.warning("OCR decision completed without an available backend", extra={
+                    "batch_id": report.batch_id,
+                    "report_id": report.id,
+                    "document_path": report.file_path,
+                    "is_scanned": True,
+                    "ocr_backend": ocr_backend_name,
+                    "ocr_backend_available": False,
+                    "ocr_applied": False,
+                    "report_status_after": report.status,
+                })
                 return report
             result = backend.ocr_pdf(pdf, pdf.parent)
             report.ocr_applied = True
@@ -227,6 +256,16 @@ def _run_document_ingest(session: Session, report: Report, document, pdf: Path,
             pages = merged + pages[len(result.page_texts) :]
         _write_pages(storage, report.file_path, pages)
         report.status = ReportStatus.TEXT_EXTRACTED.value
+        log.info("OCR decision completed", extra={
+            "batch_id": report.batch_id,
+            "report_id": report.id,
+            "document_path": report.file_path,
+            "is_scanned": report.is_scanned,
+            "ocr_backend": ocr_backend_name,
+            "ocr_backend_available": ocr_backend_available,
+            "ocr_applied": report.ocr_applied,
+            "report_status_after": report.status,
+        })
     finally:
         document.close()
     _resolve_identity(session, report, address, apn, fips, zip5, identity_resolver)

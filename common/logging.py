@@ -19,6 +19,7 @@ class JsonFormatter(logging.Formatter):
             "request_method", "request_path", "transaction_status", "dedupe_key",
             "report_status_before", "report_status_after", "report_statuses",
             "unit_status", "unit_statuses", "batch_status_before", "batch_status_after",
+            "is_scanned", "ocr_backend", "ocr_backend_available", "ocr_applied",
         ):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)

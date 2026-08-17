@@ -20,7 +20,7 @@ from common.errors import AcqError, ErrorCode
 from contracts import ReportStatus
 from db.models import Batch, ExtractionUnit, Report
 from ingestion import get_page_text, ingest_paste, register_pdf, scan_inbox, worker
-from ingestion.ocr import NullBackend, OcrResult
+from ingestion.ocr import NullBackend, OcrResult, TesseractBackend
 from ingestion.worker import ingest_document, is_scanned, run_ingest
 from pipeline import worker as pipeline_worker
 
@@ -396,14 +396,22 @@ def test_missing_stored_pdf_raises_instead_of_being_mislabeled_corrupt(session, 
 # --- OCR path -----------------------------------------------------------------
 
 
-def test_scanned_pdf_without_ocr_backend_goes_ocr_pending(session, tmp_path):
+def test_scanned_pdf_without_ocr_backend_goes_ocr_pending(session, tmp_path, caplog):
     pdf = make_scanned_pdf(tmp_path / "scan.pdf")
     report = add_report(session, pdf)
-    run_ingest(session, report, ocr_backend=NullBackend())
+    with caplog.at_level("INFO"):
+        run_ingest(session, report, ocr_backend=NullBackend())
     assert report.is_scanned is True
     assert report.status == "ocr_pending"
     assert report.ocr_applied is False
     assert (pdf.parent / "pages" / "1.txt").exists()  # whatever text existed is still written
+    selected = next(record for record in caplog.records if record.message == "OCR backend selected")
+    assert selected.is_scanned is True
+    assert selected.ocr_backend == "none"
+    assert selected.ocr_backend_available is False
+    decision = next(record for record in caplog.records
+                    if record.message == "OCR decision completed without an available backend")
+    assert decision.report_status_after == "ocr_pending"
 
 
 class FakePartialBackend:
@@ -435,6 +443,36 @@ def test_scanned_pdf_ocr_with_tesseract(session, tmp_path):
     assert report.ocr_applied is True
     assert report.status == "text_extracted"
     assert "Main Street" in get_page_text(report.file_path, 1)
+
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract not installed")
+def test_scanned_pdf_ocr_classifies_and_creates_extraction_units(
+    session, tmp_path, caplog,
+):
+    pdf = make_scanned_pdf(tmp_path / "classified-scan.pdf")
+    report = add_report(session, pdf)
+
+    with caplog.at_level("INFO"):
+        run_ingest(
+            session, report, ocr_backend=TesseractBackend(), classifier=classify,
+            sectioner=section_pages, section_matcher=section_match_rate,
+        )
+
+    units = session.query(ExtractionUnit).filter(ExtractionUnit.report_id == report.id).all()
+    assert report.is_scanned is True
+    assert report.ocr_applied is True
+    assert report.status == "classified"
+    assert units
+    assert {unit.status for unit in units} == {"queued"}
+    detected = next(record for record in caplog.records
+                    if record.message == "document scan detection completed")
+    assert detected.is_scanned is True
+    selected = next(record for record in caplog.records if record.message == "OCR backend selected")
+    assert selected.ocr_backend == "tesseract"
+    assert selected.ocr_backend_available is True
+    decision = next(record for record in caplog.records if record.message == "OCR decision completed")
+    assert decision.ocr_applied is True
+    assert decision.report_status_after == "text_extracted"
 
 
 # --- identity wiring ----------------------------------------------------------

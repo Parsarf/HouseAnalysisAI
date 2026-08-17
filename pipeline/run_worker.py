@@ -3,6 +3,7 @@ import time
 
 from common.logging import configure_logging
 from common.settings import settings
+from ingestion.ocr import get_backend
 
 from .worker import default_worker
 
@@ -12,8 +13,11 @@ log = logging.getLogger(__name__)
 def main() -> None:
     configure_logging()
     worker = default_worker()
+    ocr_backend = get_backend()
     log.info("worker startup", extra={"storage_backend": settings.storage_backend,
-                                      "document_path": str(settings.document_root)})
+                                      "document_path": str(settings.document_root),
+                                      "ocr_backend": ocr_backend.name,
+                                      "ocr_backend_available": ocr_backend.available()})
     recovered = worker.recover_stale()
     if recovered:
         log.warning("recovered stale running jobs", extra={"job_id": f"count:{recovered}"})
