@@ -76,12 +76,62 @@ def safe_zip_members(path: Path, max_files: int = 3000) -> list[str]:
 
 
 def find_by_sha256(session: Session, digest: str) -> Report | None:
-    return session.scalar(select(Report).where(Report.sha256 == digest))
+    return session.scalar(select(Report).where(
+        Report.sha256 == digest,
+        Report.duplicate_of.is_(None),
+    ))
+
+
+def _create_duplicate_reference(
+    session: Session, existing: Report, source: Path, document_root: Path,
+    batch_id: UUID, storage: DocumentStorage,
+) -> Report:
+    """Create a batch-owned reference to an immutable, byte-identical report."""
+    report_id = uuid4()
+    backend_changed = isinstance(storage, S3Storage) != existing.file_path.startswith("s3://")
+    reusable = existing.status in {"complete", "unresolved_identity"} and not backend_changed
+    file_ref = existing.file_path
+    if backend_changed:
+        _report_id, file_ref = store_pdf(
+            source, document_root, report_id=report_id, storage=storage,
+        )
+    report = Report(
+        id=report_id,
+        batch_id=batch_id,
+        property_id=existing.property_id if reusable else None,
+        report_type=existing.report_type,
+        vendor=existing.vendor,
+        generated_date=existing.generated_date,
+        file_path=file_ref,
+        ocr_path=existing.ocr_path if reusable else None,
+        sha256=existing.sha256,
+        page_count=existing.page_count if reusable else None,
+        is_scanned=existing.is_scanned if reusable else False,
+        ocr_applied=existing.ocr_applied if reusable else False,
+        duplicate_of=existing.id,
+        status=existing.status if reusable else ReportStatus.UPLOADED.value,
+        classification_confidence=(
+            existing.classification_confidence if reusable else None
+        ),
+        section_match_rate=existing.section_match_rate if reusable else None,
+    )
+    session.add(report)
+    session.flush()
+    log.info("existing document storage reused", extra={
+        "event": "file_saved",
+        "batch_id": batch_id,
+        "report_id": report.id,
+        "storage_backend": _storage_backend(storage),
+        "document_path": report.file_path,
+        "storage_operation": "reused" if not backend_changed else "copied",
+    })
+    _log_registration(report, created=False, previous_batch_id=existing.batch_id)
+    return report
 
 
 def register_pdf(
     session: Session, source: Path, document_root: Path, batch_id: UUID | None = None,
-    storage: DocumentStorage | None = None,
+    storage: DocumentStorage | None = None, *, new_report_on_duplicate: bool = False,
 ) -> tuple[Report, bool]:
     """Store a PDF and insert its report row. Returns ``(report, created)``.
 
@@ -93,6 +143,11 @@ def register_pdf(
     if existing is not None:
         storage = storage or LocalFilesystemStorage(document_root)
         previous_batch_id = existing.batch_id
+        if (new_report_on_duplicate and batch_id is not None
+                and existing.batch_id != batch_id):
+            return _create_duplicate_reference(
+                session, existing, source, document_root, batch_id, storage,
+            ), False
         backend_changed = isinstance(storage, S3Storage) != existing.file_path.startswith("s3://")
         if existing.status == ReportStatus.FAILED.value or backend_changed:
             _report_id, file_ref = store_pdf(source, document_root, report_id=existing.id,
@@ -147,6 +202,12 @@ def register_pdf(
         existing = find_by_sha256(session, digest)
         if existing is None:
             raise
+        if (new_report_on_duplicate and batch_id is not None
+                and existing.batch_id != batch_id):
+            storage = storage or LocalFilesystemStorage(document_root)
+            return _create_duplicate_reference(
+                session, existing, source, document_root, batch_id, storage,
+            ), False
         _log_registration(existing, created=False, previous_batch_id=existing.batch_id)
         return existing, False
     log.info("file saved to document storage", extra={

@@ -161,6 +161,7 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
         try:
             report, _created = register_pdf(
                 session, temp_path, root, batch_id=batch_id, storage=storage,
+                new_report_on_duplicate=whole_pdf,
             )
         finally:
             temp_path.unlink(missing_ok=True)

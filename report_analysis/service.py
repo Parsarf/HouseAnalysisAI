@@ -74,6 +74,50 @@ def _get_or_create_extraction(session: Session, report_id: UUID) -> dbm.ReportEx
     return row
 
 
+def _reuse_duplicate_extraction(
+    session: Session, report: dbm.Report, row: dbm.ReportExtraction,
+    *, job_id: UUID | None = None,
+) -> tuple[bool, UUID | None]:
+    """Copy a completed immutable extraction onto a new batch-owned report reference."""
+    if report.duplicate_of is None or row.raw_json is not None:
+        return False, None
+    source = session.query(dbm.ReportExtraction).filter(
+        dbm.ReportExtraction.report_id == report.duplicate_of,
+        dbm.ReportExtraction.status.in_(["complete", "unresolved_identity"]),
+    ).first()
+    if source is None:
+        return False, None
+    row.property_id = source.property_id
+    row.schema_version = source.schema_version
+    row.model = source.model
+    row.raw_json = source.raw_json
+    row.normalized_json = source.normalized_json
+    row.validation_issues = source.validation_issues or []
+    row.status = source.status
+    row.input_tokens = 0
+    row.output_tokens = 0
+    row.cost_usd = Decimal(0)
+    row.duration_ms = 0
+    row.retry_count = 0
+    report.property_id = source.property_id
+    report.status = source.status
+    report.failure_reason = (
+        ErrorCode.IDENTITY_UNRESOLVED.value
+        if source.status == "unresolved_identity" else None
+    )
+    batch = _refresh_batch(session, report.batch_id)
+    log.info("immutable duplicate extraction reused", extra={
+        **_context(report, job_id=job_id),
+        "event": "analysis_persisted",
+        "stage": "duplicate_reuse",
+        "success": True,
+        "source_report_id": report.duplicate_of,
+        "batch_status_after": batch.status if batch else None,
+        "report_status_after": report.status,
+    })
+    return True, source.property_id
+
+
 def _refresh_batch(session: Session, batch_id: UUID | None) -> dbm.Batch | None:
     if batch_id is None:
         return None
@@ -287,6 +331,11 @@ def analyze_report(
             report.batch_id = batch_id
         extraction_row = _get_or_create_extraction(session, report_id)
         context = _context(report, job_id=job_id)
+        reused, reused_property_id = _reuse_duplicate_extraction(
+            session, report, extraction_row, job_id=job_id,
+        )
+        if reused:
+            return reused_property_id
         if extraction_row.status == "complete" and extraction_row.property_id is not None:
             report.property_id = extraction_row.property_id
             report.status = "complete"

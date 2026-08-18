@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
@@ -117,6 +118,15 @@ class Property(Base):
 
 class Report(Base):
     __tablename__ = "reports"
+    __table_args__ = (
+        Index(
+            "reports_sha256_original_uq",
+            "sha256",
+            unique=True,
+            postgresql_where=text("duplicate_of IS NULL"),
+            sqlite_where=text("duplicate_of IS NULL"),
+        ),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     batch_id: Mapped[UUID | None] = mapped_column(ForeignKey("batches.id"))
     property_id: Mapped[UUID | None] = mapped_column(ForeignKey("properties.id"))
@@ -125,7 +135,7 @@ class Report(Base):
     generated_date: Mapped[date | None] = mapped_column(Date)
     file_path: Mapped[str] = mapped_column(Text)
     ocr_path: Mapped[str | None] = mapped_column(Text)
-    sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
     page_count: Mapped[int | None] = mapped_column(Integer)
     is_scanned: Mapped[bool] = mapped_column(Boolean, default=False)
     ocr_applied: Mapped[bool] = mapped_column(Boolean, default=False)

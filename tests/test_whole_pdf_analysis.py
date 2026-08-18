@@ -407,9 +407,10 @@ def test_whole_pdf_upload_to_property_analysis_and_duplicate_reuse(whole_pdf_har
     assert isinstance(computations[0], NormalizedProperty)
 
     second = _upload(whole_pdf_harness.client)
-    assert second["report_ids"] == first["report_ids"]
+    duplicate_report_id = UUID(second["report_ids"][0])
+    assert duplicate_report_id != report_id
     duplicate_property = analyze_report(
-        report_id, batch_id=UUID(second["batch_id"]), provider=provider,
+        duplicate_report_id, batch_id=UUID(second["batch_id"]), provider=provider,
         session_factory=whole_pdf_harness.transaction, compute=compute,
         identity_resolver=whole_pdf_harness.resolve_identity,
     )
@@ -418,6 +419,18 @@ def test_whole_pdf_upload_to_property_analysis_and_duplicate_reuse(whole_pdf_har
     duplicate_batch = whole_pdf_harness.client.get(f"/api/batches/{second['batch_id']}").json()
     assert duplicate_batch["status"] == "complete"
     assert duplicate_batch["property_ids"] == [str(property_id)]
+    original_batch = whole_pdf_harness.client.get(f"/api/batches/{first['batch_id']}").json()
+    assert original_batch["status"] == "complete"
+    assert original_batch["property_ids"] == [str(property_id)]
+    with whole_pdf_harness.factory() as session:
+        duplicate_report = session.get(dbm.Report, duplicate_report_id)
+        duplicate_extraction = session.query(dbm.ReportExtraction).filter_by(
+            report_id=duplicate_report_id,
+        ).one()
+        assert duplicate_report.duplicate_of == report_id
+        assert duplicate_report.batch_id == UUID(second["batch_id"])
+        assert duplicate_extraction.raw_json == extraction.raw_json
+        assert duplicate_extraction.cost_usd == Decimal(0)
 
 
 def test_multiple_reports_in_one_batch_resolve_to_one_property(whole_pdf_harness):
