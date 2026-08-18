@@ -7,9 +7,11 @@ import json
 import re
 import subprocess
 import sys
+from importlib import import_module
 from pathlib import Path
 
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects import postgresql
 
 import db.models  # noqa: F401  (populates Base.metadata)
 import identity.models  # noqa: F401  (maps identity_merge_report_moves on the shared Base)
@@ -87,6 +89,18 @@ def test_seeded_default_assumptions_match_the_validated_fixture():
     assumptions = AssumptionSet.model_validate(payload)
     assert str(assumptions.id) == "10000000-0000-0000-0000-000000000001"
     assert assumptions.name == "default"
+
+
+def test_default_assumption_migration_compiles_json_as_one_literal_bind():
+    migration = import_module(
+        "db.migrations.versions.0006_default_assumption_set"
+    )
+    sql = str(migration._insert_statement().compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True},
+    ))
+    assert '"transfer_tax_lookup_key":null' in sql
+    assert '"market_days_default":60' in sql
+    assert "%(null)s" not in sql
 
 
 def test_migration_downgrade_compiles_and_reverses():
