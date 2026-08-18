@@ -1,6 +1,7 @@
 """Offline tests for WP-4 extraction. No network, no live DB:
 providers are fake transports; persistence runs against SQLite in memory."""
 import json
+import time
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -28,7 +29,7 @@ from extraction import (
     run_gauntlet,
     schema_for,
 )
-from extraction.client import ENV_API_KEY
+from extraction.client import DEFAULT_TIMEOUT_SECONDS, ENV_API_KEY, ENV_TIMEOUT_SECONDS
 from extraction.eval import evaluate
 from extraction.eval import main as eval_main
 from extraction.prompts import load_prompt
@@ -237,10 +238,118 @@ def test_provider_env_configuration(monkeypatch):
     monkeypatch.setenv(ENV_API_KEY, "env-key")
     monkeypatch.setenv("ACQ_EXTRACTION_BASE_URL", "https://example.test/v1/")
     monkeypatch.setenv("ACQ_EXTRACTION_CHEAP_MODEL", "cheap-env")
+    monkeypatch.setenv(ENV_TIMEOUT_SECONDS, "135.5")
     provider = ProviderClient()
     assert provider.api_key == "env-key"
     assert provider.base_url == "https://example.test/v1"
     assert provider.cheap_model == "cheap-env"
+    assert provider.timeout == 135.5
+
+
+def test_provider_default_timeout_is_bounded(monkeypatch):
+    monkeypatch.delenv(ENV_TIMEOUT_SECONDS, raising=False)
+
+    provider = ProviderClient(api_key="test-key")
+
+    assert provider.timeout == DEFAULT_TIMEOUT_SECONDS == 180.0
+
+
+def test_successful_slow_response_uses_configured_timeout():
+    observed_timeouts = []
+
+    def slow_transport(method, url, headers, body, timeout):
+        observed_timeouts.append(timeout)
+        time.sleep(0.01)
+        return 200, {
+            "choices": [{"message": {"content": json.dumps({"liens": []})}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 25},
+        }
+
+    provider = ProviderClient(
+        api_key="test-key", timeout=0.1, transport=slow_transport, sleep=lambda _: None,
+    )
+
+    response = provider.complete("liens", PAGE, system_prompt=load_prompt())
+
+    assert response.attempts == 1
+    assert observed_timeouts == [0.1]
+
+
+def test_timeout_error_is_logged_and_retried(caplog):
+    calls = 0
+    delays = []
+
+    def timeout_then_success(method, url, headers, body, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise TimeoutError("The read operation timed out")
+        return 200, {
+            "choices": [{"message": {"content": json.dumps({"liens": []})}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 25},
+        }
+
+    provider = ProviderClient(
+        api_key="test-key",
+        timeout=120,
+        max_retries=2,
+        base_delay=0.25,
+        transport=timeout_then_success,
+        sleep=delays.append,
+    )
+
+    with caplog.at_level("WARNING"):
+        response = provider.complete(
+            "liens",
+            PAGE,
+            system_prompt=load_prompt(),
+            log_context={"batch_id": "batch-1", "unit_id": "unit-1"},
+        )
+
+    assert response.attempts == 2
+    assert delays == [0.25]
+    timeout_log = next(
+        record for record in caplog.records if getattr(record, "event", None) == "extraction_timeout"
+    )
+    assert timeout_log.attempt == 1
+    assert timeout_log.retry_count == 0
+    assert timeout_log.timeout_seconds == 120
+    assert timeout_log.model == "gpt-4o"
+    assert timeout_log.batch_id == "batch-1"
+    assert timeout_log.unit_id == "unit-1"
+    assert timeout_log.will_retry is True
+
+
+def test_timeout_becomes_permanent_only_after_max_retries(caplog):
+    attempts = 0
+
+    def always_times_out(method, url, headers, body, timeout):
+        nonlocal attempts
+        attempts += 1
+        raise TimeoutError("The read operation timed out")
+
+    provider = ProviderClient(
+        api_key="test-key",
+        timeout=180,
+        max_retries=2,
+        base_delay=0,
+        transport=always_times_out,
+        sleep=lambda _: None,
+    )
+
+    with caplog.at_level("WARNING"), pytest.raises(AcqError) as error:
+        provider.complete("liens", PAGE, system_prompt=load_prompt())
+
+    assert error.value.code == ErrorCode.RETRY_EXHAUSTED
+    assert error.value.details["timed_out"] is True
+    assert error.value.details["timeout_seconds"] == 180
+    assert error.value.details["retry_count"] == 2
+    assert attempts == 3
+    timeout_logs = [
+        record for record in caplog.records if getattr(record, "event", None) == "extraction_timeout"
+    ]
+    assert [record.attempt for record in timeout_logs] == [1, 2, 3]
+    assert [record.will_retry for record in timeout_logs] == [True, True, False]
 
 
 def test_provider_requires_api_key(monkeypatch):
@@ -269,13 +378,25 @@ def test_retry_exhaustion():
     assert error.value.code == ErrorCode.RETRY_EXHAUSTED
 
 
-def test_client_error_not_retried():
+def test_client_error_not_retried_or_logged_as_timeout(caplog):
     calls = []
     provider = ProviderClient(api_key="k", transport=make_transport([400], calls), sleep=lambda _: None)
-    with pytest.raises(AcqError) as error:
-        provider.complete("liens", PAGE, system_prompt=load_prompt())
+    with caplog.at_level("WARNING"), pytest.raises(AcqError) as error:
+        provider.complete(
+            "liens", PAGE, system_prompt=load_prompt(),
+            log_context={"batch_id": "batch-1", "unit_id": "unit-1"},
+        )
     assert error.value.code == ErrorCode.EXTRACTION_FAILED
     assert len(calls) == 1
+    rejected = next(
+        record for record in caplog.records
+        if getattr(record, "event", None) == "provider_request_rejected"
+    )
+    assert rejected.provider_status_code == 400
+    assert rejected.batch_id == "batch-1"
+    assert not any(
+        getattr(record, "event", None) == "extraction_timeout" for record in caplog.records
+    )
 
 
 def test_schema_repair_retry_once():
@@ -633,7 +754,7 @@ def test_extraction_success_emits_correlated_lifecycle_events(caplog):
         service.extract_unit(unit, page_text_by_number=PAGES)
 
     request = next(record for record in caplog.records
-                   if getattr(record, "event", None) == "extraction_request")
+                   if getattr(record, "event", None) == "extraction_request_started")
     response = next(record for record in caplog.records
                     if getattr(record, "event", None) == "extraction_response")
     validated = next(record for record in caplog.records
@@ -643,6 +764,8 @@ def test_extraction_success_emits_correlated_lifecycle_events(caplog):
         assert record.report_id == report_id
         assert record.unit_id == unit_id
     assert request.provider_host == "api.openai.com"
+    assert request.model == "gpt-4o"
+    assert request.timeout_seconds == DEFAULT_TIMEOUT_SECONDS
     assert response.success is True
     assert not hasattr(response, "api_key")
 

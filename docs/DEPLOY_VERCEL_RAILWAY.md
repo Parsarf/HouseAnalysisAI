@@ -33,6 +33,7 @@ PostgreSQL and document storage are external services.
    ACQ_EXTRACTION_BASE_URL=<OpenAI-compatible provider URL>/v1
    ACQ_EXTRACTION_CHEAP_MODEL=<cheap model>
    ACQ_EXTRACTION_FRONTIER_MODEL=<frontier model>
+   ACQ_EXTRACTION_TIMEOUT_SECONDS=180
    ```
 
    For S3-compatible storage, use `ACQ_STORAGE_BACKEND=s3` and provide

@@ -139,9 +139,10 @@ class ExtractionService:
             "batch_id": unit.batch_id,
             "report_id": unit.report_id,
             "unit_id": unit.id,
-            "event": "extraction_request",
+            "event": "extraction_request_started",
             "stage": "extraction_request",
             "model": model,
+            "timeout_seconds": self.provider.timeout,
             "provider_host": urlparse(self.provider.base_url).hostname,
             "unit_type": unit.unit_type,
             "token_estimate": unit.token_estimate,
@@ -149,7 +150,15 @@ class ExtractionService:
         log.info("provider extraction request started", extra={**context, "success": True})
         try:
             response = self.provider.complete(
-                unit.unit_type, unit.text, subject=_subject_line(unit), system_prompt=load_prompt()
+                unit.unit_type,
+                unit.text,
+                subject=_subject_line(unit),
+                system_prompt=load_prompt(),
+                log_context={
+                    "batch_id": unit.batch_id,
+                    "report_id": unit.report_id,
+                    "unit_id": unit.id,
+                },
             )
         except Exception as exc:
             details = exc.details if isinstance(exc, AcqError) else {}

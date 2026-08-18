@@ -2,14 +2,16 @@
 
 Live calls go to an OpenAI-compatible chat-completions endpoint, configured by
 environment (``ACQ_EXTRACTION_API_KEY``, ``ACQ_EXTRACTION_BASE_URL``,
-``ACQ_EXTRACTION_CHEAP_MODEL``, ``ACQ_EXTRACTION_FRONTIER_MODEL``). Tests never
-touch the network: they inject a fake ``transport`` or replay recorded
-responses from ``fixtures/recorded_responses/``.
+``ACQ_EXTRACTION_CHEAP_MODEL``, ``ACQ_EXTRACTION_FRONTIER_MODEL``,
+``ACQ_EXTRACTION_TIMEOUT_SECONDS``). Tests never touch the network: they inject
+a fake ``transport`` or replay recorded responses from
+``fixtures/recorded_responses/``.
 """
 
 import hashlib
 import json
 import logging
+import math
 import os
 import time
 import urllib.error
@@ -32,10 +34,12 @@ ENV_API_KEY = "ACQ_EXTRACTION_API_KEY"
 ENV_BASE_URL = "ACQ_EXTRACTION_BASE_URL"
 ENV_CHEAP_MODEL = "ACQ_EXTRACTION_CHEAP_MODEL"
 ENV_FRONTIER_MODEL = "ACQ_EXTRACTION_FRONTIER_MODEL"
+ENV_TIMEOUT_SECONDS = "ACQ_EXTRACTION_TIMEOUT_SECONDS"
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_CHEAP_MODEL = "gpt-4o-mini"
 DEFAULT_FRONTIER_MODEL = "gpt-4o"
+DEFAULT_TIMEOUT_SECONDS = 180.0
 
 # USD per 1M tokens: (input, output). Unknown models fall back to frontier pricing.
 MODEL_PRICING: dict[str, tuple[Decimal, Decimal]] = {
@@ -107,6 +111,25 @@ def _is_temperature_compatibility_error(status: int, response: dict) -> bool:
     )
 
 
+def _configured_timeout(timeout: float | None) -> float:
+    raw = timeout if timeout is not None else os.environ.get(
+        ENV_TIMEOUT_SECONDS, str(DEFAULT_TIMEOUT_SECONDS)
+    )
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{ENV_TIMEOUT_SECONDS} must be a positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{ENV_TIMEOUT_SECONDS} must be a positive finite number")
+    return value
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    return isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, TimeoutError)
+
+
 def _urllib_transport(method: str, url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, dict]:
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
@@ -132,7 +155,7 @@ class ProviderClient:
         frontier_model: str | None = None,
         max_retries: int = 5,
         base_delay: float = 0.5,
-        timeout: float = 60.0,
+        timeout: float | None = None,
         sleep: Callable[[float], None] = time.sleep,
         transport: Transport | None = None,
     ):
@@ -142,7 +165,7 @@ class ProviderClient:
         self.frontier_model = frontier_model or os.environ.get(ENV_FRONTIER_MODEL) or DEFAULT_FRONTIER_MODEL
         self.max_retries = max_retries
         self.base_delay = base_delay
-        self.timeout = timeout
+        self.timeout = _configured_timeout(timeout)
         self.sleep = sleep
         self.transport = transport or _urllib_transport
 
@@ -156,6 +179,7 @@ class ProviderClient:
         *,
         subject: str | None = None,
         system_prompt: str,
+        log_context: dict | None = None,
     ) -> ProviderResponse:
         if not self.api_key:
             raise AcqError(ErrorCode.EXTRACTION_FAILED, "extraction API key is not configured")
@@ -164,21 +188,33 @@ class ProviderClient:
         key = top_level_key(unit_type)
         user = f"{subject}\n\n{unit_text}" if subject else unit_text
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user}]
-        body, attempts, usage = self._call_with_retries(model, schema, unit_type, messages)
+        body, attempts, usage = self._call_with_retries(
+            model, schema, unit_type, messages, log_context=log_context
+        )
         # One repair retry on schema-shape failure only (spec §5.3 step 1).
         if not isinstance(body.get(key), list):
             messages = messages + [
                 {"role": "assistant", "content": json.dumps(body)},
                 {"role": "user", "content": f"Response must be a JSON object with a top-level array named \"{key}\"."},
             ]
-            body, repair_attempts, repair_usage = self._call_with_retries(model, schema, unit_type, messages)
+            body, repair_attempts, repair_usage = self._call_with_retries(
+                model, schema, unit_type, messages, log_context=log_context
+            )
             attempts += repair_attempts
             usage = {k: usage.get(k, 0) + repair_usage.get(k, 0) for k in set(usage) | set(repair_usage)}
             if not isinstance(body.get(key), list):
                 raise AcqError(ErrorCode.INVALID_INPUT, f"provider response failed schema validation for unit type {unit_type!r}")
         return ProviderResponse(body, model, usage, compute_cost(model, usage), attempts)
 
-    def _call_with_retries(self, model: str, schema: dict, unit_type: str, messages: list[dict]) -> tuple[dict, int, dict[str, int]]:
+    def _call_with_retries(
+        self,
+        model: str,
+        schema: dict,
+        unit_type: str,
+        messages: list[dict],
+        *,
+        log_context: dict | None = None,
+    ) -> tuple[dict, int, dict[str, int]]:
         payload = {
             "model": model,
             "messages": messages,
@@ -193,23 +229,47 @@ class ProviderClient:
         url = f"{self.base_url}/chat/completions"
         attempts = 0
         retried_without_temperature = False
+        correlation = dict(log_context or {})
         while True:
             attempts += 1
+            last_error_was_timeout = False
             body = json.dumps(payload).encode()
             try:
                 status, response = self.transport("POST", url, headers, body, self.timeout)
             except Exception as exc:
-                log.warning("provider transport failed", extra={
-                    "event": "provider_transport_failed",
-                    "stage": "extraction_request",
-                    "success": False,
-                    "model": model,
-                    "provider_host": urlparse(self.base_url).hostname,
-                    "provider_status_code": 0,
-                    "retry_count": attempts - 1,
-                    "error_type": type(exc).__name__,
-                    "error_message": str(exc),
-                }, exc_info=True)
+                last_error_was_timeout = _is_timeout_error(exc)
+                if last_error_was_timeout:
+                    log.warning("provider extraction request timed out", extra={
+                        **correlation,
+                        "event": "extraction_timeout",
+                        "stage": "extraction_request",
+                        "success": False,
+                        "model": model,
+                        "provider_host": urlparse(self.base_url).hostname,
+                        "provider_status_code": 0,
+                        "attempt": attempts,
+                        "retry_count": attempts - 1,
+                        "will_retry": attempts <= self.max_retries,
+                        "timeout_seconds": self.timeout,
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    }, exc_info=True)
+                else:
+                    log.warning("provider transport failed", extra={
+                        **correlation,
+                        "event": "provider_transport_failed",
+                        "stage": "extraction_request",
+                        "success": False,
+                        "model": model,
+                        "provider_host": urlparse(self.base_url).hostname,
+                        "provider_status_code": 0,
+                        "attempt": attempts,
+                        "retry_count": attempts - 1,
+                        "will_retry": attempts <= self.max_retries,
+                        "timeout_seconds": self.timeout,
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    }, exc_info=True)
                 status, response = 0, {}
             if status == 200:
                 break
@@ -233,6 +293,20 @@ class ProviderClient:
             retryable = status == 429 or status >= 500 or status == 0
             if not retryable:
                 message = (response.get("error") or {}).get("message", f"HTTP {status}")
+                log.warning("provider rejected extraction request", extra={
+                    **correlation,
+                    "event": "provider_request_rejected",
+                    "stage": "extraction_request",
+                    "success": False,
+                    "model": model,
+                    "provider_host": urlparse(self.base_url).hostname,
+                    "provider_status_code": status,
+                    "attempt": attempts,
+                    "retry_count": attempts - 1,
+                    "timeout_seconds": self.timeout,
+                    "error_type": "ProviderHTTPError",
+                    "error_message": str(message),
+                })
                 raise AcqError(
                     ErrorCode.EXTRACTION_FAILED,
                     f"provider rejected the request: {message}",
@@ -240,11 +314,18 @@ class ProviderClient:
                      "retry_count": attempts - 1},
                 )
             if attempts > self.max_retries:
+                message = (
+                    f"provider timed out after {attempts} attempts "
+                    f"({self.timeout:g}s each)"
+                    if last_error_was_timeout
+                    else f"provider still failing after {attempts - 1} retries"
+                )
                 raise AcqError(
                     ErrorCode.RETRY_EXHAUSTED,
-                    f"provider still failing after {attempts - 1} retries",
+                    message,
                     {"provider_status_code": status, "model": model,
-                     "retry_count": attempts - 1},
+                     "retry_count": attempts - 1, "timeout_seconds": self.timeout,
+                     "timed_out": last_error_was_timeout},
                 )
             self.sleep(self.base_delay * (2 ** (attempts - 1)))
         content = (response.get("choices") or [{}])[0].get("message", {}).get("content")
