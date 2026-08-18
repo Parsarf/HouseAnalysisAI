@@ -12,16 +12,18 @@ from contextlib import contextmanager, nullcontext
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 
 from common.errors import AcqError, ErrorCode
 from contracts import AssumptionSet, EntityType, ExtractedFactDraft, SourceKind
+from identity import identity_evidence_from_facts, normalize_address, normalize_apn
 from normalization import resolve_facts
 from pipeline import Pipeline, recompute_property
 from pipeline import batch as batch_machine
-from pipeline.store import DEFAULT_SCORING_CONFIG_ID, UnitOutcome
+from pipeline.store import DEFAULT_SCORING_CONFIG_ID, SqlStore, UnitOutcome
 from pipeline.worker import Worker, default_handlers
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -36,6 +38,8 @@ class FakeState:
         self.properties = {}      # id -> dict
         self.facts = {}           # property_id -> [ExtractedFactDraft]
         self.units = {}           # id -> dict
+        self.reports = {}         # id -> dict
+        self.report_facts = {}    # report_id -> [ExtractedFactDraft]
         self.batches = {}         # id -> dict
         self.assumptions = None   # AssumptionSet
         self.scoring_config = None
@@ -150,6 +154,7 @@ class FakeStore:
         return created
 
     def mark_recomputed(self, property_id, underwriting_status):
+        self.state.properties[UUID(str(property_id))]["pipeline_status"] = "analyzed"
         self.state.recomputed_marks.append((UUID(str(property_id)), underwriting_status))
 
     # extraction fan-in
@@ -167,16 +172,86 @@ class FakeStore:
         if transitioned:
             row["status"] = "extracted"
             row["cost_usd"] = cost_usd
-            if property_id is not None:
-                self.state.facts.setdefault(property_id, []).extend(facts)
+            self.state.report_facts.setdefault(row["report_id"], []).extend(facts)
+        evidence = None
+        property_created = False
+        report_attached = False
+        report = self.state.reports.setdefault(row["report_id"], {
+            "id": row["report_id"], "batch_id": row.get("batch_id"),
+            "property_id": property_id, "status": "extracting", "failure_reason": None,
+        })
+        if property_id is None:
+            evidence = identity_evidence_from_facts(
+                self.state.report_facts.get(row["report_id"], []),
+            )
+            if evidence is not None:
+                identity = normalize_address(evidence.address, evidence.zip5)
+                apn_key = normalize_apn(evidence.apn, evidence.fips)
+                property_id = next((
+                    pid for pid, candidate in self.state.properties.items()
+                    if candidate.get("address_hash") == identity.address_hash
+                    or (apn_key is not None and candidate.get("apn_key") == apn_key)
+                ), None)
+                if property_id is None:
+                    property_id = uuid4()
+                    property_created = True
+                    self.state.properties[property_id] = {
+                        "id": property_id, "pipeline_status": "new",
+                        "address_line1": evidence.address, "city": evidence.city,
+                        "state": evidence.state, "zip5": evidence.zip5,
+                        "fips_county": evidence.fips, "apn": evidence.apn,
+                        "apn_key": apn_key, "address_hash": identity.address_hash,
+                        "address_key": identity.address_key,
+                    }
+                report["property_id"] = property_id
+                report_attached = True
+                for unit in self.state.units.values():
+                    if unit["report_id"] == row["report_id"]:
+                        unit["property_id"] = property_id
+                row["property_id"] = property_id
+        if property_id is not None and transitioned and not report_attached:
+            target = self.state.facts.setdefault(property_id, [])
+            for fact in facts:
+                if fact not in target:
+                    target.append(fact)
+        if property_id is not None and report_attached:
+            target = self.state.facts.setdefault(property_id, [])
+            for fact in self.state.report_facts.get(row["report_id"], []):
+                if fact not in target:
+                    target.append(fact)
+        report_outstanding = sum(
+            1 for unit in self.state.units.values()
+            if unit["report_id"] == row["report_id"]
+            and unit["status"] in ("queued", "running")
+        )
+        identity_unresolved = report_outstanding == 0 and property_id is None
+        if report_outstanding == 0:
+            report["status"] = "failed" if identity_unresolved else "extracted"
+            report["failure_reason"] = (
+                ErrorCode.IDENTITY_UNRESOLVED.value if identity_unresolved else None
+            )
         outstanding = None
         if property_id is not None:
             outstanding = sum(1 for unit in self.state.units.values()
                               if unit["property_id"] == property_id
                               and unit["status"] in ("queued", "running"))
-        return UnitOutcome(unit_id=unit_id, property_id=property_id,
-                           batch_id=row.get("batch_id"), outstanding=outstanding,
-                           transitioned=transitioned)
+        return UnitOutcome(
+            unit_id=unit_id, property_id=property_id,
+            batch_id=row.get("batch_id"), outstanding=outstanding,
+            transitioned=transitioned, report_outstanding=report_outstanding,
+            identity_evidence=(
+                {"address": evidence.address, "apn": evidence.apn,
+                 "city": evidence.city, "state": evidence.state,
+                 "zip5": evidence.zip5, "county": evidence.county,
+                 "fips": evidence.fips, "confidence": evidence.confidence,
+                 "source_kind": evidence.source_kind}
+                if evidence is not None else None
+            ),
+            property_created=property_created, report_attached=report_attached,
+            facts_attached=len(self.state.report_facts.get(row["report_id"], []))
+            if property_id is not None else 0,
+            identity_unresolved=identity_unresolved,
+        )
 
     def fail_unit(self, unit_id, reason):
         self.state.units[UUID(str(unit_id))]["status"] = "failed"
@@ -206,6 +281,22 @@ class FakeStore:
         batch = self.state.batches[UUID(str(batch_id))]
         batch["failed_count" if failed else "completed_count"] += 1
         return dict(batch)
+
+    def batch_results(self, batch_id):
+        batch_id = UUID(str(batch_id))
+        reports = [report for report in self.state.reports.values()
+                   if report.get("batch_id") == batch_id]
+        return {
+            "property_ids": sorted(
+                {report["property_id"] for report in reports
+                 if report.get("property_id") is not None}, key=str,
+            ),
+            "unresolved_reports": [
+                {"report_id": report["id"], "reason": report["failure_reason"]}
+                for report in reports
+                if report.get("failure_reason") == ErrorCode.IDENTITY_UNRESOLVED.value
+            ],
+        }
 
     # rankings / bulk / changes
     def rank_scope(self, scope_type, scope_id=None):
@@ -345,6 +436,39 @@ def test_recompute_persists_deal_offer_and_score_rows():
     assert any(flag["flag_type"] == "lien_attachment" for flag in state.flags)
 
 
+def test_sql_store_creates_fk_target_for_in_code_scoring_defaults():
+    class RecordingSession:
+        def __init__(self):
+            self.statements = []
+
+        def execute(self, statement, params=None):
+            self.statements.append(str(statement))
+            return SimpleNamespace()
+
+    session = RecordingSession()
+    score_result = SimpleNamespace(
+        scoring_config_id=DEFAULT_SCORING_CONFIG_ID,
+        fos=Decimal(1), distress=Decimal(2), data_confidence=Decimal(3),
+        risk=Decimal(4), overall=Decimal(5), components={}, gates_applied=[],
+    )
+    computation = SimpleNamespace(
+        underwriting=SimpleNamespace(assumption_set_id=uuid4(), engine_version="test"),
+        strategies=[], grid=SimpleNamespace(points=[]), score=score_result,
+    )
+
+    SqlStore(session).replace_results(uuid4(), computation, purchase_price=Decimal(0))
+
+    config_insert = next(
+        index for index, statement in enumerate(session.statements)
+        if "INSERT INTO scoring_configs" in statement
+    )
+    score_insert = next(
+        index for index, statement in enumerate(session.statements)
+        if "INSERT INTO scores" in statement
+    )
+    assert config_insert < score_insert
+
+
 def test_recompute_is_idempotent():
     pipeline, factory = make_pipeline()
     property_id = seed_property(factory.state)
@@ -395,6 +519,10 @@ def test_recompute_crash_mid_persist_resumes_to_identical_state():
 
 def _seed_units(state: FakeState, property_id, count, *, batch=None):
     report_id = uuid4()
+    state.reports[report_id] = {
+        "id": report_id, "batch_id": batch, "property_id": property_id,
+        "status": "extracting", "failure_reason": None,
+    }
     unit_ids = []
     for _ in range(count):
         unit_id = uuid4()
@@ -404,6 +532,164 @@ def _seed_units(state: FakeState, property_id, count, *, batch=None):
                                 "token_estimate": 100}
         unit_ids.append(unit_id)
     return unit_ids
+
+
+def _seed_unlinked_extraction(state: FakeState, *, units=1):
+    batch_id = _seed_batch(state, status="extracting", total_count=units)
+    state.assumptions = load_assumptions()
+    unit_ids = _seed_units(state, None, units, batch=batch_id)
+    return batch_id, unit_ids
+
+
+def _identity_extraction_facts(unit_id, report_id, *, apn="123-456"):
+    facts = property_facts(None, unit_id, report_id)
+    if apn is None:
+        facts = [fact for fact in facts if not fact.field_path.endswith(".apn")]
+    return facts
+
+
+def test_extracted_identity_creates_property_attaches_facts_and_recomputes(caplog):
+    pipeline, factory = make_pipeline()
+    batch_id, (unit_id,) = _seed_unlinked_extraction(factory.state)
+    report_id = factory.state.units[unit_id]["report_id"]
+    facts = _identity_extraction_facts(unit_id, report_id)
+
+    with caplog.at_level("INFO"):
+        outcome = pipeline.extract_unit(unit_id, extractor=lambda unit: facts)
+
+    assert outcome.property_id is not None
+    assert outcome.property_created is True
+    assert factory.state.reports[report_id]["property_id"] == outcome.property_id
+    assert factory.state.reports[report_id]["status"] == "extracted"
+    assert factory.state.facts[outcome.property_id] == facts
+    assert factory.state.properties[outcome.property_id]["pipeline_status"] == "analyzed"
+    assert factory.state.recomputed_marks[-1][0] == outcome.property_id
+    assert len(factory.state.scores) == 1
+    assert factory.state.batches[batch_id]["status"] == "complete"
+    assert _store(factory).batch_results(batch_id)["property_ids"] == [outcome.property_id]
+    lifecycle = {
+        record.event: record for record in caplog.records
+        if getattr(record, "event", None) in {
+            "property_identity_evidence_found", "property_resolved",
+            "report_attached_to_property", "facts_attached_to_property",
+            "property_recompute_started", "property_recompute_completed",
+            "batch_results_ready",
+        }
+    }
+    assert set(lifecycle) == {
+        "property_identity_evidence_found", "property_resolved",
+        "report_attached_to_property", "facts_attached_to_property",
+        "property_recompute_started", "property_recompute_completed",
+        "batch_results_ready",
+    }
+    assert all(record.batch_id == batch_id for record in lifecycle.values())
+    assert all(record.report_id == report_id for record in lifecycle.values())
+
+
+@pytest.mark.parametrize("apn", ["123-456", None])
+def test_extracted_address_resolves_property_with_or_without_apn(apn):
+    pipeline, factory = make_pipeline()
+    _, (unit_id,) = _seed_unlinked_extraction(factory.state)
+    report_id = factory.state.units[unit_id]["report_id"]
+
+    outcome = pipeline.extract_unit(
+        unit_id,
+        extractor=lambda unit: _identity_extraction_facts(unit_id, report_id, apn=apn),
+    )
+
+    property_row = factory.state.properties[outcome.property_id]
+    assert property_row["address_line1"] == "1 Main St"
+    assert property_row["apn"] == apn
+
+
+def test_late_identity_attaches_all_report_units_and_recomputes_once():
+    pipeline, factory = make_pipeline()
+    batch_id, unit_ids = _seed_unlinked_extraction(factory.state, units=2)
+    report_id = factory.state.units[unit_ids[0]]["report_id"]
+    all_facts = _identity_extraction_facts(unit_ids[0], report_id)
+    identity_paths = (".address", ".apn")
+    early_facts = [fact for fact in all_facts
+                   if not fact.field_path.endswith(identity_paths)]
+    identity_facts = [fact for fact in all_facts
+                      if fact.field_path.endswith(identity_paths)]
+    recompute_calls = []
+    original = pipeline.recompute
+
+    def counting_recompute(property_id, **kwargs):
+        recompute_calls.append(property_id)
+        return original(property_id, **kwargs)
+
+    pipeline.recompute = counting_recompute
+    first = pipeline.extract_unit(unit_ids[0], extractor=lambda unit: early_facts)
+    assert first.property_id is None
+    assert first.identity_unresolved is False
+
+    second = pipeline.extract_unit(unit_ids[1], extractor=lambda unit: identity_facts)
+
+    assert second.property_id is not None
+    assert {unit["property_id"] for unit in factory.state.units.values()} == {second.property_id}
+    assert factory.state.facts[second.property_id] == [*early_facts, *identity_facts]
+    assert recompute_calls == [second.property_id]
+    assert factory.state.batches[batch_id]["status"] == "complete"
+
+
+def test_extracted_report_attaches_to_existing_property_without_duplicate():
+    pipeline, factory = make_pipeline()
+    existing_id = seed_property(factory.state, with_facts=False)
+    identity = normalize_address("1 Main St")
+    factory.state.properties[existing_id].update({
+        "address_line1": "1 Main St", "address_hash": identity.address_hash,
+        "address_key": identity.address_key, "apn": "123-456",
+        "apn_key": normalize_apn("123-456"),
+    })
+    batch_id, (unit_id,) = _seed_unlinked_extraction(factory.state)
+    report_id = factory.state.units[unit_id]["report_id"]
+
+    outcome = pipeline.extract_unit(
+        unit_id, extractor=lambda unit: _identity_extraction_facts(unit_id, report_id),
+    )
+
+    assert outcome.property_id == existing_id
+    assert outcome.property_created is False
+    assert len(factory.state.properties) == 1
+    assert factory.state.batches[batch_id]["status"] == "complete"
+
+
+def test_identity_linking_retry_is_idempotent():
+    pipeline, factory = make_pipeline()
+    _, (unit_id,) = _seed_unlinked_extraction(factory.state)
+    report_id = factory.state.units[unit_id]["report_id"]
+    facts = _identity_extraction_facts(unit_id, report_id)
+
+    first = pipeline.extract_unit(unit_id, extractor=lambda unit: facts)
+    property_count = len(factory.state.properties)
+    fact_count = len(factory.state.facts[first.property_id])
+    second = pipeline.extract_unit(unit_id, extractor=lambda unit: pytest.fail("re-extracted"))
+
+    assert second.property_id == first.property_id
+    assert len(factory.state.properties) == property_count == 1
+    assert len(factory.state.facts[first.property_id]) == fact_count
+    assert len(factory.state.scores) == 1
+
+
+def test_no_identity_fails_honestly_and_preserves_report_facts():
+    pipeline, factory = make_pipeline()
+    batch_id, (unit_id,) = _seed_unlinked_extraction(factory.state)
+    report_id = factory.state.units[unit_id]["report_id"]
+    facts = [make_fact(
+        None, unit_id, report_id, EntityType.VALUATION, "avm1", "valuation.value",
+        value_parsed=Decimal(300000),
+    )]
+
+    outcome = pipeline.extract_unit(unit_id, extractor=lambda unit: facts)
+
+    assert outcome.property_id is None
+    assert outcome.identity_unresolved is True
+    assert factory.state.properties == {}
+    assert factory.state.report_facts[report_id] == facts
+    assert factory.state.reports[report_id]["status"] == "failed"
+    assert factory.state.reports[report_id]["failure_reason"] == "identity_unresolved"
+    assert factory.state.batches[batch_id]["status"] == "failed"
 
 
 def test_fan_in_triggers_exactly_one_recompute_for_concurrent_units():

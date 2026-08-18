@@ -155,6 +155,13 @@ class Pipeline:
         """
         property_id = UUID(str(property_id))
         context = {"property_id": property_id, **(trace_context or {})}
+        log.info("property recompute started", extra={
+            **context,
+            "event": "property_recompute_started",
+            "stage": "property_recompute",
+            "success": True,
+            "reason": reason,
+        })
         with self._store_factory() as store:
             store.acquire_property_lock(property_id)
             if store.get_property(property_id) is None:
@@ -225,6 +232,13 @@ class Pipeline:
                          "stage": "analysis_persistence",
                          "success": True,
                      })
+            log.info("property recompute completed", extra={
+                **context,
+                "event": "property_recompute_completed",
+                "stage": "property_recompute",
+                "success": True,
+                "underwriting_status": computation.underwriting.status,
+            })
             return computation
 
     # ------------------------------------------------------------- extract_unit
@@ -285,9 +299,46 @@ class Pipeline:
             "outstanding_units": outcome.outstanding,
             "transitioned": outcome.transitioned,
         })
+        if outcome.identity_evidence is not None:
+            evidence = outcome.identity_evidence
+            log.info("property identity evidence found", extra={
+                **trace_context,
+                "event": "property_identity_evidence_found",
+                "address": evidence.get("address"),
+                "apn": evidence.get("apn"),
+                "confidence": evidence.get("confidence"),
+                "source": evidence.get("source_kind"),
+            })
+        if outcome.report_attached and outcome.property_id is not None:
+            linked_context = {**trace_context, "property_id": outcome.property_id}
+            log.info("property resolved from extracted evidence", extra={
+                **linked_context,
+                "event": "property_resolved",
+                "property_created": outcome.property_created,
+            })
+            log.info("report attached to property", extra={
+                **linked_context,
+                "event": "report_attached_to_property",
+            })
+            log.info("extracted facts attached to property", extra={
+                **linked_context,
+                "event": "facts_attached_to_property",
+                "fact_count": outcome.facts_attached,
+            })
+        if outcome.identity_unresolved:
+            log.warning("property identity could not be resolved", extra={
+                **trace_context,
+                "event": "property_identity_unresolved",
+                "stage": "property_identity",
+                "success": False,
+                "reason": "property identity could not be resolved",
+                "preserved_fact_count": len(facts) if outcome.transitioned else 0,
+            })
         if outcome.transitioned and outcome.batch_id is not None:
             with self._store_factory() as store:
-                batch_status = batch_machine.unit_finished(store, outcome.batch_id)
+                batch_status = batch_machine.unit_finished(
+                    store, outcome.batch_id, failed=outcome.identity_unresolved,
+                )
                 batch = store.get_batch(outcome.batch_id)
                 log.info("batch extraction progress updated", extra={
                     **trace_context,
@@ -307,8 +358,15 @@ class Pipeline:
             with self._store_factory() as store:
                 batch = store.get_batch(outcome.batch_id)
                 if batch is not None and batch.get("status") == "computing":
+                    results = store.batch_results(outcome.batch_id)
                     try:
-                        batch_machine.mark_complete(store, outcome.batch_id)
+                        if results["unresolved_reports"] or not results["property_ids"]:
+                            batch_machine.fail(
+                                store, outcome.batch_id,
+                                "property identity could not be resolved",
+                            )
+                        else:
+                            batch_machine.mark_complete(store, outcome.batch_id)
                         final_batch = store.get_batch(outcome.batch_id)
                     except Exception as exc:
                         log.exception("final extraction fan-in failed", extra={
@@ -320,22 +378,41 @@ class Pipeline:
                             "error_message": str(exc),
                         })
                         raise
-                    log.info("final extraction fan-in completed", extra={
-                        **trace_context,
-                        "event": "analysis_stage_completed",
-                        "stage": "final_fan_in",
-                        "success": True,
-                    })
-                    log.info("batch marked complete", extra={
-                        **trace_context,
-                        "event": "batch_completed",
-                        "stage": "final_fan_in",
-                        "success": True,
-                        "final_status": final_batch.get("status") if final_batch else "complete",
-                        "total_count": final_batch.get("total_count") if final_batch else None,
-                        "completed_count": final_batch.get("completed_count") if final_batch else None,
-                        "failed_count": final_batch.get("failed_count") if final_batch else None,
-                    })
+                    if final_batch and final_batch.get("status") == "complete":
+                        log.info("final extraction fan-in completed", extra={
+                            **trace_context,
+                            "event": "analysis_stage_completed",
+                            "stage": "final_fan_in",
+                            "success": True,
+                        })
+                        log.info("batch results ready", extra={
+                            **trace_context,
+                            "event": "batch_results_ready",
+                            "property_ids": [str(value) for value in results["property_ids"]],
+                            "count": len(results["property_ids"]),
+                        })
+                        log.info("batch marked complete", extra={
+                            **trace_context,
+                            "event": "batch_completed",
+                            "stage": "final_fan_in",
+                            "success": True,
+                            "final_status": final_batch.get("status"),
+                            "total_count": final_batch.get("total_count"),
+                            "completed_count": final_batch.get("completed_count"),
+                            "failed_count": final_batch.get("failed_count"),
+                        })
+                    else:
+                        log.warning("batch has no resolvable property identity", extra={
+                            **trace_context,
+                            "event": "batch_results_unresolved",
+                            "stage": "final_fan_in",
+                            "success": False,
+                            "reason": "property identity could not be resolved",
+                            "unresolved_report_ids": [
+                                str(value["report_id"])
+                                for value in results["unresolved_reports"]
+                            ],
+                        })
         return outcome
 
     # ------------------------------------------------------------- rank / changes / nightly

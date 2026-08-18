@@ -64,21 +64,54 @@ def _batch_or_404(session: Session, batch_id: UUID) -> dbm.Batch:
     return batch
 
 
-def _batch_payload(batch: dbm.Batch) -> dict:
+def _batch_payload(batch: dbm.Batch, session: Session) -> dict:
+    reports = session.query(dbm.Report).filter(dbm.Report.batch_id == batch.id).all()
+    property_ids = sorted(
+        {report.property_id for report in reports if report.property_id is not None},
+        key=str,
+    )
+    properties = (
+        session.query(dbm.Property).filter(dbm.Property.id.in_(property_ids)).all()
+        if property_ids else []
+    )
+    reports_by_property: dict[UUID, list[str]] = {}
+    for report in reports:
+        if report.property_id is not None:
+            reports_by_property.setdefault(report.property_id, []).append(str(report.id))
+    results = [{
+        "property_id": str(row.id),
+        "report_ids": reports_by_property.get(row.id, []),
+        "address_line1": row.address_line1,
+        "city": row.city,
+        "state": row.state,
+        "zip5": row.zip5,
+        "apn": row.apn,
+    } for row in properties]
+    unresolved = [{
+        "report_id": str(report.id),
+        "reason": report.failure_reason or ErrorCode.IDENTITY_UNRESOLVED.value,
+    } for report in reports if (
+        report.property_id is None
+        and report.failure_reason == ErrorCode.IDENTITY_UNRESOLVED.value
+    )]
     return json_safe({"id": str(batch.id), "name": batch.name, "status": batch.status,
                       "total": batch.total_count, "completed": batch.completed_count,
                       "failed": batch.failed_count, "estimated_cost_usd": batch.estimated_cost_usd,
                       "actual_cost_usd": batch.actual_cost_usd,
-                      "awaiting_confirmation": bool(batch.awaiting_confirmation)})
+                      "awaiting_confirmation": bool(batch.awaiting_confirmation),
+                      "property_ids": [str(value) for value in property_ids],
+                      "results": results, "unresolved_reports": unresolved})
 
 
 @router.get("/batches/{batch_id}")
 def batch_status(batch_id: UUID, session: Session = Depends(get_session),
                  user: User = Depends(current_user)) -> dict:
     batch = _batch_or_404(session, batch_id)
-    payload = _batch_payload(batch)
+    payload = _batch_payload(batch, session)
     report_count = session.query(dbm.Report).filter(dbm.Report.batch_id == batch_id).count()
-    state = (batch.status, batch.total_count, batch.completed_count, batch.failed_count, report_count)
+    state = (batch.status, batch.total_count, batch.completed_count, batch.failed_count,
+             report_count, tuple(payload["property_ids"]),
+             tuple(item["report_id"] for item in payload["unresolved_reports"]))
     if _batch_status_changed(batch_id, state):
         log.info("batch status read", extra={
             "event": "batch_status_returned",
@@ -88,6 +121,8 @@ def batch_status(batch_id: UUID, session: Session = Depends(get_session),
             "completed_count": batch.completed_count,
             "failed_count": batch.failed_count,
             "report_count": report_count,
+            "property_ids": payload["property_ids"],
+            "unresolved_report_count": len(payload["unresolved_reports"]),
             "transaction_status": "database_read",
         })
     return payload
@@ -223,7 +258,7 @@ def batch_start(batch_id: UUID, session: Session = Depends(get_session),
             "eligible_units": len(units),
             "jobs_inserted": len(units),
         }
-    return _batch_payload(batch)
+    return _batch_payload(batch, session)
 
 
 @router.get("/flags")

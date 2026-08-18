@@ -66,6 +66,19 @@ class Identity:
     zip5: str | None
 
 
+@dataclass(frozen=True)
+class IdentityEvidence:
+    address: str
+    apn: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zip5: str | None = None
+    county: str | None = None
+    fips: str | None = None
+    confidence: float | None = None
+    source_kind: str | None = None
+
+
 def normalize_apn(apn: str | None, fips: str | None = None) -> str | None:
     if not apn:
         return None
@@ -202,11 +215,14 @@ def _create_property(session: Session, query, address: str, apn: str | None, apn
                      fips: str | None, identity: Identity, zip5: str | None) -> tuple[Property, bool]:
     row = Property(apn=apn, apn_key=apn_key, fips_county=fips, address_line1=address,
                    address_key=identity.address_key, address_hash=identity.address_hash, zip5=zip5)
-    session.add(row)
     try:
-        session.flush()
+        # Keep a uniqueness race scoped to a savepoint. A full rollback here
+        # would discard extraction facts and budget updates from the caller's
+        # surrounding transaction.
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
     except IntegrityError:
-        session.rollback()
         existing = session.execute(query).scalars().first()
         if existing is not None:
             return existing, False
@@ -233,8 +249,10 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
             # apn_key is not tripped and no future auto-merge can occur.
             row, created = _create_property(session, query, address, apn, None, fips, identity, zip5)
             row.identity_flags = _conflict_flags(existing, row, identity, apn_key) if created else []
+            row.identity_created = created
             return row
         existing.identity_flags = []
+        existing.identity_created = False
         return existing
     duplicate = _find_fuzzy_duplicate(session, identity, apn_key)
     flags: list[FlagRequest] = []
@@ -243,6 +261,7 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
         if (score >= FUZZY_MERGE_THRESHOLD and identity.house_number
                 and _house_number_of(candidate) == identity.house_number):
             candidate.identity_flags = []
+            candidate.identity_created = False
             return candidate
         row, created = _create_property(session, query, address, apn, apn_key, fips, identity, zip5)
         if created:
@@ -252,9 +271,11 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
                 financial_impact_usd=None, raised_by="identity",
                 dedupe_key=f"possible-duplicate:{candidate.id}:{identity.address_hash}"))
         row.identity_flags = flags
+        row.identity_created = created
         return row
-    row, _ = _create_property(session, query, address, apn, apn_key, fips, identity, zip5)
+    row, created = _create_property(session, query, address, apn, apn_key, fips, identity, zip5)
     row.identity_flags = []
+    row.identity_created = created
     return row
 
 
@@ -262,6 +283,107 @@ def attach_report(session: Session, report: Report, address: str, apn: str | Non
     property_row = resolve_property(session, address, apn, fips, zip5)
     report.property_id = property_row.id
     return property_row
+
+
+_IDENTITY_LEAF_ALIASES = {
+    "address": "address_line1",
+    "street": "address_line1",
+    "zip": "zip5",
+    "zipcode": "zip5",
+    "zip_code": "zip5",
+    "parcel_number": "apn",
+}
+
+
+def _fact_value(fact, name: str):
+    if isinstance(fact, dict):
+        return fact.get(name)
+    try:
+        return fact[name]
+    except (KeyError, TypeError):
+        return getattr(fact, name, None)
+
+
+def identity_evidence_from_facts(facts) -> IdentityEvidence | None:
+    """Choose one grounded property entity containing a usable street address.
+
+    Extraction's grounding gauntlet runs before these facts arrive. Grouping by
+    ``entity_local_id`` prevents an address from one property object being
+    combined with an APN or ZIP from another.
+    """
+    grouped: dict[str, dict[str, object]] = {}
+    for fact in facts:
+        entity_type = str(_fact_value(fact, "entity_type") or "")
+        if entity_type != "property":
+            continue
+        field_path = str(_fact_value(fact, "field_path") or "")
+        leaf = _IDENTITY_LEAF_ALIASES.get(field_path.rsplit(".", 1)[-1], field_path.rsplit(".", 1)[-1])
+        if leaf not in {"address_line1", "unit", "city", "state", "zip5", "county", "fips", "apn"}:
+            continue
+        value = _fact_value(fact, "value_text")
+        if value is None or not str(value).strip():
+            continue
+        local_id = str(_fact_value(fact, "entity_local_id") or "property")
+        current = grouped.setdefault(local_id, {})
+        confidence = float(_fact_value(fact, "extraction_confidence") or 0)
+        previous = current.get(leaf)
+        if previous is None or confidence > previous[1]:
+            current[leaf] = (str(value).strip(), confidence, _fact_value(fact, "source_kind"))
+
+    candidates: list[tuple[float, IdentityEvidence]] = []
+    for fields in grouped.values():
+        address_fact = fields.get("address_line1")
+        if address_fact is None:
+            continue
+        address = address_fact[0]
+        unit_fact = fields.get("unit")
+        if unit_fact is not None and unit_fact[0].casefold() not in address.casefold():
+            address = f"{address} {unit_fact[0]}"
+        normalized = normalize_address(address, fields.get("zip5", (None,))[0])
+        street = normalized.address_key.split("|", 3)[1]
+        if not normalized.house_number or not street or street == "PO BOX":
+            continue
+
+        confidence = float(address_fact[1])
+        values = {
+            name: item[0] if item is not None else None
+            for name in ("apn", "city", "state", "zip5", "county", "fips")
+            for item in (fields.get(name),)
+        }
+        candidates.append((confidence, IdentityEvidence(
+            address=address,
+            apn=values["apn"],
+            city=values["city"],
+            state=values["state"],
+            zip5=values["zip5"],
+            county=values["county"],
+            fips=values["fips"],
+            confidence=confidence,
+            source_kind=str(address_fact[2]) if address_fact[2] is not None else None,
+        )))
+    return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
+
+
+def resolve_report_identity(session: Session, report: Report, facts) -> tuple[Property | None, IdentityEvidence | None, bool]:
+    """Resolve and attach a report from already-grounded extraction facts."""
+    evidence = identity_evidence_from_facts(facts)
+    if evidence is None:
+        return None, None, False
+    property_row = attach_report(
+        session, report, evidence.address, apn=evidence.apn,
+        fips=evidence.fips, zip5=evidence.zip5,
+    )
+    for name, value in (
+        ("city", evidence.city),
+        ("state", evidence.state),
+        ("zip5", evidence.zip5),
+        ("fips_county", evidence.fips),
+        ("apn", evidence.apn),
+    ):
+        if value and not getattr(property_row, name):
+            setattr(property_row, name, value)
+    session.flush()
+    return property_row, evidence, bool(getattr(property_row, "identity_created", False))
 
 
 def _coerce_property(session: Session, value: Property | UUID) -> Property:

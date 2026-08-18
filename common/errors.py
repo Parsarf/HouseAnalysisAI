@@ -18,6 +18,7 @@ class ErrorCode(StrEnum):
     UNCLASSIFIED = "unclassified"
     SECTION_UNMATCHED = "section_unmatched"
     IDENTITY_CONFLICT = "identity_conflict"
+    IDENTITY_UNRESOLVED = "identity_unresolved"
     POSSIBLE_DUPLICATE = "possible_duplicate"
     CONFLICTING_MORTGAGE = "conflicting_mortgage"
     INVALID_GROUNDING = "invalid_grounding"

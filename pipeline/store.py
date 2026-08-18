@@ -17,7 +17,7 @@ import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -30,6 +30,8 @@ from common.errors import AcqError, ErrorCode
 from common.locks import acquire_advisory_lock
 from common.serializers import json_safe
 from contracts import AssumptionSet, ExtractedFactDraft
+from db.models import Report
+from identity import resolve_report_identity
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +83,15 @@ _FACT_SELECT_SQL = text("""
     ORDER BY created_at, id
 """)
 
+_REPORT_FACT_SELECT_SQL = text("""
+    SELECT report_id, extraction_unit_id, entity_type, entity_local_id, field_path,
+           value_raw, value_parsed, value_text, value_date, value_bool, unit, as_of_date,
+           page_number, snippet, extraction_confidence, null_reason, source_kind
+    FROM extracted_facts
+    WHERE report_id = :report_id AND is_active
+    ORDER BY created_at, id
+""")
+
 _DEAL_DELETE_SQL = text("DELETE FROM deal_scenarios WHERE property_id = :pid")
 _DEAL_INSERT_SQL = text("""
     INSERT INTO deal_scenarios (id, property_id, strategy, scenario, assumption_set_id,
@@ -103,6 +114,12 @@ _OFFER_INSERT_SQL = text("""
 
 _SCORE_DELETE_SQL = text(
     "DELETE FROM scores WHERE property_id = :pid AND scoring_config_id = :cid")
+_DEFAULT_SCORE_CONFIG_SQL = text("""
+    INSERT INTO scoring_configs
+        (id, weights, bounds, distress_points, gates, version, is_active)
+    VALUES (:id, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 0, false)
+    ON CONFLICT (id) DO NOTHING
+""")
 _SCORE_INSERT_SQL = text("""
     INSERT INTO scores (id, property_id, scoring_config_id, fos, distress,
         data_confidence, risk, overall, components, gates_applied, computed_at)
@@ -138,9 +155,15 @@ class UnitOutcome:
     batch_id: UUID | None
     outstanding: int | None
     transitioned: bool  # True when this call moved the unit to 'extracted'
+    report_outstanding: int | None = None
+    identity_evidence: dict | None = None
+    property_created: bool = False
+    report_attached: bool = False
+    facts_attached: int = 0
+    identity_unresolved: bool = False
 
 
-def _fact_row(property_id: UUID, report_id: UUID | None, unit_id: UUID | None,
+def _fact_row(property_id: UUID | None, report_id: UUID | None, unit_id: UUID | None,
               fact: ExtractedFactDraft) -> dict[str, Any]:
     return {
         "id": uuid4(), "property_id": property_id,
@@ -264,6 +287,13 @@ class SqlStore:
                 "high": point.proceeds_high, "basis": point.buyer_basis,
                 "profit": point.profit, "roi": point.roi, "short_sale": point.is_short_sale})
         score = computation.score
+        if score.scoring_config_id == DEFAULT_SCORING_CONFIG_ID:
+            # The in-code scoring defaults still need a real FK target. Clean
+            # databases have no active scoring_configs row yet, so create one
+            # stable inactive sentinel in the same recompute transaction.
+            self.session.execute(
+                _DEFAULT_SCORE_CONFIG_SQL, {"id": DEFAULT_SCORING_CONFIG_ID},
+            )
         self.session.execute(_SCORE_DELETE_SQL, {"pid": property_id, "cid": score.scoring_config_id})
         self.session.execute(_SCORE_INSERT_SQL, {
             "id": uuid4(), "pid": property_id, "cid": score.scoring_config_id,
@@ -298,7 +328,8 @@ class SqlStore:
             with self.session.begin_nested():
                 self.session.execute(
                     text("UPDATE properties SET last_recomputed_at = now(), "
-                         "underwriting_status = :status, updated_at = now() WHERE id = :pid"),
+                         "underwriting_status = :status, pipeline_status = 'analyzed', "
+                         "updated_at = now() WHERE id = :pid"),
                     {"status": underwriting_status, "pid": property_id})
         except Exception:
             log.warning("properties recompute markers unavailable", exc_info=True)
@@ -322,6 +353,24 @@ class SqlStore:
         if unit is None:
             raise AcqError(ErrorCode.NOT_FOUND, f"extraction unit {unit_id} not found")
         property_id = unit["property_id"]
+        evidence = None
+        property_created = False
+        report_attached = False
+        report = self.session.get(Report, unit["report_id"])
+        if report is None:
+            raise AcqError(ErrorCode.NOT_FOUND, f"report {unit['report_id']} not found")
+        if property_id is None:
+            prior_rows = self.session.execute(
+                _REPORT_FACT_SELECT_SQL, {"report_id": unit["report_id"]}
+            ).mappings().all()
+            prior_facts = [_fact_from_row(row) for row in prior_rows]
+            property_row, evidence, property_created = resolve_report_identity(
+                self.session, report, [*prior_facts, *facts]
+            )
+            if property_row is not None:
+                property_id = property_row.id
+                report_attached = True
+                self.persist_flags(property_id, getattr(property_row, "identity_flags", []))
         if property_id is not None:
             self.session.execute(
                 text("SELECT id FROM properties WHERE id = :pid FOR UPDATE"),
@@ -335,19 +384,49 @@ class SqlStore:
             for fact in facts:
                 self.session.execute(
                     _FACT_INSERT_SQL, _fact_row(property_id, unit["report_id"], unit_id, fact))
-            report_outstanding = int(self.session.execute(
-                _REPORT_UNIT_OUTSTANDING_SQL, {"report_id": unit["report_id"]}).scalar())
-            if report_outstanding == 0:
-                self.session.execute(
-                    text("UPDATE reports SET status = 'extracted', updated_at = now() WHERE id = :id"),
-                    {"id": unit["report_id"]})
+        report_outstanding = int(self.session.execute(
+            _REPORT_UNIT_OUTSTANDING_SQL, {"report_id": unit["report_id"]}).scalar())
+        identity_unresolved = report_outstanding == 0 and property_id is None
+        if property_id is not None:
+            self.session.execute(
+                text("UPDATE extracted_facts SET property_id = :pid "
+                     "WHERE report_id = :report_id AND property_id IS DISTINCT FROM :pid"),
+                {"pid": property_id, "report_id": unit["report_id"]},
+            )
+        if report_outstanding == 0:
+            self.session.execute(
+                text("UPDATE reports SET status = :status, failure_reason = :reason, "
+                     "updated_at = now() WHERE id = :id"),
+                {
+                    "id": unit["report_id"],
+                    "status": "failed" if identity_unresolved else "extracted",
+                    "reason": ErrorCode.IDENTITY_UNRESOLVED.value if identity_unresolved else None,
+                },
+            )
         outstanding = None
         if property_id is not None:
             outstanding = int(self.session.execute(
                 _UNIT_OUTSTANDING_SQL, {"pid": property_id}).scalar())
-        return UnitOutcome(unit_id=unit_id, property_id=property_id,
-                           batch_id=unit["batch_id"], outstanding=outstanding,
-                           transitioned=transitioned)
+        facts_attached = 0
+        if property_id is not None:
+            facts_attached = int(self.session.execute(
+                text("SELECT count(*) FROM extracted_facts "
+                     "WHERE report_id = :report_id AND property_id = :pid AND is_active"),
+                {"report_id": unit["report_id"], "pid": property_id},
+            ).scalar())
+        return UnitOutcome(
+            unit_id=unit_id,
+            property_id=property_id,
+            batch_id=unit["batch_id"],
+            outstanding=outstanding,
+            transitioned=transitioned,
+            report_outstanding=report_outstanding,
+            identity_evidence=asdict(evidence) if evidence is not None else None,
+            property_created=property_created,
+            report_attached=report_attached,
+            facts_attached=facts_attached,
+            identity_unresolved=identity_unresolved,
+        )
 
     def fail_unit(self, unit_id: UUID, reason: str) -> None:
         self.session.execute(
@@ -386,6 +465,25 @@ class SqlStore:
                  "failed_count = failed_count + :failed, updated_at = now() WHERE id = :id"),
             {"completed": 0 if failed else 1, "failed": 1 if failed else 0, "id": batch_id})
         return self.get_batch(batch_id)
+
+    def batch_results(self, batch_id: UUID) -> dict:
+        property_ids = list(self.session.execute(
+            text("SELECT DISTINCT property_id FROM reports "
+                 "WHERE batch_id = :batch_id AND property_id IS NOT NULL ORDER BY property_id"),
+            {"batch_id": batch_id},
+        ).scalars().all())
+        unresolved = self.session.execute(
+            text("SELECT id, failure_reason FROM reports "
+                 "WHERE batch_id = :batch_id AND property_id IS NULL "
+                 "AND failure_reason = :reason ORDER BY id"),
+            {"batch_id": batch_id, "reason": ErrorCode.IDENTITY_UNRESOLVED.value},
+        ).mappings().all()
+        return {
+            "property_ids": property_ids,
+            "unresolved_reports": [
+                {"report_id": row["id"], "reason": row["failure_reason"]} for row in unresolved
+            ],
+        }
 
     # ------------------------------------------------------------------ rankings / bulk
 

@@ -1,4 +1,5 @@
 import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ from contracts import FlagType
 from db.models import Property, Report
 from identity import (
     attach_report,
+    identity_evidence_from_facts,
     merge,
     normalize_address,
     normalize_apn,
@@ -101,6 +103,15 @@ class _FakeSession:
     def rollback(self):
         self._pending.clear()
 
+    @contextmanager
+    def begin_nested(self):
+        pending_before = list(self._pending)
+        try:
+            yield
+        except Exception:
+            self._pending = pending_before
+            raise
+
     def get(self, model, pk):
         for row in self._pending + self._store.rows[model]:
             if getattr(row, "id", None) == pk:
@@ -175,6 +186,51 @@ def test_normalize_apn():
     assert normalize_apn("") is None
     assert normalize_apn("0600-123-400") == "0600123400"
     assert normalize_apn("0600-123-400", "06075") == "060750600123400"
+
+
+def _identity_fact(field_path, value, *, local_id="property[0]", confidence=0.9):
+    return SimpleNamespace(
+        entity_type="property", entity_local_id=local_id, field_path=field_path,
+        value_text=value, extraction_confidence=confidence, source_kind="report",
+    )
+
+
+def test_identity_evidence_uses_grounded_address_and_apn():
+    evidence = identity_evidence_from_facts([
+        _identity_fact("property[0].address_line1", "123 Main St"),
+        _identity_fact("property[0].city", "Irvine"),
+        _identity_fact("property[0].state", "CA"),
+        _identity_fact("property[0].zip5", "92602"),
+        _identity_fact("property[0].apn", "123-456-78"),
+    ])
+
+    assert evidence is not None
+    assert evidence.address == "123 Main St"
+    assert evidence.apn == "123-456-78"
+    assert evidence.city == "Irvine"
+    assert evidence.state == "CA"
+    assert evidence.zip5 == "92602"
+
+
+def test_identity_evidence_allows_sufficient_address_without_apn():
+    evidence = identity_evidence_from_facts([
+        _identity_fact("property[0].address_line1", "500 Oak Avenue"),
+        _identity_fact("property[0].city", "Oakland"),
+        _identity_fact("property[0].state", "CA"),
+    ])
+
+    assert evidence is not None
+    assert evidence.address == "500 Oak Avenue"
+    assert evidence.apn is None
+
+
+def test_identity_evidence_does_not_fabricate_property_without_street_address():
+    evidence = identity_evidence_from_facts([
+        _identity_fact("property[0].apn", "123-456-78"),
+        _identity_fact("property[0].city", "Irvine"),
+    ])
+
+    assert evidence is None
 
 
 # --- Trigram similarity --------------------------------------------------------

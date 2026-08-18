@@ -32,7 +32,10 @@ class JsonFormatter(logging.Formatter):
             "report_count", "estimated_cost_usd", "jobs_inserted", "fact_count",
             "inactive_fact_count", "outstanding_units", "transitioned", "final_status",
             "unit_ids", "eligible_unit_count", "excluded_unit_statuses",
-            "unit_statuses_before",
+            "unit_statuses_before", "address", "apn", "source",
+            "property_created", "property_ids", "count", "underwriting_status",
+            "reason", "unresolved_report_ids", "unresolved_report_count",
+            "preserved_fact_count",
         ):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)

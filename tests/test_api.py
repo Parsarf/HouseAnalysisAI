@@ -764,6 +764,58 @@ def test_batch_get_serializes_persisted_post_ingestion_status(client, session, c
     assert record.report_count == 0
 
 
+def test_completed_batch_exposes_property_results_for_analysis_links(client, session):
+    routes_portfolio._BATCH_STATUS_LOG_STATE.clear()
+    property_id = uuid4()
+    report_id = uuid4()
+    session.add(dbm.Batch(
+        id=BATCH_ID, name="complete", file_count=1, total_count=1,
+        completed_count=1, failed_count=0, status="complete",
+        awaiting_confirmation=False,
+    ))
+    session.add(dbm.Property(
+        id=property_id, address_line1="123 Main St", city="Irvine", state="CA",
+        zip5="92602", apn="123-456", pipeline_status="analyzed", tags=[],
+        is_watchlisted=False,
+    ))
+    session.add(dbm.Report(
+        id=report_id, batch_id=BATCH_ID, property_id=property_id,
+        file_path="/reports/property.pdf", sha256="c" * 64, status="extracted",
+    ))
+
+    payload = client.get(f"/api/batches/{BATCH_ID}").json()
+
+    assert payload["property_ids"] == [str(property_id)]
+    assert payload["results"] == [{
+        "property_id": str(property_id), "report_ids": [str(report_id)],
+        "address_line1": "123 Main St", "city": "Irvine", "state": "CA",
+        "zip5": "92602", "apn": "123-456",
+    }]
+    assert payload["unresolved_reports"] == []
+
+
+def test_failed_batch_exposes_unresolved_identity_reason(client, session):
+    report_id = uuid4()
+    session.add(dbm.Batch(
+        id=BATCH_ID, name="unresolved", file_count=1, total_count=1,
+        completed_count=0, failed_count=1, status="failed",
+        awaiting_confirmation=False,
+    ))
+    session.add(dbm.Report(
+        id=report_id, batch_id=BATCH_ID, property_id=None,
+        file_path="/reports/unresolved.pdf", sha256="d" * 64, status="failed",
+        failure_reason="identity_unresolved",
+    ))
+
+    payload = client.get(f"/api/batches/{BATCH_ID}").json()
+
+    assert payload["property_ids"] == []
+    assert payload["results"] == []
+    assert payload["unresolved_reports"] == [{
+        "report_id": str(report_id), "reason": "identity_unresolved",
+    }]
+
+
 # --- merge / quick-add / recompute / facts ------------------------------------------------
 
 def test_merge_unmerge_quick_add(client, session):

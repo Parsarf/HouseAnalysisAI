@@ -365,6 +365,24 @@ export interface BatchStatus {
   estimated_cost_usd: string | null;
   actual_cost_usd?: string | null;
   awaiting_confirmation?: boolean;
+  property_ids?: string[];
+  results?: BatchPropertyResult[];
+  unresolved_reports?: BatchUnresolvedReport[];
+}
+
+export interface BatchPropertyResult {
+  property_id: string;
+  report_ids: string[];
+  address_line1: string | null;
+  city: string | null;
+  state: string | null;
+  zip5: string | null;
+  apn: string | null;
+}
+
+export interface BatchUnresolvedReport {
+  report_id: string;
+  reason: string;
 }
 
 export interface BatchEstimate {
