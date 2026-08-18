@@ -138,6 +138,28 @@ class Report(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class ReportExtraction(Base):
+    """Canonical whole-document extraction for one immutable report payload."""
+
+    __tablename__ = "report_extractions"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    report_id: Mapped[UUID] = mapped_column(ForeignKey("reports.id"), unique=True, index=True)
+    property_id: Mapped[UUID | None] = mapped_column(ForeignKey("properties.id"), index=True)
+    schema_version: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str | None] = mapped_column(String(120))
+    raw_json: Mapped[dict | None] = mapped_column(JSON)
+    normalized_json: Mapped[dict | None] = mapped_column(JSON)
+    validation_issues: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(40), default="analyzing")
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class ExtractionUnit(Base):
     __tablename__ = "extraction_units"
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)

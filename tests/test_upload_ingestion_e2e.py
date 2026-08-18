@@ -140,6 +140,7 @@ def upload_ingestion_harness(monkeypatch, tmp_path):
             yield session
 
     api_app = importlib.import_module("api.app")
+    monkeypatch.setattr(settings, "analysis_pipeline", "legacy")
     monkeypatch.setattr(settings, "document_root", tmp_path / "documents")
     monkeypatch.setattr(settings, "storage_backend", "s3")
     monkeypatch.setattr(api_app, "get_document_storage", lambda: storage)

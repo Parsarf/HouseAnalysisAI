@@ -436,6 +436,23 @@ def test_recompute_persists_deal_offer_and_score_rows():
     assert any(flag["flag_type"] == "lien_attachment" for flag in state.flags)
 
 
+def test_compute_normalized_bypasses_fact_ledger_and_persists_results():
+    pipeline, factory = make_pipeline()
+    property_id = seed_property(factory.state, with_facts=False)
+    report_id, unit_id = uuid4(), uuid4()
+    record = resolve_facts(
+        property_id, property_facts(property_id, unit_id, report_id),
+    )
+    assert factory.state.facts.get(property_id) in (None, [])
+
+    computation = pipeline.compute_normalized(record, reason="whole_pdf_test")
+
+    assert computation.underwriting.status == "ok"
+    assert factory.state.deal_scenarios
+    assert factory.state.offer_scenarios
+    assert factory.state.scores
+
+
 def test_sql_store_creates_fk_target_for_in_code_scoring_defaults():
     class RecordingSession:
         def __init__(self):
@@ -972,7 +989,7 @@ def test_detect_changes_without_snapshot_is_a_noop():
 
 def test_worker_registers_all_pipeline_job_handlers():
     handlers = default_handlers()
-    assert {"ingest_document", "extract_unit", "recompute_property",
+    assert {"analyze_report", "ingest_document", "extract_unit", "recompute_property",
             "rank_scope", "detect_changes", "nightly"} <= set(handlers)
 
 

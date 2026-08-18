@@ -138,8 +138,9 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
     root = settings.document_root
     root.mkdir(parents=True, exist_ok=True)
     storage = get_document_storage()
+    whole_pdf = settings.analysis_pipeline == "whole_pdf"
     batch = dbm.Batch(id=batch_id, name=batch_name, file_count=len(files),
-                      total_count=len(files), status="ingesting")
+                      total_count=len(files), status="analyzing" if whole_pdf else "ingesting")
     session.add(batch)
     reports = []
     for upload_file in files:
@@ -164,24 +165,29 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
         finally:
             temp_path.unlink(missing_ok=True)
         reports.append(str(report.id))
-        # Enqueue unconditionally, including for deduplicated reports: the job is
-        # idempotent (dedupe_key `ingest:{report_id}`) and it is what advances the
-        # batch off `ingesting`. Gating on `created` left re-uploaded batches stuck.
+        job_name = "analyze_report" if whole_pdf else "ingest_document"
+        dedupe_key = f"analyze:{report.id}" if whole_pdf else f"ingest:{report.id}"
+        payload = {"report_id": str(report.id)}
+        if whole_pdf:
+            payload["batch_id"] = str(batch_id)
+        if whole_pdf and report.status not in ("complete", "unresolved_identity"):
+            report.status = "analyzing"
+        # Both paths enqueue unconditionally. Queue dedupe plus report-level
+        # idempotency makes byte-identical re-uploads safe.
         job_id = enqueue(
-            session, queue, "ingest_document", {"report_id": str(report.id)},
-            f"ingest:{report.id}",
+            session, queue, job_name, payload, dedupe_key,
         )
-        log.info("report ingestion job enqueued", extra={
-            "event": "ingest_job_created",
+        log.info("report analysis job enqueued", extra={
+            "event": "analysis_job_created" if whole_pdf else "ingest_job_created",
             "batch_id": batch_id,
             "report_id": report.id,
             "job_id": job_id,
-            "job_name": "ingest_document",
+            "job_name": job_name,
             # The queue persistence layer emits the authoritative status for
             # this same job_id. Avoid a second database read here so alternate
             # queue implementations remain supported.
             "job_status": "queued",
-            "dedupe_key": f"ingest:{report.id}",
+            "dedupe_key": dedupe_key,
             "document_path": report.file_path,
         })
     if hasattr(session, "info"):

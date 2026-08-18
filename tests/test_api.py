@@ -944,7 +944,7 @@ def test_upload_and_paste(client, session, queue, monkeypatch, tmp_path):
                          data={"batch_name": "jan"})
     assert upload.status_code == 200
     assert upload.json()["count"] == 1
-    assert queue.jobs[-1]["name"] == "ingest_document"
+    assert queue.jobs[-1]["name"] == "analyze_report"
     assert (tmp_path / upload.json()["report_ids"][0] / "original.pdf").exists()
 
     bad = client.post("/api/uploads", files=[("files", ("x.pdf", b"not a pdf", "application/pdf"))])

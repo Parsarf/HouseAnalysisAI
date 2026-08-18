@@ -40,6 +40,8 @@ def test_reports_and_scores_new_columns():
     assert {"failure_reason", "section_match_rate"} <= reports_cols
     scores_cols = set(Base.metadata.tables["scores"].columns.keys())
     assert {"engine_version", "resolution_version"} <= scores_cols
+    extraction_cols = set(Base.metadata.tables["report_extractions"].columns.keys())
+    assert {"report_id", "raw_json", "normalized_json", "validation_issues", "status"} <= extraction_cols
 
 
 def test_unique_constraints_and_index():
@@ -71,6 +73,7 @@ def test_migration_chain_and_offline_upgrade_compiles():
                      "section_match_rate", "engine_version", "resolution_version",
                      "deal_scenarios_uq", "rankings_uq", "extracted_facts_report_idx"):
         assert fragment in sql, f"{fragment} missing from offline upgrade SQL"
+    assert "report_extractions" in sql
 
 
 def test_migration_downgrade_compiles_and_reverses():
@@ -79,3 +82,4 @@ def test_migration_downgrade_compiles_and_reverses():
                      "DROP CONSTRAINT IF EXISTS rankings_uq", "DROP INDEX IF EXISTS extracted_facts_report_idx",
                      "DROP COLUMN IF EXISTS failure_reason", "DROP COLUMN IF EXISTS engine_version"):
         assert fragment in sql, f"{fragment} missing from offline downgrade SQL"
+    assert "DROP TABLE IF EXISTS report_extractions" in sql

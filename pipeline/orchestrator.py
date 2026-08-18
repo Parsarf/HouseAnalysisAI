@@ -241,6 +241,70 @@ class Pipeline:
             })
             return computation
 
+    def compute_normalized(
+        self, record: NormalizedProperty, *, reason: str = "whole_pdf_analysis",
+        purchase_price: Decimal | None = None,
+        assumption_set_id: UUID | None = None,
+        trace_context: dict | None = None,
+    ) -> Computation:
+        """Compute directly from a validated canonical record.
+
+        The whole-PDF path uses this boundary so calculations do not depend on
+        exploding canonical JSON into the legacy extracted-fact ledger first.
+        """
+        property_id = UUID(str(record.property_id))
+        context = {"property_id": property_id, **(trace_context or {})}
+        log.info("property recompute started", extra={
+            **context,
+            "event": "property_recompute_started",
+            "stage": "property_recompute",
+            "success": True,
+            "reason": reason,
+        })
+        with self._store_factory() as store:
+            store.acquire_property_lock(property_id)
+            if store.get_property(property_id) is None:
+                raise AcqError(ErrorCode.NOT_FOUND, f"property {property_id} not found")
+            assumptions = store.load_assumptions(assumption_set_id)
+            scoring_config_id, config = store.active_scoring_config()
+            price = _purchase_price(record, purchase_price)
+            from report_analysis.normalizer import underwrite_canonical
+            underwriting_result = underwrite_canonical(record, assumptions)
+            if underwriting_result.status == "ok":
+                strategy_results = all_strategies(
+                    record, underwriting_result, assumptions, price,
+                )
+                grid = offer_grid(
+                    underwriting_result, record.property_id, assumptions, price,
+                )
+            else:
+                strategy_results = []
+                grid = OfferGrid(property_id=record.property_id, points=[])
+            score_result = _score_record(
+                record, underwriting_result, scoring_config_id, strategy_results, config,
+            )
+            computation = Computation(
+                underwriting_result, strategy_results, score_result, grid,
+            )
+            for stage in ("financial_calculations", "scoring", "strategy_ranking"):
+                log.info("analysis stage completed", extra={
+                    **context,
+                    "event": "analysis_stage_completed",
+                    "stage": stage,
+                    "success": True,
+                })
+            store.replace_results(property_id, computation, purchase_price=price)
+            store.persist_flags(property_id, _flag_requests(record, assumptions, computation))
+            store.mark_recomputed(property_id, computation.underwriting.status)
+            log.info("property recompute completed", extra={
+                **context,
+                "event": "property_recompute_completed",
+                "stage": "property_recompute",
+                "success": True,
+                "underwriting_status": computation.underwriting.status,
+            })
+            return computation
+
     # ------------------------------------------------------------- extract_unit
 
     def extract_unit(self, unit_id, *, extractor: Extractor | None = None) -> UnitOutcome:

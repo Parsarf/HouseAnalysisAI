@@ -160,9 +160,9 @@ export type CandidatesUsed = {
 [k: string]: unknown | undefined
 }[]
 export type ValuationConfidence = (number | string | null)
-export type Confirmed = (number | string)
-export type Potential = (number | string)
-export type Maximum = (number | string)
+export type Confirmed = (number | string | null)
+export type Potential = (number | string | null)
+export type Maximum = (number | string | null)
 export type Breakdown = {
 [k: string]: unknown | undefined
 }[]

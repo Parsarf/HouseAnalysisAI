@@ -13,13 +13,16 @@ log = logging.getLogger(__name__)
 def main() -> None:
     configure_logging()
     worker = default_worker()
-    ocr_backend = get_backend()
-    log.info("worker startup", extra={"event": "worker_startup",
-                                      "stage": "worker_startup",
-                                      "storage_backend": settings.storage_backend,
-                                      "document_path": str(settings.document_root),
-                                      "ocr_backend": ocr_backend.name,
-                                      "ocr_backend_available": ocr_backend.available()})
+    startup = {"event": "worker_startup",
+               "stage": "worker_startup",
+               "storage_backend": settings.storage_backend,
+               "document_path": str(settings.document_root),
+               "analysis_pipeline": settings.analysis_pipeline}
+    if settings.analysis_pipeline == "legacy":
+        ocr_backend = get_backend()
+        startup.update(ocr_backend=ocr_backend.name,
+                       ocr_backend_available=ocr_backend.available())
+    log.info("worker startup", extra=startup)
     recovered = worker.recover_stale()
     if recovered:
         log.warning("recovered stale running jobs", extra={"event": "stale_jobs_recovered",

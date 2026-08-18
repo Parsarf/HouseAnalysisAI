@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     secure_cookie: bool = True
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cors_origins: str = ""
+    analysis_pipeline: Literal["whole_pdf", "legacy"] = "whole_pdf"
+    extraction_api_key: str | None = None
+    extraction_base_url: str = "https://api.openai.com/v1"
+    whole_pdf_model: str = "gpt-4o-mini"
+    extraction_timeout_seconds: float = 180.0
+    extraction_max_retries: int = 3
 
     def validate_production(self) -> None:
         """Fail fast for deployment mistakes while keeping local tests frictionless."""
@@ -39,6 +45,8 @@ class Settings(BaseSettings):
                                 ("ACQ_S3_SECRET_ACCESS_KEY", self.s3_secret_access_key)):
                 if not value:
                     missing.append(name)
+        if self.analysis_pipeline == "whole_pdf" and not self.extraction_api_key:
+            missing.append("ACQ_EXTRACTION_API_KEY")
         if missing:
             raise RuntimeError("missing production configuration: " + ", ".join(missing))
 

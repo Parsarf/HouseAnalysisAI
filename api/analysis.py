@@ -7,6 +7,7 @@ ledger, which ``normalization.resolve_facts`` collapses back into the
 recomputed on read from the normalized record with the default assumption set
 (the same inputs WP-10 persists scenarios from).
 """
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -25,8 +26,26 @@ from normalization import resolve_facts
 
 from . import serializers
 
+log = logging.getLogger(__name__)
+
 
 def load_normalized(session: Session, property_id: UUID) -> NormalizedProperty | None:
+    canonical = (session.query(dbm.ReportExtraction)
+                 .filter(dbm.ReportExtraction.property_id == property_id,
+                         dbm.ReportExtraction.status == "complete")
+                 .order_by(dbm.ReportExtraction.updated_at.desc())
+                 .first())
+    if canonical is not None:
+        payload = (canonical.normalized_json or {}).get("property")
+        if isinstance(payload, dict):
+            try:
+                return NormalizedProperty.model_validate(payload)
+            except Exception:
+                # Preserve backward compatibility with the fact ledger if a
+                # future schema version cannot be read by this application.
+                log.warning("canonical normalized record could not be loaded", exc_info=True,
+                            extra={"event": "canonical_analysis_load_failed",
+                                   "property_id": property_id})
     rows = (session.query(dbm.ExtractedFact)
             .filter(dbm.ExtractedFact.property_id == property_id,
                     dbm.ExtractedFact.is_active.is_(True))
@@ -69,8 +88,14 @@ def load_underwriting(session: Session, property_id: UUID,
     assumptions = load_assumption_set(session)
     if assumptions is None:
         return None
+    canonical = (session.query(dbm.ReportExtraction.id)
+                 .filter(dbm.ReportExtraction.property_id == property_id,
+                         dbm.ReportExtraction.status == "complete")
+                 .first())
+    if canonical is not None:
+        from report_analysis.normalizer import underwrite_canonical
+        return underwrite_canonical(normalized, assumptions)
     from finance import underwrite  # lazy: finance imports contracts either way
-
     return underwrite(normalized, assumptions)
 
 

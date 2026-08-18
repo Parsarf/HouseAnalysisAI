@@ -87,13 +87,25 @@ def _batch_payload(batch: dbm.Batch, session: Session) -> dict:
         "zip5": row.zip5,
         "apn": row.apn,
     } for row in properties]
-    unresolved = [{
-        "report_id": str(report.id),
-        "reason": report.failure_reason or ErrorCode.IDENTITY_UNRESOLVED.value,
-    } for report in reports if (
-        report.property_id is None
-        and report.failure_reason == ErrorCode.IDENTITY_UNRESOLVED.value
-    )]
+    unresolved = []
+    for report in reports:
+        if not (report.property_id is None
+                and report.failure_reason == ErrorCode.IDENTITY_UNRESOLVED.value):
+            continue
+        extraction = (session.query(dbm.ReportExtraction)
+                      .filter(dbm.ReportExtraction.report_id == report.id).first())
+        identity = None
+        if extraction is not None:
+            normalized = extraction.normalized_json if isinstance(extraction.normalized_json, dict) else {}
+            source = normalized.get("source") or extraction.raw_json or {}
+            identity = source.get("property_identity") if isinstance(source, dict) else None
+        item = {
+            "report_id": str(report.id),
+            "reason": report.failure_reason or ErrorCode.IDENTITY_UNRESOLVED.value,
+        }
+        if identity is not None:
+            item["identity"] = identity
+        unresolved.append(item)
     return json_safe({"id": str(batch.id), "name": batch.name, "status": batch.status,
                       "total": batch.total_count, "completed": batch.completed_count,
                       "failed": batch.failed_count, "estimated_cost_usd": batch.estimated_cost_usd,
@@ -351,7 +363,10 @@ def dashboard(session: Session = Depends(get_session), user: User = Depends(curr
     valued_ids = {row.property_id for row in
                   session.query(dbm.Valuation).filter(dbm.Valuation.is_active.is_(True)).all()}
     open_flags = session.query(dbm.Flag).filter(dbm.Flag.status == "open").count()
-    failed_reports = session.query(dbm.Report).filter(dbm.Report.status == "failed").count()
+    failed_reports = session.query(dbm.Report).filter(dbm.Report.status.in_([
+        "failed", "failed_provider", "failed_validation", "failed_computation",
+        "unresolved_identity",
+    ])).count()
     return {"total_properties": len(properties), "by_status": dict(by_status),
             "open_flags": open_flags, "failed_reports": failed_reports,
             "missing_valuation_count": sum(1 for row in properties if row.id not in valued_ids),
@@ -376,7 +391,10 @@ def problems(session: Session = Depends(get_session), user: User = Depends(curre
     open_rows = session.query(dbm.Flag).filter(dbm.Flag.status == "open").all()
     gating = [serializers.flag_record(row) for row in open_rows
               if row.flag_type in FlagType.__members__.values() and is_gating(FlagType(row.flag_type))]
-    failed = session.query(dbm.Report).filter(dbm.Report.status == "failed").all()
+    failed = session.query(dbm.Report).filter(dbm.Report.status.in_([
+        "failed", "failed_provider", "failed_validation", "failed_computation",
+        "unresolved_identity",
+    ])).all()
     return {"gating_flags": dump(gating),
             "failed_reports": [{"id": str(row.id), "batch_id": str(row.batch_id) if row.batch_id else None,
                                 "failure_reason": row.failure_reason, "file_path": row.file_path}

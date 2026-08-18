@@ -49,7 +49,7 @@ target-version = "py312"
 "tests/test_pipeline.py" = ["RUF012"]
 
 [tool.setuptools]
-packages = ["api", "analyst", "auth", "calibration", "changes", "classification", "common", "contracts", "db", "exports", "extraction", "finance", "flags", "identity", "ingestion", "jobs", "normalization", "ops", "pipeline", "scoring", "strategies"]
+packages = ["api", "analyst", "auth", "calibration", "changes", "classification", "common", "contracts", "db", "exports", "extraction", "finance", "flags", "identity", "ingestion", "jobs", "normalization", "ops", "pipeline", "report_analysis", "scoring", "strategies"]
 
 [build-system]
 requires = ["setuptools>=68"]

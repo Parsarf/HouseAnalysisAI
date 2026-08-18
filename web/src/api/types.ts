@@ -139,9 +139,9 @@ export interface ValueBlock {
 }
 
 export interface LiabilityBlock {
-  confirmed: string;
-  potential: string;
-  maximum: string;
+  confirmed: string | null;
+  potential: string | null;
+  maximum: string | null;
   breakdown: Array<Record<string, unknown>>;
 }
 
@@ -383,6 +383,14 @@ export interface BatchPropertyResult {
 export interface BatchUnresolvedReport {
   report_id: string;
   reason: string;
+  identity?: {
+    address_line1?: string | null;
+    full_address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip5?: string | null;
+    apn?: string | null;
+  } | null;
 }
 
 export interface BatchEstimate {

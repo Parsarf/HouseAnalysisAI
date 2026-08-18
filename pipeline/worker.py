@@ -22,6 +22,7 @@ from extraction import ExtractionService, ProviderClient, UnitInput
 from identity.service import attach_report
 from ingestion.worker import ingest_document
 from jobs.postgres import PostgresJobQueue
+from report_analysis.service import ReportAnalysisFailure, analyze_report
 
 from .orchestrator import Pipeline
 
@@ -129,6 +130,18 @@ def _handle_ingest_document(payload) -> None:
     })
 
 
+def _handle_analyze_report(payload) -> None:
+    data = _payload(payload)
+    try:
+        analyze_report(
+            UUID(str(data["report_id"])),
+            batch_id=UUID(str(data["batch_id"])) if data.get("batch_id") else None,
+            job_id=UUID(str(data["_job_id"])) if data.get("_job_id") else None,
+        )
+    except ReportAnalysisFailure as exc:
+        raise PermanentJobFailure(str(exc)) from exc
+
+
 def _handle_extract_unit(payload) -> None:
     unit_id = UUID(str(_payload(payload)["unit_id"]))
     with db_session() as session:
@@ -164,6 +177,7 @@ def _handle_nightly(payload) -> None:
 
 def default_handlers() -> dict[str, Callable[[dict], None]]:
     return {
+        "analyze_report": _handle_analyze_report,
         "ingest_document": _handle_ingest_document,
         "extract_unit": _handle_extract_unit,
         "recompute_property": _handle_recompute_property,
@@ -200,7 +214,9 @@ class Worker:
                 **context, "event": "worker_job_claimed", "success": True,
             })
             try:
-                self.handlers[job["name"]](job["payload"])
+                handler_payload = _payload(job["payload"])
+                handler_payload["_job_id"] = str(job["id"])
+                self.handlers[job["name"]](handler_payload)
             except Exception as exc:
                 terminal = isinstance(exc, PermanentJobFailure) or job["attempts"] >= job["max_attempts"]
                 attempts = job["max_attempts"] if terminal else job["attempts"]
@@ -245,7 +261,7 @@ class Worker:
 
 def _job_context(session, job: dict) -> dict:
     data = _payload(job["payload"])
-    if job["name"] == "ingest_document" and data.get("report_id"):
+    if job["name"] in ("analyze_report", "ingest_document") and data.get("report_id"):
         report = session.get(Report, UUID(str(data["report_id"])))
         if report is not None:
             return {"report_id": report.id, "batch_id": report.batch_id,
@@ -264,7 +280,13 @@ def _mark_terminal_failure(session, job: dict, exc: Exception) -> None:
     """Move domain records to terminal failure when a queue job is exhausted."""
     data = _payload(job["payload"])
     batch: Batch | None = None
-    if job["name"] == "ingest_document" and data.get("report_id"):
+    if job["name"] == "analyze_report" and data.get("report_id"):
+        report = session.get(Report, UUID(str(data["report_id"])))
+        if report is not None:
+            # The report-analysis service records a precise terminal state in
+            # its own transaction before raising. Preserve it here.
+            batch = session.get(Batch, report.batch_id) if report.batch_id else None
+    elif job["name"] == "ingest_document" and data.get("report_id"):
         report = session.get(Report, UUID(str(data["report_id"])))
         if report is not None:
             report.status = ReportStatus.FAILED.value
