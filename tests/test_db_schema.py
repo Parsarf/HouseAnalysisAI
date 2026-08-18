@@ -3,6 +3,7 @@
 No live Postgres: metadata is inspected in-process and the migrations are
 compiled with `alembic upgrade/downgrade --sql` (offline mode).
 """
+import json
 import re
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from sqlalchemy import UniqueConstraint
 import db.models  # noqa: F401  (populates Base.metadata)
 import identity.models  # noqa: F401  (maps identity_merge_report_moves on the shared Base)
 from common.db import Base
+from contracts import AssumptionSet
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_SQL = REPO_ROOT / "db" / "schema.sql"
@@ -74,6 +76,17 @@ def test_migration_chain_and_offline_upgrade_compiles():
                      "deal_scenarios_uq", "rankings_uq", "extracted_facts_report_idx"):
         assert fragment in sql, f"{fragment} missing from offline upgrade SQL"
     assert "report_extractions" in sql
+    assert "10000000-0000-0000-0000-000000000001" in sql
+    assert "WHERE NOT EXISTS (SELECT 1 FROM assumption_sets)" in sql
+
+
+def test_seeded_default_assumptions_match_the_validated_fixture():
+    payload = json.loads(
+        (REPO_ROOT / "fixtures" / "assumptions" / "default.json").read_text()
+    )
+    assumptions = AssumptionSet.model_validate(payload)
+    assert str(assumptions.id) == "10000000-0000-0000-0000-000000000001"
+    assert assumptions.name == "default"
 
 
 def test_migration_downgrade_compiles_and_reverses():
