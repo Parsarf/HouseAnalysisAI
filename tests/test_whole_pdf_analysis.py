@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import sqlite3
@@ -207,7 +208,10 @@ def test_provider_sends_original_pdf_to_responses_api(tmp_path):
     request = calls[0][3]
     assert calls[0][1].endswith("/responses")
     assert request["input"][0]["content"][0]["type"] == "input_file"
-    assert request["input"][0]["content"][0]["file_data"].startswith("JVBER")
+    file_data = request["input"][0]["content"][0]["file_data"]
+    prefix = "data:application/pdf;base64,"
+    assert file_data.startswith(prefix)
+    assert base64.b64decode(file_data.removeprefix(prefix)) == pdf.read_bytes()
     assert request["text"]["format"]["strict"] is True
     assert "temperature" not in request
     assert result.payload["property_identity"]["apn"] == "931-762-13"

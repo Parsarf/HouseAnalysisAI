@@ -150,6 +150,10 @@ class WholePdfProviderClient:
         pdf_bytes = pdf_path.read_bytes()
         if not pdf_bytes.startswith(b"%PDF-"):
             raise PermanentProviderError("stored document is not a PDF")
+        pdf_data_url = (
+            "data:application/pdf;base64,"
+            f"{base64.b64encode(pdf_bytes).decode('ascii')}"
+        )
         payload = {
             "model": self.model,
             "input": [{
@@ -158,7 +162,7 @@ class WholePdfProviderClient:
                     {
                         "type": "input_file",
                         "filename": pdf_path.name or "report.pdf",
-                        "file_data": base64.b64encode(pdf_bytes).decode("ascii"),
+                        "file_data": pdf_data_url,
                     },
                     {"type": "input_text", "text": SYSTEM_PROMPT},
                 ],
