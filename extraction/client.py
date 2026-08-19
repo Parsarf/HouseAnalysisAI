@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import time
 import urllib.error
 import urllib.request
@@ -112,7 +113,9 @@ def _is_temperature_compatibility_error(status: int, response: dict) -> bool:
 
 
 def _configured_timeout(timeout: float | None) -> float:
-    raw = timeout if timeout is not None else settings.extraction_timeout_seconds
+    raw = timeout if timeout is not None else os.environ.get(
+        ENV_TIMEOUT_SECONDS, str(settings.extraction_timeout_seconds)
+    )
     try:
         value = float(raw)
     except (TypeError, ValueError) as exc:
@@ -157,10 +160,10 @@ class ProviderClient:
         sleep: Callable[[float], None] = time.sleep,
         transport: Transport | None = None,
     ):
-        self.api_key = api_key if api_key is not None else settings.extraction_api_key
-        self.base_url = (base_url or settings.extraction_base_url or DEFAULT_BASE_URL).rstrip("/")
-        self.cheap_model = cheap_model or settings.extraction_cheap_model or DEFAULT_CHEAP_MODEL
-        self.frontier_model = frontier_model or settings.extraction_frontier_model or DEFAULT_FRONTIER_MODEL
+        self.api_key = api_key if api_key is not None else (os.environ.get(ENV_API_KEY) or settings.extraction_api_key)
+        self.base_url = (base_url or os.environ.get(ENV_BASE_URL) or settings.extraction_base_url or DEFAULT_BASE_URL).rstrip("/")
+        self.cheap_model = cheap_model or os.environ.get(ENV_CHEAP_MODEL) or settings.extraction_cheap_model or DEFAULT_CHEAP_MODEL
+        self.frontier_model = frontier_model or os.environ.get(ENV_FRONTIER_MODEL) or settings.extraction_frontier_model or DEFAULT_FRONTIER_MODEL
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.timeout = _configured_timeout(timeout)

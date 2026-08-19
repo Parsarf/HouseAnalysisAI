@@ -119,7 +119,10 @@ class FakeQuery:
                 if all(_eval(criterion, row) for criterion in self.criteria)]
         for key in reversed(self.ordering):
             if isinstance(key, UnaryExpression):
-                column, descending = key.element.key, key.modifier is sa_ops.desc_op
+                element = key.element
+                if isinstance(element, UnaryExpression):
+                    element = element.element
+                column, descending = element.key, key.modifier is sa_ops.desc_op
             else:
                 column, descending = key.key, False
             rows.sort(key=lambda row, name=column: (getattr(row, name) is None, getattr(row, name)),

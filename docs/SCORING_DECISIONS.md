@@ -13,6 +13,11 @@ The goldens are not regenerated from the engine.
 - Recommendation uses `_recommend` in production. Its `near_tie_points`
   setting is therefore active and controls the alternative-strategy list;
   it is not dead configuration.
+- Golden underwriting fixtures for `04_active_nts_postponements` now label the
+  reported-but-estimated mortgage balance `estimated_recorded` (three
+  assumption variants). This is a semantic basis-only delta; the amount and
+  all downstream numbers are unchanged, and it prevents an estimated report
+  from being presented as verified recorded debt.
 
 - `dcs_below_40` is the gate name for the §10 DCS-under-40 cap. The previous
   `needs_review` label was too generic for the contract and is replaced.

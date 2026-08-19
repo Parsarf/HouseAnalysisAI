@@ -1,4 +1,8 @@
-# ACQ Build Status
+# ACQ Build Status (2026-08-19)
+
+The API, worker, whole-PDF analysis path, deterministic engines, flags
+aggregation, migrations, and SPA are implemented. Remaining work is primarily
+environment-dependent validation, CI typing debt, and human fixture review.
 
 | Package | Status | Evidence | Blocker |
 |---|---|---|---|

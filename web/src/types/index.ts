@@ -177,6 +177,7 @@ export type Repairs = (number | string)
 export type Holding = (number | string)
 export type Resale = (number | string)
 export type Financing = (number | string)
+export type HoldingMonthsBase = (number | string | null)
 export type DebtDataPresent = boolean
 export type Confidence2 = (number | string)
 export type StrategyType = ("cash" | "flip" | "wholesale" | "rental" | "subject_to" | "foreclosure")
@@ -520,6 +521,7 @@ value?: ValueBlock
 liabilities?: LiabilityBlock
 equity?: Equity
 costs?: Costs
+holding_months_base?: HoldingMonthsBase
 debt_data_present?: DebtDataPresent
 confidence?: Confidence2
 }

@@ -31,7 +31,7 @@
       {
         "label": "mortgage:1",
         "amount": "210000.00",
-        "basis": "recorded",
+        "basis": "estimated_recorded",
         "is_estimated": true
       },
       {

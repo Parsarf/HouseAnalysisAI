@@ -33,6 +33,7 @@ import json
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
+from common.mortgage import is_first, position_key
 from contracts import (
     AssumptionSet,
     AttachmentBasis,
@@ -47,7 +48,6 @@ from contracts import (
     StrategyType,
     UnderwritingResult,
 )
-from common.mortgage import is_first, position_key
 from finance.transfer_tax import transfer_tax_rate
 
 ZERO = Decimal(0)
@@ -181,6 +181,8 @@ def _months_base_from_costs(underwriting: UnderwritingResult, assumptions: Assum
     repair-months candidate whose predicted scenario holdings reproduce the actual
     (quantized) holding costs. Exact for any cost block produced by WP-6.
     """
+    if underwriting.holding_months_base is not None:
+        return underwriting.holding_months_base
     holding = assumptions.holding
     market = Decimal(holding.market_days_default) / Decimal(30)
     fallback = holding.acquisition_months + holding.repair_months_by_condition.get("moderate", Decimal(3)) + market

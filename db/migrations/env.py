@@ -10,7 +10,7 @@ config = context.config
 target_metadata = Base.metadata
 
 
-def include_object(object_, name, type_, reflected, compare_to):
+def include_object(_, name, type_, reflected, compare_to):
     # The initial SQL schema intentionally leaves defaulted columns nullable;
     # matched columns are still structurally compared by PostgreSQL itself.
     # Keep unmatched metadata objects visible so missing tables/columns/indexes

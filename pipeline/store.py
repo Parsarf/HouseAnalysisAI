@@ -245,7 +245,10 @@ class SqlStore:
         try:
             from scoring import load_active_scoring_config
             result = load_active_scoring_config(self.session)
-        except Exception:  # scoring mid-rewrite or table missing: use engine defaults
+        except Exception as exc:
+            from sqlalchemy.exc import ProgrammingError
+            if not isinstance(exc, ProgrammingError):
+                raise
             log.warning("active scoring config unavailable; using engine defaults", exc_info=True)
             return DEFAULT_SCORING_CONFIG_ID, None
         if result is None:

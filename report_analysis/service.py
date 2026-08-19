@@ -16,6 +16,7 @@ from common.errors import ErrorCode
 from common.storage import DocumentStorage, get_document_storage
 from db import models as dbm
 from identity.service import attach_report
+from ops.db_budget import reserve_budget
 from pipeline.orchestrator import Pipeline
 
 from .normalizer import (
@@ -35,7 +36,7 @@ from .schemas import SCHEMA_VERSION, PropertyReportExtraction
 log = logging.getLogger(__name__)
 
 TERMINAL_FAILURES = {
-    "failed_provider", "failed_validation", "failed_computation", "unresolved_identity",
+    "failed_provider", "failed_validation", "failed_computation", "unresolved_identity", "paused_budget",
 }
 
 
@@ -369,6 +370,15 @@ def analyze_report(
 
     provider_result: ProviderAnalysis | None = None
     if source_payload is None:
+        # Reserve a conservative per-document estimate before making the
+        # provider call. The reservation is atomic at the batch row and keeps
+        # whole-PDF retries within the configured spend ceiling.
+        if report.batch_id is not None:
+            estimate = max(Decimal("0.01"), Decimal(str(report.page_count or 1)) * Decimal("0.01"))
+            with factory() as budget_session:
+                if not reserve_budget(budget_session, report.batch_id, estimate):
+                    _mark_failure(report_id, "paused_budget", ErrorCode.BUDGET_PAUSED.value, factory=factory)
+                    raise ReportAnalysisFailure("analysis paused by batch budget")
         try:
             with storage.materialize(file_path) as pdf_path:
                 log.info("original PDF materialized", extra={

@@ -71,10 +71,7 @@ def _score_record(record: NormalizedProperty, underwriting: UnderwritingResult,
                   config: dict | None) -> ScoreSet:
     if config is None:
         return score(record, underwriting, scoring_config_id, strategies)
-    try:
-        return score(record, underwriting, scoring_config_id, strategies, config=config)
-    except TypeError:  # scoring mid-rewrite: older signature has no config kwarg
-        return score(record, underwriting, scoring_config_id, strategies)
+    return score(record, underwriting, scoring_config_id, strategies, config=config)
 
 
 def recompute_property(property: NormalizedProperty, assumptions: AssumptionSet,
@@ -102,11 +99,8 @@ def _flag_requests(record: NormalizedProperty, assumptions: AssumptionSet,
                    computation: Computation) -> list:
     from flags import collect_flags
     requests = list(collect_flags(record, assumptions))
-    try:
-        from strategies import short_sale_flag_requests
-        requests.extend(short_sale_flag_requests(computation.grid))
-    except Exception:  # strategies mid-rewrite: short-sale flags are additive only
-        log.warning("short-sale flag generation failed", exc_info=True)
+    from strategies import short_sale_flag_requests
+    requests.extend(short_sale_flag_requests(computation.grid))
     return requests
 
 
@@ -506,13 +500,8 @@ class Pipeline:
                                   ocr_applied=store.reports_ocr_applied(property_id))
             if before is None:
                 return []
-            try:
-                from changes.diff import diff_properties
-                events = diff_properties(before, after)
-            except ImportError:  # changes mid-rewrite: fall back to the flat-record diff
-                from changes import diff_records
-                events = diff_records(before.model_dump(mode="json"),
-                                      after.model_dump(mode="json"))
+            from changes.diff import diff_properties
+            events = diff_properties(before, after)
             store.persist_change_events(
                 property_id, events,
                 source_report_id=UUID(str(source_report_id)) if source_report_id else None)

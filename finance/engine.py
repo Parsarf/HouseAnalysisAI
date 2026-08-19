@@ -597,5 +597,5 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
                               arv_by_scenario=arv_by_scenario,
                               candidates_used=[{"type": kind, "value": money(value), "weight": weight} for kind, value, weight in candidates],
                               valuation_confidence=confidence),
-                              liabilities=liabilities, equity=equity, costs=costs,
+                              liabilities=liabilities, equity=equity, costs=costs, holding_months_base=months_base,
                               debt_data_present=debt_data_present, confidence=confidence)

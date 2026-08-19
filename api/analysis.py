@@ -145,7 +145,7 @@ def load_flags(session: Session, property_id: UUID):
     rows = (session.query(dbm.Flag)
             .filter(dbm.Flag.property_id == property_id)
             .filter(or_(dbm.Flag.resolution.is_(None), dbm.Flag.resolution != "superseded_duplicate"))
-            .order_by(dbm.Flag.financial_impact_usd.desc())
+            .order_by(dbm.Flag.financial_impact_usd.desc().nullslast(), dbm.Flag.id)
             .all())
     return [serializers.flag_record(row) for row in rows]
 

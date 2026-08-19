@@ -4,7 +4,11 @@ Reviewed by downloading the repo, reading every file, and running the test suite
 
 ---
 
-## 0. Verified state: the repo is currently red
+## 0. Historical review notes
+
+The findings below describe an earlier scaffold state and are retained as audit
+history. Use `README.md`, `BUILD_STATUS.md`, and the CI workflow for current
+launch status; the API, worker, whole-PDF path, engines, and SPA now exist.
 
 I ran `pytest`. Two hard failures before any feature work is considered:
 
