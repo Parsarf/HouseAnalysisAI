@@ -27,6 +27,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from common.money import money
+from common.mortgage import is_first, position_key
 from contracts import (
     AssumptionSet,
     AttachmentBasis,
@@ -289,7 +290,7 @@ def _mortgage_balance(mortgage, as_of: date | None) -> tuple[Decimal | None, boo
 
 
 def _is_first(mortgage) -> bool:
-    return _position_key(mortgage.position) == "1"
+    return is_first(mortgage.position)
 
 
 def _is_heloc(mortgage) -> bool:
@@ -297,14 +298,7 @@ def _is_heloc(mortgage) -> bool:
 
 
 def _position_key(position: str) -> str:
-    normalized = position.strip().casefold()
-    if normalized in {"first", "1", "1st"} or normalized.startswith("first"):
-        return "1"
-    if normalized in {"second", "2", "2nd"} or normalized.startswith("second"):
-        return "2"
-    if "heloc" in normalized:
-        return "heloc"
-    return normalized
+    return position_key(position)
 
 
 def _published_bid(record: NormalizedProperty) -> Decimal | None:
@@ -370,7 +364,8 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             if unknown_heloc_limits:
                 capacity = money(max(unknown_heloc_limits)) or ZERO
                 potential += capacity
-                potential_weighted += capacity
+                probability = assumptions.attachment_probability.get("undrawn_heloc_capacity", Decimal("0.50"))
+                potential_weighted += money(capacity * _clamp(probability, ZERO, ONE)) or ZERO
                 breakdown.append({
                     "label": f"mortgage:{position}:draw_unknown",
                     "amount": capacity,
@@ -380,7 +375,9 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
                 })
             continue
         balance, is_estimated, chosen = max(evaluated, key=lambda item: item[0])
-        basis = "recorded" if not is_estimated or (chosen.estimated_balance and chosen.estimated_balance.value is not None) else "amortization_v1"
+        basis = "recorded" if not is_estimated else "estimated_recorded"
+        if chosen.estimated_balance is None or chosen.estimated_balance.value is None:
+            basis = "amortization_v1"
         if bid is not None and _is_first(chosen):
             # Published-bid reconciliation: the trustee's bid is their actual accounting;
             # precedence favors the bid. Divergence >20% is raised via finance_flags().
@@ -397,7 +394,8 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             if original is not None and original > balance:
                 undrawn = money(original - balance) or ZERO
                 potential += undrawn
-                potential_weighted += money(undrawn) or ZERO
+                probability = assumptions.attachment_probability.get("undrawn_heloc_capacity", Decimal("0.50"))
+                potential_weighted += money(undrawn * _clamp(probability, ZERO, ONE)) or ZERO
                 breakdown.append({"label": f"mortgage:{position}:undrawn", "amount": undrawn,
                                   "expected_amount": undrawn, "basis": "undrawn_heloc_capacity",
                                   "is_estimated": True})
@@ -410,7 +408,8 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
         if unknown_heloc_limits:
             capacity = money(max(unknown_heloc_limits)) or ZERO
             potential += capacity
-            potential_weighted += capacity
+            probability = assumptions.attachment_probability.get("undrawn_heloc_capacity", Decimal("0.50"))
+            potential_weighted += money(capacity * _clamp(probability, ZERO, ONE)) or ZERO
             breakdown.append({
                 "label": f"mortgage:{position}:draw_unknown",
                 "amount": capacity,

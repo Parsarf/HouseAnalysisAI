@@ -47,6 +47,7 @@ from contracts import (
     StrategyType,
     UnderwritingResult,
 )
+from common.mortgage import is_first, position_key
 from finance.transfer_tax import transfer_tax_rate
 
 ZERO = Decimal(0)
@@ -392,7 +393,7 @@ def rental(record: NormalizedProperty, underwriting: UnderwritingResult, assumpt
             dscr = _q(noi / debt_service, Q6) if debt_service > 0 else None
             invested = price - loan + acquisition + cost.repairs
         return StrategyResult(strategy=StrategyType.RENTAL, scenario=scenario,
-                              status="viable" if cash_flow > 0 else "not_viable", profit=cash_flow,
+                              status="viable" if cash_flow >= 0 else "not_viable", profit=cash_flow,
                               metrics={"egi": egi, "opex": opex, "noi": noi,
                                        "cap_rate": _q(noi / price, Q6) if price else None,
                                        "cash_flow": cash_flow,
@@ -404,18 +405,13 @@ def rental(record: NormalizedProperty, underwriting: UnderwritingResult, assumpt
 def _first_mortgage(record: NormalizedProperty):
     candidates = [
         mortgage for mortgage in record.mortgages
-        if mortgage.is_open and _mortgage_position_key(mortgage.position) == "1"
+        if mortgage.is_open and is_first(mortgage.position)
     ]
     return max(candidates, key=lambda mortgage: _tracked(mortgage.estimated_balance) or ZERO, default=None)
 
 
 def _mortgage_position_key(position: str) -> str:
-    normalized = position.strip().casefold()
-    if normalized in FIRST_POSITIONS or normalized.startswith("first"):
-        return "1"
-    if normalized in {"second", "2", "2nd"} or normalized.startswith("second"):
-        return "2"
-    return normalized
+    return position_key(position)
 
 
 def _distress_present(record: NormalizedProperty) -> bool:
@@ -544,6 +540,9 @@ def _weighted_potential(underwriting: UnderwritingResult, assumptions: Assumptio
             weighted += _q(item["expected_amount"])
             continue
         basis = item.get("basis")
+        if basis == "undrawn_heloc_capacity":
+            weighted += _q(item.get("amount", ZERO) * assumptions.attachment_probability.get(basis, Decimal("0.50")))
+            continue
         if basis not in (AttachmentBasis.OWNER_NAMED_ONLY.value, AttachmentBasis.UNKNOWN.value):
             continue
         probability = min(ONE, max(ZERO, assumptions.attachment_probability.get(AttachmentBasis(basis), ONE)))
