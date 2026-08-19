@@ -317,7 +317,7 @@ def collect_flags(property: NormalizedProperty, assumptions: AssumptionSet | Non
     ``assumptions`` enables ``financial_impact_usd`` — the equity delta between accepting and
     rejecting the disputed value, computed via WP-6. Without it, impacts are left None.
     """
-    return [
+    requests = [
         *_identity_conflict_flags(property),
         *_lien_attachment_flags(property, assumptions),
         *_conflicting_mortgage_flags(property, assumptions),
@@ -329,3 +329,16 @@ def collect_flags(property: NormalizedProperty, assumptions: AssumptionSet | Non
         *_bid_mismatch_flags(property, assumptions),
         *_range_violation_flags(property),
     ]
+    # Dedupe identity is always scoped to the property. The logical suffix
+    # distinguishes genuinely separate issues (for example two liens), while
+    # keeping repeated recomputes for the same issue idempotent.
+    scoped: list[FlagRequest] = []
+    for request in requests:
+        logical = request.logical_key or request.dedupe_key
+        if logical.startswith(f"{property.property_id}:"):
+            logical = logical.split(":", 1)[1]
+        scoped.append(request.model_copy(update={
+            "logical_key": logical,
+            "dedupe_key": f"{property.property_id}:{logical}",
+        }))
+    return scoped

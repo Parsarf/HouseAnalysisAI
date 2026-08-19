@@ -578,13 +578,15 @@ export function DealPage(props: { propertyId: string }) {
               .sort((a, b) => Number(b.financial_impact_usd ?? 0) - Number(a.financial_impact_usd ?? 0))
               .map((flag, index) => (
                 <li key={flag.id ?? index} className="deal-flag-row" style={{ padding: "8px 0", borderBottom: `1px solid ${palette.subtle}`, fontSize: 14 }}>
-                  <div><strong style={{ color: severityColor(flag.severity ?? "warning") }}>{flag.flag_type.replace(/_/g, " ")}</strong>
+                  <div><strong style={{ color: severityColor(flag.severity ?? "warning") }}>{flag.label ?? flag.flag_type.replace(/_/g, " ")}</strong>
                   {flag.status === "open" && <span style={{ marginLeft: 8, fontSize: 12, color: palette.bad }}>open</span>}
                   {flag.financial_impact_usd !== null && flag.financial_impact_usd !== undefined && (
                     <span style={{ marginLeft: 8, fontSize: 12, color: palette.muted }}>
                       impact <MoneyText money={money(flag.financial_impact_usd, true)} />
                     </span>
                   )}</div>
+                  {flag.summary && <div style={{ color: palette.muted, fontSize: 12, marginTop: 3 }}>{flag.summary}</div>}
+                  {flag.review_guidance && <div style={{ color: palette.muted, fontSize: 12, marginTop: 3 }}>Review: {flag.review_guidance}</div>}
                   {flag.status === "open" && <InlineFlagResolution flagId={flag.id} disabled={user.read_only} onResolved={() => setPayload({...payload,flags:payload.flags.map((item)=>item.id===flag.id?{...item,status:"resolved"}:item)})} onError={setActionError} />}
                 </li>
               ))}

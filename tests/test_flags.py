@@ -33,6 +33,7 @@ from flags import (
     open_flags,
     persist_flags,
     resolve_flag,
+    sync_flags,
 )
 from flags.service import GATING_FLAG_TYPES
 
@@ -284,6 +285,61 @@ def test_persist_flags_dedupes_on_rerun(session):
     assert len(first) == 1
     assert second == []
     assert session.query(Flag).count() == 1
+
+
+def short_sale_request(property_id, *, fingerprint="same", minimum="600000", maximum="800000", count=20):
+    from contracts import FlagRequest
+    return FlagRequest(
+        property_id=property_id, flag_type=FlagType.SHORT_SALE_CANDIDATE,
+        payload={"affected_offer_points": count, "affected_scenarios": 2,
+                 "scenarios": ["conservative", "expected"],
+                 "offer_price_min": minimum, "offer_price_max": maximum,
+                 "proceeds_low_min": "-100000", "proceeds_low_max": "-1000",
+                 "reason": "insufficient proceeds"},
+        financial_impact_usd=Decimal("100000"), raised_by="strategies",
+        dedupe_key=f"{property_id}:short_sale_candidate", logical_key="short_sale_candidate",
+        fingerprint=fingerprint,
+    )
+
+
+def test_sync_flags_aggregates_and_is_property_aware(session):
+    property_a, property_b = uuid4(), uuid4()
+    first = sync_flags(session, property_a, [short_sale_request(property_a)])
+    second = sync_flags(session, property_a, [short_sale_request(property_a)])
+    other = sync_flags(session, property_b, [short_sale_request(property_b)])
+    session.commit()
+    assert len(first) == len(second) == len(other) == 1
+    assert session.query(Flag).filter(Flag.flag_type == FlagType.SHORT_SALE_CANDIDATE.value).count() == 2
+    assert len(open_flags(session, property_a)) == 1
+    assert len(open_flags(session, property_b)) == 1
+
+
+def test_sync_flags_closes_disappearing_finding_and_reopens_returning_condition(session):
+    property_id = uuid4()
+    sync_flags(session, property_id, [short_sale_request(property_id)])
+    session.commit()
+    sync_flags(session, property_id, [])
+    session.commit()
+    row = session.query(Flag).filter(Flag.property_id == property_id).one()
+    assert row.status == "resolved"
+    assert row.resolution == "superseded_recompute"
+    sync_flags(session, property_id, [short_sale_request(property_id)])
+    session.commit()
+    assert len(open_flags(session, property_id)) == 1
+    assert session.query(Flag).filter(Flag.property_id == property_id).count() == 1
+
+
+def test_sync_flags_material_change_creates_new_row_after_manual_resolution(session):
+    property_id = uuid4()
+    sync_flags(session, property_id, [short_sale_request(property_id, fingerprint="a")])
+    session.commit()
+    row = open_flags(session, property_id)[0]
+    resolve_flag(session, row.id, "dismiss", recompute_hook=record_hook([]))
+    sync_flags(session, property_id, [short_sale_request(property_id, fingerprint="b", maximum="900000")])
+    session.commit()
+    rows = session.query(Flag).filter(Flag.property_id == property_id).all()
+    assert len(rows) == 2
+    assert len(open_flags(session, property_id)) == 1
 
 
 def test_open_flags_sorted_by_financial_impact(session):

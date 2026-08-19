@@ -18,6 +18,8 @@ from contracts import (
     LienRecord,
     MortgageRecord,
     NormalizedProperty,
+    OfferGrid,
+    OfferPoint,
     OwnershipBlock,
     PropertyAttributes,
     RentalBlock,
@@ -467,6 +469,31 @@ def test_offer_grid_short_sale_flag():
     assert requests
     assert all(request.flag_type.value == "short_sale_candidate" for request in requests)
     assert len({request.dedupe_key for request in requests}) == len(requests)
+
+
+def test_short_sale_flag_aggregates_offer_points_and_scenarios():
+    property_id = uuid4()
+    points = []
+    for scenario in (CONS, EXP):
+        for index in range(10):
+            offer = D(600000 + index * 5000)
+            points.append(OfferPoint(
+                offer_price=offer, scenario=scenario, confirmed_payoffs=D(700000),
+                potential_payoffs=D(50000), closing_costs=D(1000),
+                proceeds_low=D(-100000 + index * 1000), proceeds_expected=D(-50000),
+                proceeds_high=D(0), buyer_basis=offer, profit=D(10000),
+                roi=None, is_short_sale=True,
+            ))
+    requests = short_sale_flag_requests(OfferGrid(property_id=property_id, points=points))
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.logical_key == "short_sale_candidate"
+    assert request.payload["affected_offer_points"] == 20
+    assert request.payload["affected_scenarios"] == 20
+    assert request.payload["underwriting_scenario_count"] == 2
+    assert request.payload["scenarios"] == ["conservative", "expected"]
+    assert request.payload["offer_price_min"] == "600000"
+    assert request.payload["offer_price_max"] == "645000"
 
 
 def test_offer_grid_empty_without_value():

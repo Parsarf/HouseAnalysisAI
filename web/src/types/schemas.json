@@ -1760,6 +1760,30 @@
       "dedupe_key": {
         "title": "Dedupe Key",
         "type": "string"
+      },
+      "logical_key": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Logical Key"
+      },
+      "fingerprint": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Fingerprint"
       }
     },
     "required": [

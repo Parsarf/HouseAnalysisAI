@@ -112,6 +112,8 @@ export type PropertyId1 = string
 export type FinancialImpactUsd = (number | string | null)
 export type RaisedBy = string
 export type DedupeKey = string
+export type LogicalKey = (string | null)
+export type Fingerprint = (string | null)
 export type Field = string
 export type Op = ("eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "between" | "contains" | "is_null")
 export type Value2 = (number | string | null)
@@ -402,6 +404,8 @@ payload: Payload
 financial_impact_usd?: FinancialImpactUsd
 raised_by: RaisedBy
 dedupe_key: DedupeKey
+logical_key?: LogicalKey
+fingerprint?: Fingerprint
 }
 export interface Payload {
 [k: string]: unknown | undefined

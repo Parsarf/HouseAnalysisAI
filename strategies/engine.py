@@ -28,6 +28,8 @@ Deliberate deviations from the golden set, each traced to explicit spec text:
   owner_utilities_monthly key (spec §8 owner-paid utilities); fixture sets
   parameterize neither, so DSCR is null and cash_flow == NOI there.
 """
+import hashlib
+import json
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
@@ -609,12 +611,32 @@ def offer_grid(underwriting: UnderwritingResult, property_id, assumptions: Assum
 
 
 def short_sale_flag_requests(grid: OfferGrid) -> list[FlagRequest]:
-    requests = []
-    for point in grid.points:
-        if point.is_short_sale:
-            requests.append(FlagRequest(property_id=grid.property_id, flag_type=FlagType.SHORT_SALE_CANDIDATE,
-                                        payload={"offer_price": str(point.offer_price), "scenario": point.scenario.value,
-                                                 "proceeds_low": str(point.proceeds_low)},
-                                        raised_by="strategies",
-                                        dedupe_key=f"short_sale:{grid.property_id}:{point.scenario.value}:{point.offer_price}"))
-    return requests
+    affected = [point for point in grid.points if point.is_short_sale]
+    if not affected:
+        return []
+    prices = [point.offer_price for point in affected]
+    proceeds = [point.proceeds_low for point in affected]
+    scenarios = sorted({point.scenario.value for point in affected})
+    payload = {
+        "affected_offer_points": len(affected),
+        "affected_scenarios": len(affected),
+        "underwriting_scenario_count": len(scenarios),
+        "scenarios": scenarios,
+        "offer_price_min": str(min(prices)),
+        "offer_price_max": str(max(prices)),
+        "proceeds_low_min": str(min(proceeds)),
+        "proceeds_low_max": str(max(proceeds)),
+        "reason": "Seller proceeds are insufficient to satisfy estimated obligations within part of the analyzed offer range.",
+        "review_guidance": "Confirm payoff amounts and determine whether lender approval for a short sale is required.",
+    }
+    fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return [FlagRequest(
+        property_id=grid.property_id,
+        flag_type=FlagType.SHORT_SALE_CANDIDATE,
+        payload=payload,
+        financial_impact_usd=abs(min(proceeds)),
+        raised_by="strategies",
+        dedupe_key=f"{grid.property_id}:short_sale_candidate",
+        logical_key="short_sale_candidate",
+        fingerprint=fingerprint,
+    )]

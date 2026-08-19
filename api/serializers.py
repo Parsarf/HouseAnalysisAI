@@ -27,6 +27,7 @@ from contracts import (
     TrackedValue,
 )
 from db import models as dbm
+from flags import is_gating
 
 
 def dump(model: ContractModel | Sequence[ContractModel] | dict) -> Any:
@@ -87,12 +88,68 @@ def score_set(row: dbm.Score) -> ScoreSet:
                     recommended_strategy=None)
 
 
-def flag_record(row: dbm.Flag) -> FlagRecord:
-    return FlagRecord(id=row.id, property_id=row.property_id, flag_type=FlagType(row.flag_type),
-                      payload=dict(row.payload or {}), financial_impact_usd=row.financial_impact_usd,
+def _display_money(value: object) -> str:
+    amount = Decimal(str(value))
+    rendered = f"{amount:,.2f}".rstrip("0").rstrip(".")
+    return f"${rendered}"
+
+
+def _flag_label(flag_type: FlagType) -> str:
+    return flag_type.value.replace("_", " ").title()
+
+
+def _flag_summary(flag_type: FlagType, payload: dict) -> tuple[str, str | None]:
+    if flag_type == FlagType.SHORT_SALE_CANDIDATE:
+        count = payload.get("affected_offer_points", payload.get("affected_scenarios", 0))
+        low = payload.get("offer_price_min")
+        high = payload.get("offer_price_max")
+        scenarios = payload.get("scenarios") or []
+        range_text = f"{_display_money(low)}–{_display_money(high)}" if low is not None and high is not None else "analyzed offer range"
+        scenario_text = " + ".join(str(item).title() for item in scenarios) or "analyzed scenarios"
+        return f"{count} affected offers · {range_text} · {scenario_text}", payload.get("reason")
+    if flag_type == FlagType.MISSING_APN:
+        return "Assessor parcel number is missing", "Confirm the parcel identifier before relying on title, lien, or ranking results."
+    if flag_type == FlagType.LIEN_ATTACHMENT:
+        return "Lien attachment status needs review", "Confirm whether the lien attaches to the property and affects payoff."
+    if flag_type == FlagType.CONFLICTING_MORTGAGE:
+        return "Multiple mortgage values conflict", "Verify the current payoff statement and lien position."
+    if flag_type == FlagType.BID_MISMATCH:
+        return "Published bid differs from estimated first-lien balance", "Confirm the trustee bid and current payoff amount."
+    if flag_type == FlagType.MISSING_LIEN_AMOUNT:
+        return "Lien amount is missing", "Obtain the recorded amount or payoff statement."
+    if flag_type == FlagType.IDENTITY_CONFLICT:
+        return "Property identity sources disagree", "Resolve the address or APN before ranking the property."
+    if flag_type == FlagType.FORECLOSURE_UNCLEAR:
+        return "Foreclosure timeline contains contradictions", "Review the notice, sale dates, and current foreclosure stage."
+    if flag_type == FlagType.VALUATION_DISPERSION:
+        return "Valuation sources differ materially", "Review comparable and valuation sources before using the estimate."
+    if flag_type == FlagType.LOW_EXTRACTION_CONFIDENCE:
+        return "One or more extracted values have low confidence", "Verify the source document values manually."
+    if flag_type == FlagType.RANGE_VIOLATION:
+        return "A value falls outside expected bounds", "Review the source value for OCR or extraction errors."
+    return _flag_label(flag_type), payload.get("reason")
+
+
+def flag_record(row: dbm.Flag, property_row: dbm.Property | None = None) -> FlagRecord:
+    flag_type = FlagType(row.flag_type)
+    payload = dict(row.payload or {})
+    summary, default_guidance = _flag_summary(flag_type, payload)
+    gating = is_gating(flag_type)
+    severity = "blocking" if gating else ("high" if row.financial_impact_usd is not None and row.financial_impact_usd >= 100000 else "warning")
+    property_label = None
+    if property_row is not None:
+        property_label = ", ".join(item for item in (
+            property_row.address_line1, property_row.city,
+            property_row.state, property_row.zip5,
+        ) if item)
+    return FlagRecord(id=row.id, property_id=row.property_id, flag_type=flag_type,
+                      payload=payload, label=_flag_label(flag_type), summary=summary,
+                      severity=severity, is_gating=gating, property_label=property_label,
+                      review_guidance=payload.get("review_guidance") or default_guidance,
+                      financial_impact_usd=row.financial_impact_usd,
                       status=row.status or "open", resolution=row.resolution,
                       resolved_value=row.resolved_value, note=row.note, dedupe_key=row.dedupe_key or "",
-                      resolved_at=row.resolved_at)
+                      logical_key=row.logical_key, resolved_at=row.resolved_at)
 
 
 def ranking_entry(row: dbm.Ranking) -> RankingEntry:

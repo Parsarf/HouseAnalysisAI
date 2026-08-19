@@ -302,24 +302,20 @@ class SqlStore:
             "components": json.dumps(json_safe(score.components)),
             "gates": list(score.gates_applied), "computed_at": now})
 
-    def persist_flags(self, property_id: UUID, requests) -> int:
-        """Persist flag requests via WP-9's deduping store, defensively pre-filtered.
+    def persist_flags(self, property_id: UUID, requests, *, reconcile: bool = True) -> int:
+        """Persist findings, reconciling only when the request set is complete.
 
-        Some WP-9 dedupe keys are not property-scoped (e.g. "material-conflict")
-        while the flags table enforces global uniqueness, so keys that already
-        exist anywhere are dropped here instead of failing the whole recompute.
+        Identity resolution can emit a partial flag set before the full property
+        recompute, so that path remains append-only.
         """
+        from flags import persist_flags, sync_flags
+        if not reconcile:
+            return len(persist_flags(self.session, requests))
         if not requests:
-            return 0
-        keys = [request.dedupe_key for request in requests]
-        existing = set(self.session.execute(
-            text("SELECT dedupe_key FROM flags WHERE dedupe_key = ANY(CAST(:keys AS text[]))"),
-            {"keys": keys}).scalars().all())
-        fresh = [request for request in requests if request.dedupe_key not in existing]
-        if not fresh:
-            return 0
-        from flags import persist_flags
-        return len(persist_flags(self.session, fresh))
+            # An empty current finding set still matters: close stale open
+            # findings after a successful recompute.
+            return len(sync_flags(self.session, property_id, []))
+        return len(sync_flags(self.session, property_id, requests))
 
     def mark_recomputed(self, property_id: UUID, underwriting_status: str) -> None:
         # SAVEPOINT: on databases created from the ORM metadata these columns do
@@ -370,7 +366,7 @@ class SqlStore:
             if property_row is not None:
                 property_id = property_row.id
                 report_attached = True
-                self.persist_flags(property_id, getattr(property_row, "identity_flags", []))
+                self.persist_flags(property_id, getattr(property_row, "identity_flags", []), reconcile=False)
         if property_id is not None:
             self.session.execute(
                 text("SELECT id FROM properties WHERE id = :pid FOR UPDATE"),

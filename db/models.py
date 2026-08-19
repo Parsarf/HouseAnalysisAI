@@ -199,6 +199,9 @@ class Flag(Base):
     resolved_value: Mapped[dict | None] = mapped_column(JSON)
     note: Mapped[str | None] = mapped_column(Text)
     dedupe_key: Mapped[str] = mapped_column(String(255), unique=True)
+    logical_key: Mapped[str | None] = mapped_column(String(255), index=True)
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    superseded_by: Mapped[UUID | None] = mapped_column(ForeignKey("flags.id"))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

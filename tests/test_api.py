@@ -595,6 +595,9 @@ def test_reports_endpoint(client, session):
 def test_flags_list_and_resolve(client, session, queue):
     body = client.get("/api/flags").json()
     assert len(body["items"]) == 1
+    assert body["items"][0]["label"] == "Lien Attachment"
+    assert body["items"][0]["summary"] == "Lien attachment status needs review"
+    assert "payload" in body["items"][0]  # supporting data remains available, but is not the UI summary
     flag_id = body["items"][0]["id"]
 
     response = client.post(f"/api/flags/{flag_id}/resolve",
@@ -610,6 +613,20 @@ def test_flags_list_and_resolve(client, session, queue):
     open_after = client.get("/api/flags").json()
     assert open_after["items"] == []
     assert client.post(f"/api/flags/{uuid4()}/resolve", json={"resolution": "approve"}).status_code == 404
+
+
+def test_short_sale_flag_serializer_returns_human_summary():
+    row = dbm.Flag(
+        id=uuid4(), property_id=PID, flag_type="short_sale_candidate",
+        payload={"affected_offer_points": 15, "offer_price_min": "621878.29",
+                 "offer_price_max": "1155000", "scenarios": ["conservative", "expected"],
+                 "reason": "Seller proceeds are insufficient."},
+        financial_impact_usd=Decimal("125000"), status="open",
+        dedupe_key=f"{PID}:short_sale_candidate", logical_key="short_sale_candidate",
+    )
+    serialized = routes_portfolio.serializers.flag_record(row)
+    assert serialized.summary == "15 affected offers · $621,878.29–$1,155,000 · Conservative + Expected"
+    assert serialized.review_guidance
 
 
 # --- notes, saved views -----------------------------------------------------------------

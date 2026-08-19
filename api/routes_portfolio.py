@@ -12,6 +12,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from auth.dependencies import User, current_user, write_user
@@ -281,10 +282,16 @@ def list_flags(status: str = Query(default="open"), property_id: UUID | None = Q
     query = session.query(dbm.Flag)
     if status != "all":
         query = query.filter(dbm.Flag.status == status)
+    # Migration-consolidated duplicates remain in the database for auditability,
+    # but are not part of the human review queue or resolved-history view.
+    query = query.filter(or_(dbm.Flag.resolution.is_(None), dbm.Flag.resolution != "superseded_duplicate"))
     if property_id is not None:
         query = query.filter(dbm.Flag.property_id == property_id)
     rows = query.order_by(dbm.Flag.financial_impact_usd.desc()).limit(limit).all()
-    return {"items": dump([serializers.flag_record(row) for row in rows])}
+    property_ids = {row.property_id for row in rows}
+    properties = session.query(dbm.Property).filter(dbm.Property.id.in_(property_ids)).all() if property_ids else []
+    by_id = {row.id: row for row in properties}
+    return {"items": dump([serializers.flag_record(row, by_id.get(row.property_id)) for row in rows])}
 
 
 @router.post("/flags/{flag_id}/resolve")
@@ -295,11 +302,18 @@ def resolve_flag(flag_id: UUID, body: FlagResolution, session: Session = Depends
         raise AcqError(ErrorCode.NOT_FOUND, "flag not found")
     if row.status == "resolved":
         raise AcqError(ErrorCode.CONFLICT, "flag is already resolved", {"flag_id": str(flag_id)})
+    before = {"status": row.status, "resolution": row.resolution}
     row.status = "resolved"
     row.resolution = body.resolution
     row.note = body.note
     row.resolved_value = body.resolved_value
     row.resolved_at = datetime.now(UTC)
+    if hasattr(session, "execute"):
+        from flags.workflow import _write_history
+        _write_history(session, row.id, f"flag_{body.resolution}", before, {
+            "status": row.status, "resolution": row.resolution, "note": body.note,
+            "user_id": user.id,
+        })
     session.flush()
     enqueue(session, queue, "recompute_property",
             {"property_id": str(row.property_id), "reason": f"flag_resolved:{flag_id}"},

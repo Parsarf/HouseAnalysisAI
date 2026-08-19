@@ -68,7 +68,15 @@ class StrategyResult(ContractModel): strategy: StrategyType; scenario: Scenario;
 class OfferPoint(ContractModel): offer_price: Decimal; scenario: Scenario; confirmed_payoffs: Decimal; potential_payoffs: Decimal; closing_costs: Decimal; proceeds_low: Decimal; proceeds_expected: Decimal; proceeds_high: Decimal; buyer_basis: Decimal; profit: Decimal; roi: Decimal|None=None; is_short_sale: bool; label: str|None=None
 class OfferGrid(ContractModel): property_id: UUID; points: list[OfferPoint]; interpolatable: bool=True
 class ScoreSet(ContractModel): property_id: UUID; scoring_config_id: UUID; fos: Decimal; distress: Decimal; data_confidence: Decimal; risk: Decimal; overall: Decimal; components: dict[str,Decimal]; gates_applied: list[str]; is_rankable: bool; recommended_strategy: StrategyType|None=None; recommended_alternatives: list[StrategyType]=[]
-class FlagRequest(ContractModel): property_id: UUID; flag_type: FlagType; payload: dict[str,Any]; financial_impact_usd: Decimal|None=None; raised_by: str; dedupe_key: str
+class FlagRequest(ContractModel):
+    property_id: UUID
+    flag_type: FlagType
+    payload: dict[str,Any]
+    financial_impact_usd: Decimal|None=None
+    raised_by: str
+    dedupe_key: str
+    logical_key: str|None=None
+    fingerprint: str|None=None
 class FilterClause(ContractModel): field: str; op: Literal["eq","neq","gt","gte","lt","lte","in","between","contains","is_null"]; value: Any=None
 class MoneyResponse(ContractModel): value: Decimal|None; confidence: float=Field(ge=0,le=1); source_kind: SourceKind; is_estimated: bool; null_reason: NullReason|None=None
 class JobPayload(ContractModel): name: str; payload: dict[str,Any]={}; dedupe_key: str|None=None
@@ -99,9 +107,12 @@ class PropertyListPage(ContractModel):
     items: list[PropertySummary]; next_cursor: str|None=None
 class FlagRecord(ContractModel):
     id: UUID; property_id: UUID; flag_type: FlagType; payload: dict[str, Any]={}
+    label: str|None=None; summary: str|None=None; severity: str="warning"
+    is_gating: bool=False; property_label: str|None=None; review_guidance: str|None=None
     financial_impact_usd: Decimal|None=None; status: str="open"
     resolution: str|None=None; resolved_value: dict[str, Any]|None=None
-    note: str|None=None; dedupe_key: str=""; resolved_at: datetime|None=None
+    note: str|None=None; dedupe_key: str=""; logical_key: str|None=None
+    resolved_at: datetime|None=None
 class FlagResolution(ContractModel):
     resolution: Literal["approve", "reject", "replace", "dismiss"]
     note: str|None=None; resolved_value: dict[str, Any]|None=None

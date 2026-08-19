@@ -449,8 +449,12 @@ export interface FlagRecord {
   id: string;
   property_id: string;
   flag_type: string;
+  label?: string | null;
+  summary?: string | null;
   severity?: string;
   is_gating?: boolean;
+  property_label?: string | null;
+  review_guidance?: string | null;
   payload: Record<string, unknown>;
   financial_impact_usd: string | null;
   raised_by?: string;

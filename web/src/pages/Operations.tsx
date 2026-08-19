@@ -135,11 +135,29 @@ function FlagResolver(props: { flag: FlagRecord; onResolved: () => void }) {
   return <div className="resolve-wrap">{!open ? <button className="btn btn-secondary btn-small" disabled={user.read_only} onClick={() => setOpen(true)}>Resolve</button> : <div className="resolve-panel"><select className="select-input" value={resolution} onChange={(e) => setResolution(e.target.value as typeof resolution)}><option value="approve">Approve</option><option value="reject">Reject</option><option value="replace">Replace</option><option value="dismiss">Dismiss</option></select>{resolution === "replace" && <input className="text-input" value={replacement} onChange={(e) => setReplacement(e.target.value)} placeholder="Replacement value" />}<input className="text-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Resolution note" /><button className="btn btn-primary btn-small" disabled={busy || (resolution === "replace" && !replacement)} onClick={submit}>{busy ? "Saving…" : "Confirm"}</button><button className="btn btn-ghost btn-small" onClick={() => setOpen(false)}>Cancel</button>{message && <small>{message}</small>}</div>}</div>;
 }
 
+function FlagDetails({ flag }: { flag: FlagRecord }) {
+  const payload = flag.payload ?? {};
+  const keyLabels: Record<string, string> = {
+    affected_offer_points: "Affected offers",
+    affected_scenarios: "Scenario count",
+    underwriting_scenario_count: "Underwriting scenarios",
+    offer_price_min: "Offer minimum",
+    offer_price_max: "Offer maximum",
+    proceeds_low_min: "Lowest seller proceeds",
+    proceeds_low_max: "Highest seller proceeds",
+    scenarios: "Scenarios",
+    reason: "Why it was flagged",
+    review_guidance: "Recommended review",
+  };
+  const entries = Object.entries(payload).filter(([key]) => key !== "logical_key" && key !== "fingerprint");
+  return <div className="flag-details"><span>{flag.summary ?? flag.label ?? flag.flag_type.replace(/_/g, " ")}</span>{flag.review_guidance && <small>{flag.review_guidance}</small>}<details><summary>View supporting details</summary><dl>{entries.map(([key, value]) => <div key={key}><dt>{keyLabels[key] ?? key.replace(/_/g, " ")}</dt><dd>{Array.isArray(value) ? value.map(String).join(" + ") : String(value)}</dd></div>)}</dl></details></div>;
+}
+
 export function FlagsPage() {
   const [status, setStatus] = useState<"open" | "resolved">("open");
   const state = useLoad(() => listFlags(status), [status]);
   return <section><PageHeader eyebrow="Risk operations" title="Flags queue" description="Resolve uncertainty in order of financial impact." actions={<div className="segmented"><button className={status === "open" ? "active" : ""} onClick={() => setStatus("open")}>Open</button><button className={status === "resolved" ? "active" : ""} onClick={() => setStatus("resolved")}>Resolved</button></div>} />
-    {state.loading ? <LoadingGrid /> : state.error ? <ErrorBlock error={state.error} retry={state.refresh} /> : !state.data?.items.length ? <div className="empty-state panel"><strong>No {status} flags</strong><span>{status === "open" ? "The review queue is clear." : "Resolved decisions will appear here."}</span></div> : <div className="panel flush"><div className="table-wrap"><table className="data-table"><thead><tr><th>Impact</th><th>Flag</th><th>Property</th><th>Context</th><th /></tr></thead><tbody>{[...state.data.items].sort((a,b) => Number(b.financial_impact_usd ?? 0) - Number(a.financial_impact_usd ?? 0)).map((flag) => <tr key={flag.id}><td className="impact"><MoneyText money={money(flag.financial_impact_usd, true)} /></td><td><span className="type-chip">{flag.flag_type.replace(/_/g, " ")}</span></td><td><Link className="property-link" to={`/properties/${flag.property_id}`}>View property</Link></td><td><code className="payload-summary">{JSON.stringify(flag.payload)}</code></td><td>{status === "open" && <FlagResolver flag={flag} onResolved={state.refresh} />}</td></tr>)}</tbody></table></div></div>}
+    {state.loading ? <LoadingGrid /> : state.error ? <ErrorBlock error={state.error} retry={state.refresh} /> : !state.data?.items.length ? <div className="empty-state panel"><strong>No {status} flags</strong><span>{status === "open" ? "The review queue is clear." : "Resolved decisions will appear here."}</span></div> : <div className="panel flush"><div className="table-wrap"><table className="data-table"><thead><tr><th>Impact</th><th>Flag</th><th>Property</th><th>Details</th><th>Status</th><th>Action</th></tr></thead><tbody>{[...state.data.items].sort((a,b) => Number(b.financial_impact_usd ?? 0) - Number(a.financial_impact_usd ?? 0)).map((flag) => <tr key={flag.id}><td className="impact"><MoneyText money={money(flag.financial_impact_usd, true)} /></td><td><span className={`type-chip severity-${flag.severity ?? "warning"}`}>{flag.label ?? flag.flag_type.replace(/_/g, " ")}</span>{flag.is_gating && <small className="flag-blocking">Blocks ranking</small>}</td><td><Link className="property-link" to={`/properties/${flag.property_id}`}>{flag.property_label ?? "View property"}</Link></td><td><FlagDetails flag={flag} /></td><td>{flag.status}</td><td>{status === "open" && <FlagResolver flag={flag} onResolved={state.refresh} />}</td></tr>)}</tbody></table></div></div>}
   </section>;
 }
 
