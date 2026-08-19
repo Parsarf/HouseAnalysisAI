@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS flags_logical_key_idx ON flags(property_id, flag_type
 CREATE UNIQUE INDEX IF NOT EXISTS flags_open_property_logical_uq ON flags(property_id, flag_type, logical_key) WHERE status = 'open' AND logical_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS change_events (id uuid PRIMARY KEY, property_id uuid REFERENCES properties(id), change_type text, field_path text, old_value jsonb, new_value jsonb, source_report_id uuid REFERENCES reports(id), score_delta numeric(10,6), detected_at timestamptz DEFAULT now());
 CREATE TABLE IF NOT EXISTS property_notes (id uuid PRIMARY KEY, property_id uuid REFERENCES properties(id), body text NOT NULL, created_at timestamptz DEFAULT now());
-CREATE TABLE IF NOT EXISTS realized_deals (id uuid PRIMARY KEY, property_id uuid REFERENCES properties(id), purchase_price numeric(14,2), actual_repairs numeric(14,2), actual_holding_days integer, sale_price numeric(14,2), actual_costs numeric(14,2), outcome text, notes text, closed_at date);
+CREATE TABLE IF NOT EXISTS realized_deals (id uuid PRIMARY KEY, property_id uuid REFERENCES properties(id), purchase_price numeric(14,2), actual_repairs numeric(14,2), actual_holding_days integer, sale_price numeric(14,2), actual_costs numeric(14,2), outcome text, notes text, closed_at date, created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS settings (key text PRIMARY KEY, value jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS history (id uuid PRIMARY KEY, entity_type text, entity_id uuid, action text, before jsonb, after jsonb, at timestamptz DEFAULT now());
 CREATE TABLE IF NOT EXISTS saved_views (id uuid PRIMARY KEY, name text, filters jsonb, columns jsonb, created_at timestamptz DEFAULT now());

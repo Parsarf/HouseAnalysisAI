@@ -213,8 +213,12 @@ def paste(body: dict = Body(...), session: Session = Depends(get_session),
     session.add(batch)
     report, created = ingest_paste(session, text, settings.document_root, batch_id=batch.id,
                                    storage=get_document_storage())
-    if created:
-        enqueue(session, queue, "ingest_document", {"report_id": str(report.id)}, f"ingest:{report.id}")
+    # Reattach an idempotent duplicate to this batch and enqueue it as well.
+    # The worker's report-level idempotency makes this safe while ensuring the
+    # newly-created batch is advanced to a terminal state.
+    if not created:
+        report.batch_id = batch.id
+    enqueue(session, queue, "ingest_document", {"report_id": str(report.id)}, f"ingest:{report.id}")
     return {"batch_id": str(batch.id), "report_ids": [str(report.id)], "count": 1}
 
 

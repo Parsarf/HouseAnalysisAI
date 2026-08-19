@@ -1019,12 +1019,14 @@ def test_flag_resolve_requires_write(readonly_client):
 def test_spa_serving(client):
     from pathlib import Path
 
+    dist = Path(__file__).parent.parent / "web" / "dist"
+    if not (dist / "index.html").exists():
+        pytest.skip("web/dist is absent; run the frontend build before SPA asset verification")
     index = client.get("/")
     assert index.status_code == 200 and "text/html" in index.headers["content-type"]
     deep = client.get("/properties/some-id")
     assert deep.status_code == 200 and "text/html" in deep.headers["content-type"]
-    assets = sorted((Path(__file__).parent.parent / "web" / "dist" / "assets").glob("*")
-                    if (Path(__file__).parent.parent / "web" / "dist" / "assets").exists() else [])
+    assets = sorted((dist / "assets").glob("*") if (dist / "assets").exists() else [])
     if not assets:
         pytest.skip("web/dist is absent; run the frontend build before SPA asset verification")
     asset = client.get(f"/assets/{assets[0].name}")
