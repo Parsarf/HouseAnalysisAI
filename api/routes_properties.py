@@ -306,11 +306,11 @@ def create_offer(property_id: UUID, body: OfferRequest, session: Session = Depen
 
 
 @router.post("/{property_id}/recompute")
-def recompute(property_id: UUID, session: Session = Depends(get_session),
+def recompute(property_id: UUID, body: dict | None = None, session: Session = Depends(get_session),
               queue: PostgresJobQueue = Depends(get_queue), user: User = Depends(write_user)) -> dict:
     _get_property(session, property_id)
     job_id = enqueue(session, queue, "recompute_property",
-                     {"property_id": str(property_id), "reason": "manual"},
+                     {"property_id": str(property_id), "reason": (body or {}).get("reason") or "manual"},
                      f"recompute:{property_id}")
     return {"enqueued": True, "job_id": str(job_id)}
 
@@ -333,7 +333,7 @@ def add_fact(property_id: UUID, body: ExtractedFactDraft, session: Session = Dep
     session.flush()
     enqueue(session, queue, "recompute_property",
             {"property_id": str(property_id), "reason": "human_fact"}, f"recompute:{property_id}")
-    return {"id": str(fact.id)}
+    return {"fact_id": str(fact.id)}
 
 
 @router.get("/{property_id}/notes")

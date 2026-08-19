@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware
 
-from auth.dependencies import User, current_user, make_session, write_user
+from auth.dependencies import SESSION_TTL_SECONDS, User, current_user, make_session, write_user
 from auth.service import verify_password
 from common.errors import AcqError, ErrorCode
 from common.logging import configure_logging
@@ -111,10 +111,19 @@ def readyz(session: Session = Depends(get_session)) -> dict[str, str]:
 @app.post("/api/auth/login")
 def login(password: str = Form(...), read_only: bool = Form(default=False)):
     if settings.auth_password_hash is None or not verify_password(password, settings.auth_password_hash):
-        return JSONResponse(status_code=401, content=_envelope("invalid_input", "invalid credentials"))
+        return JSONResponse(status_code=401, content=_envelope("unauthorized", "invalid credentials"))
     response = JSONResponse({"ok": True})
     response.set_cookie("session_cookie", make_session("owner", read_only, settings.session_secret),
-                        httponly=True, samesite=settings.cookie_samesite, secure=settings.secure_cookie)
+                        httponly=True, samesite=settings.cookie_samesite, secure=settings.secure_cookie,
+                        max_age=SESSION_TTL_SECONDS)
+    return response
+
+
+@app.post("/api/auth/logout")
+def logout() -> JSONResponse:
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("session_cookie", samesite=settings.cookie_samesite,
+                          secure=settings.secure_cookie)
     return response
 
 

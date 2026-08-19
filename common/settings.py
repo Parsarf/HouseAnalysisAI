@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     extraction_api_key: str | None = None
     extraction_base_url: str = "https://api.openai.com/v1"
     whole_pdf_model: str = "gpt-4o-mini"
+    extraction_cheap_model: str = "gpt-4o-mini"
+    extraction_frontier_model: str = "gpt-4o"
     extraction_timeout_seconds: float = 180.0
     extraction_max_retries: int = 3
 
@@ -47,6 +49,12 @@ class Settings(BaseSettings):
                     missing.append(name)
         if self.analysis_pipeline == "whole_pdf" and not self.extraction_api_key:
             missing.append("ACQ_EXTRACTION_API_KEY")
+        if self.analysis_pipeline == "legacy":
+            try:
+                from ingestion.ocr import get_backend
+                get_backend()
+            except Exception:
+                missing.append("legacy OCR backend")
         if missing:
             raise RuntimeError("missing production configuration: " + ", ".join(missing))
 

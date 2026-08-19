@@ -323,7 +323,7 @@ def test_login_sets_session_cookie(client, monkeypatch):
     monkeypatch.setattr(settings, "auth_password_hash", hash_password("s3cret"))
     client.cookies.clear()
     bad = client.post("/api/auth/login", data={"password": "wrong"})
-    assert bad.status_code == 401 and bad.json()["error"]["code"] == "invalid_input"
+    assert bad.status_code == 401 and bad.json()["error"]["code"] == "unauthorized"
     ok = client.post("/api/auth/login", data={"password": "s3cret"})
     assert ok.status_code == 200 and "session_cookie" in ok.cookies
 
@@ -865,7 +865,7 @@ def test_add_human_fact(client, session, queue):
         "entity_local_id": "p1", "field_path": "property.sqft", "value_raw": "1900",
         "value_parsed": "1900", "page_number": 1, "snippet": "agent said 1900 sqft",
         "extraction_confidence": 1.0}).json()
-    fact = next(f for f in session.rows[dbm.ExtractedFact] if str(f.id) == body["id"])
+    fact = next(f for f in session.rows[dbm.ExtractedFact] if str(f.id) == body["fact_id"])
     assert fact.source_kind == "human"
     assert queue.jobs[-1]["name"] == "recompute_property"
 

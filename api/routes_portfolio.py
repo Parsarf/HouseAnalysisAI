@@ -477,6 +477,10 @@ def export_csv(filters: str | None = Query(default=None), columns: str | None = 
             .order_by(dbm.Property.created_at.desc(), dbm.Property.id.desc())
             .all())
     selected = [column.strip() for column in columns.split(",")] if columns else DEFAULT_EXPORT_COLUMNS
+    allowed = set(dbm.Property.__table__.columns.keys()) | set(DEFAULT_EXPORT_COLUMNS)
+    unknown = [column for column in selected if column not in allowed]
+    if unknown:
+        raise AcqError(ErrorCode.INVALID_INPUT, "unknown export column", {"columns": unknown})
     records = (json_safe({column: getattr(row, column, None) for column in selected}) for row in rows)
     stream = stream_properties(records, selected)
     return StreamingResponse(stream, media_type="text/csv",

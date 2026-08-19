@@ -78,9 +78,8 @@ export default function App() {
     return () => setUnauthorizedHandler(null);
   }, []);
   const signOut = () => {
-    // There is no logout endpoint; the HttpOnly session cookie remains valid until expiry.
-    setUser(null);
-    navigate("/login");
+    fetch("/api/auth/logout", { method: "POST", credentials: "include" })
+      .finally(() => { setUser(null); navigate("/login"); });
   };
   if (booting) return <div className="boot-splash"><span className="brand-mark">A</span><div className="boot-line"><i /></div><p>Opening your workspace</p></div>;
   if (!user) return <LoginPage onAuthenticated={(value) => { setUser(value); navigate("/"); }} />;
