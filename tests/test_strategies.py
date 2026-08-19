@@ -2,6 +2,8 @@ import itertools
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from contracts import (
     AcquisitionCosts,
     AddressBlock,
@@ -53,6 +55,10 @@ REPAIRS = {CONS: D("28000"), EXP: D("20000"), OPT: D("15000")}
 HOLDING = {CONS: D("4284.96"), EXP: D("3140.00"), OPT: D("2567.52")}
 ACQUISITION = D("2100")
 RESALE_PCT = D(".0725")  # commission .05 + seller closing .01 + concessions .01 + misc .0025
+
+
+def acquisition_at(price):
+    return (D(price) * D(".025") + D("3600")).quantize(CENT)
 
 
 def assumptions(rental_extra: dict | None = None):
@@ -111,11 +117,14 @@ def test_cash_profit_uses_as_is_value_and_full_resale_pct():
     property = make_property()
     underwriting = make_underwriting(property.property_id)
     result = cash(property, underwriting, assumptions(), D("150000"), EXP)
-    all_in = D("150000") + ACQUISITION + D("20000") + HOLDING[EXP]
+    acquisition = acquisition_at("150000")
+    all_in = D("150000") + acquisition + D("20000") + HOLDING[EXP]
     assert result.all_in_basis == all_in
     # profit = V*(1-resale_pct) - all_in with the as-is value, not ARV
     assert result.profit == (D("300000") * (D("1") - RESALE_PCT) - all_in).quantize(CENT)
-    assert result.mao == D("300000") * D(".8") - D("20000") - HOLDING[EXP] - ACQUISITION - D("300000") * RESALE_PCT
+    mao_available = (D("300000") * D(".8") - D("20000") - HOLDING[EXP]
+                     - D("300000") * RESALE_PCT - D("3600"))
+    assert result.mao == (mao_available / D("1.025")).quantize(CENT)
     assert result.roi == (result.profit / all_in).quantize(Q6)
     assert result.inputs_echo == {"purchase_price": D("150000")}
 
@@ -143,17 +152,18 @@ def test_flip_financing_staging_and_true_coc():
     assert result.metrics["financing"] == financing
     assert result.metrics["financing"] != D("150000") * D(".02")  # regression: interest accrues over holding
     resale_flip = (arv * RESALE_PCT + D("3500")).quantize(CENT)  # staging is flip-only
-    all_in = D("150000") + D("20000") + HOLDING[EXP] + financing + ACQUISITION + resale_flip
+    acquisition = acquisition_at("150000")
+    all_in = D("150000") + D("20000") + HOLDING[EXP] + financing + acquisition + resale_flip
     assert result.all_in_basis == all_in
     assert result.profit == arv - all_in
     down = D("150000") + D("20000") - loan
-    coc_denominator = down + HOLDING[EXP] + ACQUISITION
+    coc_denominator = down + HOLDING[EXP] + acquisition
     assert result.metrics["coc"] == (result.profit / coc_denominator).quantize(Q6)
     assert result.metrics["margin"] == (result.profit / arv).quantize(Q6)
     # MAO solves financing self-consistently: paying the MAO leaves the target margin
     coeff = D(".85") * (D(".02") + D(".1") / D("12") * months)
-    k_const = (arv * D(".8") - D("20000") - HOLDING[EXP] - resale_flip - ACQUISITION).quantize(CENT)
-    assert result.mao == ((k_const - coeff * D("20000") - D("1200")) / (D("1") + coeff)).quantize(CENT)
+    k_const = arv * D(".8") - D("20000") - HOLDING[EXP] - resale_flip - D("3600") - D("1200")
+    assert result.mao == ((k_const - coeff * D("20000")) / (D("1.025") + coeff)).quantize(CENT)
 
 
 def test_flip_unavailable_without_sqft():
@@ -205,7 +215,7 @@ def test_rental_noi_opex_and_unlevered_returns():
     assert result.metrics["cap_rate"] == (noi / price).quantize(Q6)
     assert result.metrics["cash_flow"] == noi  # no rental debt parameterized
     assert result.metrics["dscr"] is None
-    invested = price + ACQUISITION + D("20000")
+    invested = price + acquisition_at(price) + D("20000")
     assert result.metrics["coc"] == (noi / invested).quantize(Q6)
     assert result.profit == noi
     assert result.status == "viable"
@@ -222,7 +232,7 @@ def test_rental_levered_debt_service_dscr_and_coc():
     debt_service = noi - cash_flow
     assert D("14000") < debt_service < D("16000")  # 75% LTV, 7%, 30yr amortization
     assert result.metrics["dscr"] == (noi / debt_service).quantize(Q6)
-    invested = price - D("187500") + ACQUISITION + D("20000")
+    invested = price - D("187500") + acquisition_at(price) + D("20000")
     assert result.metrics["coc"] == (cash_flow / invested).quantize(Q6)
     assert result.status == ("viable" if cash_flow > 0 else "not_viable")
 
@@ -297,12 +307,15 @@ def test_foreclosure_full_math_and_flags():
     underwriting = make_underwriting(property.property_id)
     result = foreclosure(property, underwriting, assumptions(), D("100000"), EXP)
     # published bid + junior mortgage + recorded liens + delinquent taxes
-    assert result.metrics["total_obligations"] == D("100000") + D("20000") + D("8000") + D("12000") + D("5000")
+    transfer_costs = acquisition_at("100000")
+    assert result.metrics["transfer_costs"] == transfer_costs
+    assert result.metrics["total_obligations"] == D("100000") + D("20000") + D("8000") + D("12000") + D("5000") + transfer_costs
     # auction holding: 2 months of conservative monthly holding
     monthly = (D("3600") / D("12") + D("250000") * D(".0085") / D("12") + D("180")).quantize(CENT)
     assert result.metrics["auction_holding"] == (monthly * D("2")).quantize(CENT)
     # interior unknown -> conservative (high) repairs in every scenario
-    expected_spread = (D("250000") - D("145000") - D("28000") - result.metrics["auction_holding"]).quantize(CENT)
+    expected_spread = (D("250000") - D("145000") - transfer_costs
+                       - D("28000") - result.metrics["auction_holding"]).quantize(CENT)
     assert result.profit == expected_spread
     assert result.metrics["spread"] == expected_spread
     assert result.status == "viable"
@@ -321,7 +334,8 @@ def test_foreclosure_known_interior_uses_scenario_repairs():
                                      foreclosure=ForeclosureState(stage="nts", is_active=True, published_bid=tv("100000")))
     underwriting = make_underwriting(property.property_id)
     result = foreclosure(property, underwriting, assumptions(), D("100000"), EXP)
-    expected_spread = (D("250000") - D("145000") - D("20000") - result.metrics["auction_holding"]).quantize(CENT)
+    expected_spread = (D("250000") - D("145000") - acquisition_at("100000")
+                       - D("20000") - result.metrics["auction_holding"]).quantize(CENT)
     assert result.profit == expected_spread
     assert result.metrics["flag_interior_unknown"] == D("0")
     assert result.metrics["flag_postponements_ge_3"] == D("0")
@@ -333,7 +347,23 @@ def test_foreclosure_bid_falls_back_to_first_balance():
                                      liens=[], hoa=HoaBlock(), ownership=OwnershipBlock())
     underwriting = make_underwriting(property.property_id)
     result = foreclosure(property, underwriting, assumptions(), D("100000"), EXP)
-    assert result.metrics["total_obligations"] == D("180000") + D("5000")
+    assert result.metrics["total_obligations"] == D("180000") + D("5000") + acquisition_at("180000")
+
+
+def test_foreclosure_deduplicates_position_aliases():
+    property = _foreclosure_property(
+        foreclosure=ForeclosureState(stage="nts", is_active=True, published_bid=tv("100000")),
+        mortgages=[
+            MortgageRecord(position="first", estimated_balance=tv("90000")),
+            MortgageRecord(position="1", estimated_balance=tv("95000")),
+            MortgageRecord(position="second", estimated_balance=tv("30000")),
+            MortgageRecord(position="2", estimated_balance=tv("35000")),
+        ],
+        liens=[], hoa=HoaBlock(), ownership=OwnershipBlock(),
+    )
+    result = foreclosure(property, make_underwriting(property.property_id), assumptions(), D("100000"), EXP)
+    expected = D("100000") + D("35000") + D("5000") + acquisition_at("100000")
+    assert result.metrics["total_obligations"] == expected
 
 
 def test_foreclosure_unavailable_without_active_sale():
@@ -371,7 +401,7 @@ def test_offer_grid_points_and_costs():
     assert point.proceeds_expected == high - (D("20000") * D(".35")).quantize(CENT)
     assert point.proceeds_low == high - D("20000")
     # buyer basis carries acquisition + repairs + holding; profit nets resale on the as-is value
-    assert point.buyer_basis == offer + ACQUISITION + D("20000") + HOLDING[EXP]
+    assert point.buyer_basis == offer + acquisition_at(offer) + D("20000") + HOLDING[EXP]
     assert point.profit == (D("300000") * (D("1") - RESALE_PCT) - point.buyer_basis).quantize(CENT)
     assert point.roi == (point.profit / point.buyer_basis).quantize(Q6)
     # MAO markers match the strategy results for the same scenario
@@ -387,7 +417,24 @@ def test_offer_grid_mao_cash_value():
     underwriting = make_underwriting(property.property_id)
     grid = offer_grid(underwriting, property.property_id, assumptions(), D("150000"))
     marked = next(p for p in grid.points if p.label == "mao_cash" and p.scenario == EXP)
-    assert marked.offer_price == D("300000") * D(".8") - D("20000") - HOLDING[EXP] - ACQUISITION - D("300000") * RESALE_PCT
+    available = (D("300000") * D(".8") - D("20000") - HOLDING[EXP]
+                 - D("3600") - D("300000") * RESALE_PCT)
+    assert marked.offer_price == (available / D("1.025")).quantize(CENT)
+
+
+def test_expected_proceeds_include_non_lien_potential_amounts():
+    property = make_property()
+    breakdown = [{
+        "label": "mortgage:heloc:undrawn", "amount": D("30000"),
+        "expected_amount": D("30000"), "basis": "undrawn_heloc_capacity",
+        "is_estimated": True,
+    }]
+    underwriting = make_underwriting(
+        property.property_id, confirmed=D("0"), potential=D("30000"), breakdown=breakdown,
+    )
+    point = offer_point(underwriting, assumptions(), D("200000"), EXP)
+    assert point.proceeds_expected == point.proceeds_high - D("30000")
+    assert point.proceeds_low == point.proceeds_expected
 
 
 def test_offer_grid_linearity_licenses_interpolation():
@@ -428,6 +475,16 @@ def test_offer_grid_empty_without_value():
     underwriting.value = ValueBlock()
     grid = offer_grid(underwriting, property.property_id, assumptions(), D("150000"))
     assert grid.points == []
+
+
+def test_offers_unavailable_without_liability_data():
+    property = make_property()
+    underwriting = make_underwriting(property.property_id)
+    underwriting.status = "insufficient_data"
+    underwriting.liabilities = LiabilityBlock(confirmed=None, potential=None, maximum=None)
+    assert offer_grid(underwriting, property.property_id, assumptions(), D("150000")).points == []
+    with pytest.raises(ValueError, match="liability data"):
+        offer_point(underwriting, assumptions(), D("150000"), EXP)
 
 
 def test_all_strategies_six_by_three_and_deterministic():

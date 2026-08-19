@@ -436,7 +436,9 @@ def analyze_report(
         )
         created = bool(getattr(property_row, "identity_created", False))
         _update_property_fields(property_row, validated.extraction)
-        normalized_record = canonical_to_normalized(validated.extraction, property_row.id)
+        normalized_record = canonical_to_normalized(
+            validated.extraction, property_row.id, report_date=report.generated_date,
+        )
         extraction_row.property_id = property_row.id
         extraction_row.raw_json = source_payload
         extraction_row.normalized_json = {

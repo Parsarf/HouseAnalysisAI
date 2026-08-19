@@ -12,17 +12,16 @@ This module deliberately does NOT import ``finance``, ``strategies`` or
 ``scoring`` -- the goldens are the independent hand-computation those engines
 are checked against (tests/test_golden_fixtures.py).
 
-GOLDEN FORMULA SET v1 (interpretation decisions, all traced to the spec):
+GOLDEN FORMULA SET v2 (interpretation decisions, all traced to the spec):
 
 General
 - Money quantized to 0.01 ROUND_HALF_UP at every labelled step; downstream
   steps consume the quantized value ("calculator style", fully auditable).
   Ratios quantized to 6 dp, scores/distress points to 4 dp, dispersion to 6 dp.
-- Reference date for every date-relative term = ``data_quality.newest_report_date``.
-  If absent, date-relative terms are 0 (no evidence of recency). Engines must be
-  deterministic, so wall-clock dates are never used.
-- months_between(a, b) = (b.year-a.year)*12 + (b.month-a.month) (fixture event
-  dates are all on the 1st of a month).
+- Scoring date-relative terms use the pinned ``GOLDEN_AS_OF`` date. Valuation
+  candidate recency is measured from ``data_quality.newest_report_date``.
+  Engines receive the same explicit date, so wall-clock dates are never used.
+- months_between(a, b) = exact elapsed days / 30.4375.
 - decay(months, half_life) = 0.5 ** (months / half_life).
 
 Value (spec S7.2)
@@ -127,19 +126,21 @@ Offer grid (spec S9)
 
 Scoring (spec S10; fixed scoring_config_id below; expected-scenario inputs)
 - Best strategy = viable expected-scenario result (subject_to excluded) with
-  the highest profit; tie-break priority cash > flip > wholesale > rental >
-  foreclosure. alternatives = remaining viable strategies by profit desc.
+  the highest normalized profit; tie-break priority cash > flip > wholesale >
+  rental > foreclosure. Alternatives are distinct strategies within five
+  normalized-profit points of the best, in priority order.
 - FOS = 100*(.30 n(profit,0,150k) + .25 n(roi,0,.5) + .20 n(equity_pct,0,.6)
   + .15 n(discount_to_value,0,.35) + .10 n(margin_of_safety,0,.35));
   discount_to_value = (V_exp - MAO_best)/V_exp. With no viable strategy the
   strategy-derived terms are 0 and the equity term still counts.
 - Distress: spec point table, each item x decay(months_since_event, 18),
-  per-category caps, capped at 100. NTS base 30 when filed <=30 days before
-  the reference date else 24. "high equity" = expected gross equity_pct >= 0.5.
+  per-category caps, capped at 100. NTS base 30 when the scheduled sale is
+  within 30 days, else 24. Multiple active bankruptcies contribute the active
+  category once. "high equity" = expected gross equity_pct >= 0.5.
 - DCS = 100*(.30 coverage + .20 corroboration + .20 recency
   + .15 (1 - min(1, material_conflicts/5)) + .10 verified/22
   + .05 mean_extraction_confidence); corroboration = (# fields with >=2
-  sources)/22; recency = 1 when a newest_report_date exists else 0.
+  sources)/22; recency decays from newest_report_date with a 180-day half-life.
 - RISK = clamp(6*active_liens + 15*active_bk + 12*(stage in nts/auction)
   + 10*owner_only_liens_over_10k + 10*title_flags + 8*owner_occupied
   + 8*hoa_arrears + 10*material_conflicts + 12*(DCS<50) + 6*federal_tax_lien,
@@ -173,6 +174,8 @@ Q2 = Decimal("0.01")
 Q4 = Decimal("0.0001")
 Q6 = Decimal("0.000001")
 SCORING_CONFIG_ID = "20000000-0000-0000-0000-000000000001"
+GOLDEN_AS_OF = date(2026, 8, 18)
+DAYS_PER_MONTH = Decimal("30.4375")
 STRATEGY_PRIORITY = [
     StrategyType.CASH,
     StrategyType.FLIP,
@@ -207,8 +210,18 @@ def note(fixture: str, assumption: str, stage: str, step: str, formula: str, inp
     return value
 
 
-def months_between(start: date, end: date) -> int:
-    return (end.year - start.year) * 12 + (end.month - start.month)
+def months_between(start: date, end: date) -> Decimal:
+    return Decimal(max(0, (end - start).days)) / DAYS_PER_MONTH
+
+
+def transfer_rate(key: str | None) -> Decimal:
+    rates = {"CA": Decimal("0.0011"), "FL": Decimal("0.0070"),
+             "NY": Decimal("0.0040"), "TX": Decimal("0"),
+             "WA": Decimal("0.0128")}
+    if not key:
+        return Decimal("0")
+    normalized = key.strip().upper()
+    return rates.get(normalized, rates.get(normalized.split(":", 1)[0], Decimal("0")))
 
 
 def decay(months: Decimal, half_life: Decimal) -> Decimal:
@@ -286,13 +299,20 @@ def underwrite(fixture: str, record: NormalizedProperty, a: AssumptionSet) -> di
         basis = lien.attachment_basis
         if amount and (lien.amount is None or lien.amount.value is None):
             potential += amount
-            potential_weighted += q(amount * a.attachment_probability[basis])
+            expected_amount = q(amount * a.attachment_probability[basis])
+            potential_weighted += expected_amount
         elif basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY:
             confirmed += amount
+            expected_amount = None
         else:
             potential += amount
-            potential_weighted += q(amount * a.attachment_probability[basis])
-        breakdown.append({"label": lien.lien_type, "amount": amount, "basis": basis.value, "is_estimated": estimated})
+            expected_amount = q(amount * a.attachment_probability[basis])
+            potential_weighted += expected_amount
+        item = {"label": lien.lien_type, "amount": amount, "basis": basis.value,
+                "is_estimated": estimated}
+        if expected_amount is not None:
+            item["expected_amount"] = expected_amount
+        breakdown.append(item)
     for label, value in (("delinquent_taxes", tracked(record.taxes.delinquent_amount)),
                          ("hoa_arrears", tracked(record.hoa.arrears))):
         if value is not None:
@@ -429,6 +449,22 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
     if price is not None:
         note(fixture, name, stage, "purchase_price", "round_5000(0.75 x V_exp)", f"V_exp={v_exp}", price)
     resale_pct = a.resale.commission_pct + a.resale.seller_closing_pct + a.resale.concessions_pct + a.resale.misc_pct
+    acq_pct = (a.acquisition.closing_pct + a.acquisition.title_pct
+               + a.acquisition.acq_fee_pct + transfer_rate(a.acquisition.transfer_tax_lookup_key))
+    acq_flat = a.acquisition.escrow_flat + a.acquisition.inspection_flat + a.acquisition.legal_flat
+
+    def acquisition_at(amount: Decimal) -> Decimal:
+        return q(amount * acq_pct + acq_flat)
+
+    def cash_mao(value: Decimal, cost: dict) -> Decimal:
+        available = (value * (1 - a.strategy.cash_target_margin) - cost["repairs"]
+                     - cost["holding"] - cost["resale"] - acq_flat)
+        return q(available / (1 + acq_pct))
+
+    def is_first(mortgage) -> bool:
+        position = mortgage.position.strip().casefold()
+        return position in {"first", "1", "1st"} or position.startswith("first")
+
     sqft = tracked(record.attributes.sqft)
     results: list[dict] = []
 
@@ -457,10 +493,10 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
         if v_as_is is None or price is None:
             r = unavailable(StrategyType.CASH, s, "no_value_data")
         else:
-            all_in = q(price + cost["acquisition"] + cost["repairs"] + cost["holding"])
+            acquisition = acquisition_at(price)
+            all_in = q(price + acquisition + cost["repairs"] + cost["holding"])
             profit = q(v_as_is * (1 - resale_pct) - all_in)
-            mao = q(v_as_is * (1 - a.strategy.cash_target_margin) - cost["repairs"] - cost["holding"]
-                    - cost["acquisition"] - cost["resale"])
+            mao = cash_mao(v_as_is, cost)
             r.update(status="viable" if profit >= 0 else "not_viable", mao=mao, all_in_basis=all_in, profit=profit,
                      roi=q(profit / all_in, Q6) if all_in else None,
                      margin_of_safety=q((v_as_is - all_in) / v_as_is, Q6) if v_as_is else None)
@@ -481,14 +517,16 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
             loan = q(hm["ltv"] * (price + cost["repairs"]))
             financing = q(hm["points"] * loan + a.acquisition.financing_flat + loan * hm["rate"] / 12 * months)
             resale_flip = q(v * resale_pct + a.resale.staging_flat)
-            all_in = q(price + cost["repairs"] + cost["holding"] + financing + cost["acquisition"] + resale_flip)
+            acquisition = acquisition_at(price)
+            all_in = q(price + cost["repairs"] + cost["holding"] + financing + acquisition + resale_flip)
             profit = q(v - all_in)
             down = q(price + cost["repairs"] - loan)
-            coc_den = down + cost["holding"] + cost["acquisition"]
+            coc_den = down + cost["holding"] + acquisition
             margin_target = a.strategy.flip_target_margin_by_arv_band.get("default", Decimal("0.2"))
             coeff = hm["ltv"] * (hm["points"] + hm["rate"] / 12 * months)
-            k_const = q(v * (1 - margin_target) - cost["repairs"] - cost["holding"] - resale_flip - cost["acquisition"])
-            mao = q((k_const - coeff * cost["repairs"] - a.acquisition.financing_flat) / (1 + coeff))
+            k_const = (v * (1 - margin_target) - cost["repairs"] - cost["holding"]
+                       - resale_flip - acq_flat - a.acquisition.financing_flat)
+            mao = q((k_const - coeff * cost["repairs"]) / (1 + coeff + acq_pct))
             r = base(StrategyType.FLIP, s)
             r.update(status="viable" if profit >= 0 else "not_viable", mao=mao, all_in_basis=all_in, profit=profit,
                      roi=q(profit / all_in, Q6) if all_in else None,
@@ -532,7 +570,7 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
                      + (tracked(record.hoa.monthly_dues) or Decimal("0")) * 12
                      + egi * (rental_ass["maintenance_pct"] + rental_ass["management_pct"] + Decimal("0.05")))
             noi = q(egi - opex)
-            invested = price + cost["acquisition"] + cost["repairs"]
+            invested = price + acquisition_at(price) + cost["repairs"]
             r = base(StrategyType.RENTAL, s)
             r.update(status="viable" if noi > 0 else "not_viable", profit=noi,
                      metrics={"egi": egi, "opex": opex, "noi": noi,
@@ -543,7 +581,7 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
 
         # subject_to (detection only, spec S8)
         r = base(StrategyType.SUBJECT_TO, s)
-        first = next((m for m in record.mortgages if m.is_open and m.position == "1"), None)
+        first = next((m for m in record.mortgages if m.is_open and is_first(m)), None)
         balance = tracked(first.estimated_balance) if first else None
         distress_present = bool(
             (record.foreclosure and record.foreclosure.is_active)
@@ -557,7 +595,8 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
             "condition_balance_le_80pct_value": (Decimal("1") if balance is not None and v_as_is
                                                  and balance <= v_as_is * Decimal("0.8")
                                                  else Decimal("0") if balance is not None and v_as_is else None),
-            "condition_no_acceleration": Decimal("1"),
+            "condition_no_acceleration": (Decimal("0") if record.foreclosure
+                                            and record.foreclosure.is_active else Decimal("1")),
             "condition_distress_present": Decimal("1") if distress_present else Decimal("0"),
         }
         results.append(r)
@@ -569,14 +608,17 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
             r = unavailable(StrategyType.FORECLOSURE, s, "no_value_data")
         else:
             bid = tracked(record.foreclosure.published_bid)
-            first = next((m for m in record.mortgages if m.is_open and m.position == "1"), None)
+            first = next((m for m in record.mortgages if m.is_open and is_first(m)), None)
             obligations = bid if bid is not None else (tracked(first.estimated_balance) if first else Decimal("0")) or Decimal("0")
-            juniors = [m for m in record.mortgages if m.is_open and m.position != "1"]
+            juniors = [m for m in record.mortgages if m.is_open and m is not first]
             junior_debt = sum((tracked(m.estimated_balance) or Decimal("0") for m in juniors), Decimal("0"))
             junior_debt += sum((tracked(l.amount) or Decimal("0") for l in record.liens
                                 if l.status not in ("released", "satisfied")
                                 and l.attachment_basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY), Decimal("0"))
-            total_obligations = q(obligations + junior_debt + (tracked(record.taxes.delinquent_amount) or Decimal("0")))
+            transfer_costs = acquisition_at(obligations) if obligations > 0 else Decimal("0")
+            total_obligations = q(obligations + junior_debt
+                                  + (tracked(record.taxes.delinquent_amount) or Decimal("0"))
+                                  + transfer_costs)
             v_low = uw["value"]["v_low"]
             monthly = q((tracked(record.taxes.annual_taxes) or Decimal("0")) / 12
                         + v_low * (a.holding.insurance_pct_yr + a.holding.maintenance_pct_yr) / 12
@@ -589,7 +631,9 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
             active_liens = [l for l in record.liens if l.status not in ("released", "satisfied")]
             r = base(StrategyType.FORECLOSURE, s)
             r.update(status="viable" if spread > 0 else "not_viable", profit=spread,
-                     metrics={"total_obligations": total_obligations, "auction_holding": auction_holding,
+                     metrics={"total_obligations": total_obligations,
+                              "transfer_costs": transfer_costs,
+                              "auction_holding": auction_holding,
                               "spread": spread,
                               "flag_junior_liens_present": Decimal("1") if junior_debt > 0 else Decimal("0"),
                               "flag_irs_lien": Decimal("1") if any(l.lien_type == "federal_tax" for l in active_liens) else Decimal("0"),
@@ -597,6 +641,19 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
                               "flag_owner_occupied": Decimal("1") if record.ownership.is_owner_occupied else Decimal("0"),
                               "flag_interior_unknown": Decimal("1") if interior_unknown else Decimal("0"),
                               "flag_postponements_ge_3": Decimal("1") if record.foreclosure.postponement_count >= 3 else Decimal("0")})
+            flag_sources = {
+                "flag_junior_liens_present": "mortgages/liens",
+                "flag_irs_lien": "liens",
+                "flag_hoa_super_priority": "hoa",
+                "flag_owner_occupied": "ownership",
+                "flag_interior_unknown": "condition",
+                "flag_postponements_ge_3": "foreclosure",
+            }
+            r["notices"] = [
+                f"{flag} (source: {source})"
+                for flag, source in flag_sources.items()
+                if r["metrics"][flag] == 1
+            ]
             note(fixture, name, stage, f"foreclosure[{skey}].spread",
                  "V_low - total_obligations - repairs - auction_holding",
                  f"obligations={total_obligations} repairs={repairs_s} auction_holding={auction_holding}", spread)
@@ -615,20 +672,21 @@ def strategies(fixture: str, record: NormalizedProperty, uw: dict, a: Assumption
             confirmed_payoffs = q(uw["liabilities"]["confirmed"] + payoff_fees)
             potential_payoffs = uw["liabilities"]["potential"]
             potential_weighted = sum(
-                (q((tracked(l.amount) if tracked(l.amount) is not None else a.unknown_lien_medians.get(l.lien_type, Decimal("0")))
-                    * a.attachment_probability[l.attachment_basis])
-                 for l in record.liens if l.status not in ("released", "satisfied")
-                 and l.attachment_basis != AttachmentBasis.RECORDED_AGAINST_PROPERTY),
-                Decimal("0"))
+                (item.get("expected_amount", Decimal("0"))
+                 for item in uw["liabilities"]["breakdown"]), Decimal("0"))
             offers = [round_5000(v_exp * (Decimal("0.60") + Decimal(k) * Decimal("0.05"))) for k in range(9)]
             markers = [("mao_cash", mao_by.get(("cash", skey))), ("mao_flip", mao_by.get(("flip", skey)))]
-            grid = [("grid", None, o) for o in offers] + [(label, label, m) for label, m in markers if m is not None]
+            grid = [("grid", None, o) for o in offers] + [
+                (label, label, m) for label, m in markers if m is not None and m > 0
+            ]
             for _, label, offer in sorted(grid, key=lambda item: item[2]):
-                closing = q(offer * a.acquisition.title_pct + a.acquisition.escrow_flat)
+                closing = q(offer * (a.acquisition.title_pct
+                                     + transfer_rate(a.acquisition.transfer_tax_lookup_key))
+                            + a.acquisition.escrow_flat)
                 proceeds_high = q(offer - confirmed_payoffs - closing)
                 proceeds_expected = q(proceeds_high - potential_weighted)
                 proceeds_low = q(proceeds_high - potential_payoffs)
-                buyer_basis = q(offer + cost["acquisition"] + cost["repairs"] + cost["holding"])
+                buyer_basis = q(offer + acquisition_at(offer) + cost["repairs"] + cost["holding"])
                 profit = q(v_s * (1 - resale_pct) - buyer_basis)
                 points.append({"offer_price": offer, "scenario": skey, "confirmed_payoffs": confirmed_payoffs,
                                "potential_payoffs": potential_payoffs, "closing_costs": closing,
@@ -651,7 +709,11 @@ def dcs_score(fixture: str, record: NormalizedProperty) -> dict:
     corrob = q(Decimal(corroborated) / Decimal("22"), Q6)
     conflict_penalty = min(Decimal("1"), Decimal(dq.material_conflict_count) / Decimal("5"))
     verification = q(Decimal(dq.verified_field_count) / Decimal("22"), Q6)
-    recency = Decimal("1") if dq.newest_report_date else Decimal("0")
+    if dq.newest_report_date:
+        age_days = Decimal(max(0, (GOLDEN_AS_OF - dq.newest_report_date).days))
+        recency = decay(age_days, Decimal("180"))
+    else:
+        recency = Decimal("0")
     dcs = q(Decimal("100") * (Decimal("0.30") * dq.critical_field_coverage + Decimal("0.20") * corrob
                               + Decimal("0.20") * recency + Decimal("0.15") * (1 - conflict_penalty)
                               + Decimal("0.10") * verification + Decimal("0.05") * dq.mean_extraction_confidence), Q4)
@@ -665,17 +727,22 @@ def dcs_score(fixture: str, record: NormalizedProperty) -> dict:
 
 def score(fixture: str, record: NormalizedProperty, uw: dict, strategies_result: dict) -> dict:
     stage = "scoring"
-    ref = record.data_quality.newest_report_date
     results = strategies_result["strategies"]
     expected = [r for r in results if r["scenario"] == "expected" and r["status"] == "viable"
                 and r["strategy"] != "subject_to"]
-    best = None
-    for strategy in STRATEGY_PRIORITY:
-        candidates = [r for r in expected if r["strategy"] == strategy.value]
-        if candidates and (best is None or max(r["profit"] for r in candidates) > best["profit"]):
-            best = max(candidates, key=lambda r: r["profit"])
-    if expected and best is None:
-        best = max(expected, key=lambda r: r["profit"])
+    def profit_points(result: dict) -> Decimal:
+        return Decimal("100") * clamp(
+            result["profit"] / Decimal("150000"), Decimal("0"), Decimal("1"),
+        )
+
+    best = max(
+        expected,
+        key=lambda result: (
+            profit_points(result),
+            -STRATEGY_PRIORITY.index(StrategyType(result["strategy"])),
+        ),
+        default=None,
+    )
 
     v_exp = uw["value"]["v_expected"]
     equity_pct = uw["equity"].get("expected", {}).get("equity_pct") if uw["equity"] else None
@@ -700,16 +767,18 @@ def score(fixture: str, record: NormalizedProperty, uw: dict, strategies_result:
 
     # distress (spec S10 point table)
     def item_decay(event_date: date | None) -> Decimal:
-        if event_date is None or ref is None:
-            return Decimal("0")
-        return decay(Decimal(max(0, months_between(event_date, ref))), Decimal("18"))
+        if event_date is None:
+            return Decimal("1")
+        return decay(months_between(event_date, GOLDEN_AS_OF), Decimal("18"))
 
     distress_items: dict[str, Decimal] = {}
     fc = record.foreclosure
     if fc and fc.is_active:
-        if fc.nts_date:
-            recent = ref is not None and 0 <= (ref - fc.nts_date).days <= 30
-            base = Decimal("30") if recent else Decimal("24")
+        if fc.nts_date or fc.stage.casefold() in ("nts", "auction"):
+            days_to_sale = ((fc.current_sale_date - GOLDEN_AS_OF).days
+                            if fc.current_sale_date else None)
+            sale_is_near = days_to_sale is not None and 0 <= days_to_sale <= 30
+            base = Decimal("30") if sale_is_near else Decimal("24")
             distress_items["distress_nts"] = q(base * item_decay(fc.nts_date), Q4)
         if fc.nod_date:
             distress_items["distress_nod"] = q(Decimal("18") * item_decay(fc.nod_date), Q4)
@@ -718,8 +787,9 @@ def score(fixture: str, record: NormalizedProperty, uw: dict, strategies_result:
             distress_items["distress_prior_foreclosure"] = q(prior, Q4)
     active_bk = [b for b in record.bankruptcies if b.status == "active"]
     if active_bk:
-        distress_items["distress_bankruptcy_active"] = q(sum(
-            (Decimal("12") * item_decay(b.filing_date) for b in active_bk), Decimal("0")), Q4)
+        distress_items["distress_bankruptcy_active"] = q(
+            Decimal("12") * max(item_decay(b.filing_date) for b in active_bk), Q4,
+        )
     prior_bk = [b for b in record.bankruptcies if b.status != "active"]
     if prior_bk:
         distress_items["distress_bankruptcy_prior"] = q(min(Decimal("18"), sum(
@@ -804,7 +874,7 @@ def score(fixture: str, record: NormalizedProperty, uw: dict, strategies_result:
     components.update({
         "dcs_field_coverage": q(record.data_quality.critical_field_coverage, Q6),
         "dcs_corroboration": dcs_parts["corroboration"],
-        "dcs_recency": dcs_parts["recency"],
+        "dcs_recency": q(dcs_parts["recency"], Q6),
         "dcs_conflict_free": q(1 - dcs_parts["conflict_penalty"], Q6),
         "dcs_verification": dcs_parts["verification"],
         "dcs_extraction_quality": record.data_quality.mean_extraction_confidence,
@@ -819,8 +889,12 @@ def score(fixture: str, record: NormalizedProperty, uw: dict, strategies_result:
         "mao_best": best["mao"] if best and best["mao"] is not None else Decimal("0"),
     })
 
-    alternatives = [r["strategy"] for r in sorted(expected, key=lambda r: r["profit"], reverse=True)
-                    if best is None or r["strategy"] != best["strategy"]]
+    best_points = profit_points(best) if best else Decimal("0")
+    alternatives = [
+        r["strategy"]
+        for r in sorted(expected, key=lambda result: STRATEGY_PRIORITY.index(StrategyType(result["strategy"])))
+        if r is not best and best_points - profit_points(r) <= Decimal("5")
+    ]
     return {"property_id": uw["property_id"], "scoring_config_id": SCORING_CONFIG_ID,
             "fos": fos, "distress": distress, "data_confidence": dcs, "risk": risk, "overall": overall,
             "components": components, "gates_applied": gates, "is_rankable": is_rankable,
@@ -855,7 +929,11 @@ def main() -> None:
                               ("scores", {"scoring"})):
         rows = [r for r in ROWS if r["stage"] in stages]
         with (FIXTURES / directory / "worksheet.csv").open("w", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["fixture", "assumption", "stage", "step", "formula", "inputs", "value"])
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["fixture", "assumption", "stage", "step", "formula", "inputs", "value"],
+                lineterminator="\n",
+            )
             writer.writeheader()
             writer.writerows(rows)
         print("worksheet", directory, len(rows), "rows")

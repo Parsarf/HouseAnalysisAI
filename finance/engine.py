@@ -67,6 +67,7 @@ SPEC_TYPE_WEIGHT = {
 
 HOLDING_PERIOD_FACTOR = {Scenario.CONSERVATIVE: Decimal("1.5"), Scenario.EXPECTED: ONE, Scenario.OPTIMISTIC: Decimal("0.75")}
 BID_MISMATCH_TOLERANCE = Decimal("0.20")  # spec §7.3 published-bid reconciliation
+CLOSED_STATUSES = frozenset({"closed", "paid", "released", "satisfied"})
 
 
 def _clamp(value: Decimal, low: Decimal, high: Decimal) -> Decimal:
@@ -77,8 +78,49 @@ def _q(value: Decimal, quantum: Decimal) -> Decimal:
     return value.quantize(quantum, rounding=ROUND_HALF_UP)
 
 
+def _validate_assumptions(assumptions: AssumptionSet) -> None:
+    acquisition = assumptions.acquisition
+    acquisition_rates = (
+        acquisition.closing_pct, acquisition.title_pct, acquisition.financing_points,
+        acquisition.acq_fee_pct,
+    )
+    resale = assumptions.resale
+    resale_rates = (
+        resale.commission_pct, resale.seller_closing_pct,
+        resale.concessions_pct, resale.misc_pct,
+    )
+    holding = assumptions.holding
+    if any(value < ZERO for value in acquisition_rates + resale_rates):
+        raise ValueError("acquisition and resale percentages must be nonnegative")
+    if sum(acquisition_rates, ZERO) >= ONE or sum(resale_rates, ZERO) >= ONE:
+        raise ValueError("acquisition and resale percentage totals must be below 100%")
+    if any(value < ZERO for value in (
+        acquisition.escrow_flat, acquisition.financing_flat,
+        acquisition.inspection_flat, acquisition.legal_flat, resale.staging_flat,
+        holding.insurance_pct_yr, holding.utilities_monthly,
+        holding.maintenance_pct_yr, holding.acquisition_months,
+    )) or holding.market_days_default < 0:
+        raise ValueError("cost and duration assumptions must be nonnegative")
+    if any(value < ZERO for value in holding.repair_months_by_condition.values()):
+        raise ValueError("repair durations must be nonnegative")
+    repairs = assumptions.repairs
+    if (repairs.regional_index <= ZERO
+            or any(value < ZERO for value in repairs.psf_by_condition.values())
+            or not ZERO <= repairs.low_multiplier <= ONE <= repairs.high_multiplier):
+        raise ValueError("repair assumptions must preserve low <= expected <= high")
+    if any(not ZERO <= value <= ONE for value in assumptions.attachment_probability.values()):
+        raise ValueError("attachment probabilities must be between zero and one")
+    if any(value < ZERO for value in assumptions.unknown_lien_medians.values()):
+        raise ValueError("unknown-lien medians must be nonnegative")
+    if any(value < ZERO for value in assumptions.valuation_weights.values()):
+        raise ValueError("valuation weights must be nonnegative")
+
+
 def _months_between(start: date, end: date) -> int:
-    return (end.year - start.year) * 12 + end.month - start.month
+    months = (end.year - start.year) * 12 + end.month - start.month
+    if end.day < start.day:
+        months -= 1
+    return months
 
 
 def estimate_balance(original: Decimal | None, rate: Decimal | None, term_months: int | None,
@@ -91,18 +133,26 @@ def estimate_balance(original: Decimal | None, rate: Decimal | None, term_months
     confidence 0.55 and widen the rendered band by ±150bps. Returns None when
     the balance cannot be derived at all.
     """
-    if original is None or origination_date is None or as_of is None:
+    if original is None or original < ZERO or origination_date is None or as_of is None:
         return None
     term = term_months or DEFAULT_TERM_MONTHS
+    if term <= 0:
+        return None
     if rate is None:
         rate = historical_rate(origination_date.year, loan_type)
         if rate is None:
             return None
     n = _months_between(origination_date, as_of)
-    if n <= 0:
+    if n < 0:
+        return None
+    if n == 0:
         return money(original)
     if n >= term:
         return ZERO
+    if rate < ZERO:
+        return None
+    if rate == ZERO:
+        return money(original * Decimal(term - n) / Decimal(term))
     with localcontext() as ctx:
         ctx.prec = 40
         r = rate / MONTHS_PER_YEAR
@@ -124,7 +174,7 @@ def finance_flags(record: NormalizedProperty, as_of: date | None = None) -> list
                                  financial_impact_usd=abs(bid - balance), raised_by="finance",
                                  dedupe_key=f"bid-mismatch:{bid}:{balance}"))
     for index, lien in enumerate(record.liens):
-        if lien.status in ("released", "satisfied"):
+        if lien.status.casefold() in CLOSED_STATUSES:
             continue
         if lien.amount is None or lien.amount.value is None:
             flags.append(FlagRequest(property_id=record.property_id, flag_type=FlagType.MISSING_LIEN_AMOUNT,
@@ -192,18 +242,29 @@ def _candidate_weights(record: NormalizedProperty, assumptions: AssumptionSet,
     for candidate in record.valuation_candidates:
         if candidate.value.value is None:
             continue
+        kind = candidate.valuation_type.strip().casefold()
+        if candidate.value.value <= ZERO:
+            continue
         base = assumptions.valuation_weights.get(
-            candidate.valuation_type, SPEC_TYPE_WEIGHT.get(candidate.valuation_type, ONE))
+            kind, SPEC_TYPE_WEIGHT.get(kind, ONE))
+        if base <= ZERO:
+            continue
         adjustment = ONE
-        if candidate.valuation_type == "avm":
-            if candidate.reported_confidence is not None:
-                adjustment *= Decimal(str(candidate.reported_confidence))
+        if kind == "avm":
+            reported_confidence = (
+                candidate.reported_confidence
+                if candidate.reported_confidence is not None
+                else candidate.value.confidence
+            )
+            adjustment *= Decimal(str(reported_confidence))
             if candidate.as_of and as_of:
                 days = max(0, (as_of - candidate.as_of).days)
                 adjustment *= Decimal("0.5") ** (Decimal(days) / AVM_HALF_LIFE_DAYS)
-        elif "comp" in candidate.valuation_type.lower():
+        elif "comp" in kind:
             adjustment *= _comp_quality(record, as_of)
-        weighted.append((candidate.valuation_type, candidate.value.value, _q(base * adjustment, Q6)))
+        weight = _q(base * adjustment, Q6)
+        if weight > ZERO:
+            weighted.append((kind, candidate.value.value, weight))
     return weighted
 
 
@@ -211,19 +272,39 @@ def _mortgage_balance(mortgage, as_of: date | None) -> tuple[Decimal | None, boo
     """(balance, is_estimated): reported balance wins; otherwise derive by amortization
     (spec §6.5 — a report with original amount but no balance must not contribute $0)."""
     if mortgage.estimated_balance and mortgage.estimated_balance.value is not None:
+        if mortgage.estimated_balance.value < ZERO:
+            return None, False
         return money(mortgage.estimated_balance.value), mortgage.estimated_balance.is_estimated
     original = mortgage.original_amount.value if mortgage.original_amount else None
     if original is None or mortgage.origination_date is None:
         return None, False
-    loan_type = "heloc" if "heloc" in mortgage.position.lower() else "conventional"
+    loan_type = "heloc" if _is_heloc(mortgage) else "conventional"
+    # A HELOC's original amount is normally its credit limit, not proof of the
+    # drawn balance. Amortizing that limit fabricates confirmed debt.
+    if loan_type == "heloc":
+        return None, False
     balance = estimate_balance(original, mortgage.rate, mortgage.term_months,
                                mortgage.origination_date, as_of, loan_type)
     return balance, balance is not None
 
 
 def _is_first(mortgage) -> bool:
-    position = mortgage.position.lower()
-    return position in ("first", "1", "1st") or position.startswith("first")
+    return _position_key(mortgage.position) == "1"
+
+
+def _is_heloc(mortgage) -> bool:
+    return "heloc" in mortgage.position.casefold()
+
+
+def _position_key(position: str) -> str:
+    normalized = position.strip().casefold()
+    if normalized in {"first", "1", "1st"} or normalized.startswith("first"):
+        return "1"
+    if normalized in {"second", "2", "2nd"} or normalized.startswith("second"):
+        return "2"
+    if "heloc" in normalized:
+        return "heloc"
+    return normalized
 
 
 def _published_bid(record: NormalizedProperty) -> Decimal | None:
@@ -266,12 +347,39 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
     by_position: dict[str, list] = {}
     for mortgage in record.mortgages:
         if mortgage.is_open:
-            by_position.setdefault(mortgage.position, []).append(mortgage)
+            by_position.setdefault(_position_key(mortgage.position), []).append(mortgage)
     for position, group in sorted(by_position.items()):
         # Same-position open mortgages conflict: keep the highest balance
         # (conservative tie-break, spec §6.2/§6.3).
-        chosen = max(group, key=lambda m: (m.estimated_balance.value if m.estimated_balance else None) or ZERO)
-        balance, is_estimated = _mortgage_balance(chosen, as_of)
+        evaluated = [
+            (balance, is_estimated, mortgage)
+            for mortgage in group
+            for balance, is_estimated in [_mortgage_balance(mortgage, as_of)]
+            if balance is not None
+        ]
+        unknown_heloc_limits = [
+            mortgage.original_amount.value
+            for mortgage in group
+            if _is_heloc(mortgage)
+            and _mortgage_balance(mortgage, as_of)[0] is None
+            and mortgage.original_amount is not None
+            and mortgage.original_amount.value is not None
+            and mortgage.original_amount.value > ZERO
+        ]
+        if not evaluated:
+            if unknown_heloc_limits:
+                capacity = money(max(unknown_heloc_limits)) or ZERO
+                potential += capacity
+                potential_weighted += capacity
+                breakdown.append({
+                    "label": f"mortgage:{position}:draw_unknown",
+                    "amount": capacity,
+                    "expected_amount": capacity,
+                    "basis": "heloc_capacity_no_draw_data",
+                    "is_estimated": True,
+                })
+            continue
+        balance, is_estimated, chosen = max(evaluated, key=lambda item: item[0])
         basis = "recorded" if not is_estimated or (chosen.estimated_balance and chosen.estimated_balance.value is not None) else "amortization_v1"
         if bid is not None and _is_first(chosen):
             # Published-bid reconciliation: the trustee's bid is their actual accounting;
@@ -281,7 +389,7 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
                 is_estimated = chosen.estimated_balance.is_estimated
         if balance is None:
             continue
-        if "heloc" in position.lower():
+        if _is_heloc(chosen):
             # Drawn HELOC is confirmed; undrawn capacity is potential (spec §7.3).
             confirmed += balance
             breakdown.append({"label": f"mortgage:{position}", "amount": balance, "basis": basis, "is_estimated": is_estimated})
@@ -290,15 +398,31 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
                 undrawn = money(original - balance) or ZERO
                 potential += undrawn
                 potential_weighted += money(undrawn) or ZERO
-                breakdown.append({"label": f"mortgage:{position}:undrawn", "amount": undrawn, "basis": "undrawn_heloc_capacity", "is_estimated": True})
+                breakdown.append({"label": f"mortgage:{position}:undrawn", "amount": undrawn,
+                                  "expected_amount": undrawn, "basis": "undrawn_heloc_capacity",
+                                  "is_estimated": True})
             continue
         confirmed += balance
         breakdown.append({"label": f"mortgage:{position}", "amount": balance, "basis": basis, "is_estimated": is_estimated})
+        # A separately reported HELOC at the same nominal priority may be a
+        # distinct obligation. With no draw data, keep its limit out of
+        # confirmed debt but expose the largest reported capacity as potential.
+        if unknown_heloc_limits:
+            capacity = money(max(unknown_heloc_limits)) or ZERO
+            potential += capacity
+            potential_weighted += capacity
+            breakdown.append({
+                "label": f"mortgage:{position}:draw_unknown",
+                "amount": capacity,
+                "expected_amount": capacity,
+                "basis": "heloc_capacity_no_draw_data",
+                "is_estimated": True,
+            })
     if bid is not None and not any(m.is_open and _is_first(m) for m in record.mortgages):
         confirmed += bid
         breakdown.append({"label": "foreclosure:published_bid", "amount": bid, "basis": "published_bid", "is_estimated": False})
     for lien in record.liens:
-        if lien.status in ("released", "satisfied"):
+        if lien.status.casefold() in CLOSED_STATUSES:
             continue
         has_amount = lien.amount is not None and lien.amount.value is not None
         # Liens with unknown amounts are valued at the type median and land in
@@ -308,13 +432,26 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
         estimated = lien.amount_is_estimated if has_amount else True
         if amount and not has_amount:
             potential += amount
-            potential_weighted += money(amount * assumptions.attachment_probability.get(lien.attachment_basis, ONE)) or ZERO
+            probability = _clamp(
+                assumptions.attachment_probability.get(lien.attachment_basis, ONE), ZERO, ONE,
+            )
+            expected_amount = money(amount * probability) or ZERO
+            potential_weighted += expected_amount
         elif lien.attachment_basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY:
             confirmed += amount
+            expected_amount = None
         else:
             potential += amount
-            potential_weighted += money(amount * assumptions.attachment_probability.get(lien.attachment_basis, ONE)) or ZERO
-        breakdown.append({"label": lien.lien_type, "amount": amount, "basis": lien.attachment_basis.value, "is_estimated": estimated})
+            probability = _clamp(
+                assumptions.attachment_probability.get(lien.attachment_basis, ONE), ZERO, ONE,
+            )
+            expected_amount = money(amount * probability) or ZERO
+            potential_weighted += expected_amount
+        item = {"label": lien.lien_type, "amount": amount,
+                "basis": lien.attachment_basis.value, "is_estimated": estimated}
+        if expected_amount is not None:
+            item["expected_amount"] = expected_amount
+        breakdown.append(item)
     for label, tracked in (("delinquent_taxes", record.taxes.delinquent_amount), ("hoa_arrears", record.hoa.arrears)):
         if tracked and tracked.value is not None:
             confirmed += money(tracked.value) or ZERO
@@ -344,18 +481,43 @@ def _holding_months_base(record: NormalizedProperty, assumptions: AssumptionSet)
     return assumptions.holding.acquisition_months + repair_months + Decimal(assumptions.holding.market_days_default) / DAYS_PER_MONTH
 
 
+def _has_debt_data(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None) -> bool:
+    if _published_bid(record) is not None:
+        return True
+    if any(mortgage.is_open and _mortgage_balance(mortgage, as_of)[0] is not None
+           for mortgage in record.mortgages):
+        return True
+    if any(
+        mortgage.is_open and _is_heloc(mortgage)
+        and mortgage.original_amount is not None
+        and mortgage.original_amount.value is not None
+        and mortgage.original_amount.value > ZERO
+        for mortgage in record.mortgages
+    ):
+        return True
+    return any(
+        lien.status.casefold() not in CLOSED_STATUSES
+        and (
+            lien.amount is not None and lien.amount.value is not None
+            or assumptions.unknown_lien_medians.get(lien.lien_type, ZERO) > ZERO
+        )
+        for lien in record.liens
+    )
+
+
 def underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None = None) -> UnderwritingResult:
     # Precision 40 matches the golden generator; quantization happens per labelled step.
+    _validate_assumptions(assumptions)
     with localcontext() as ctx:
         ctx.prec = 40
         return _underwrite(record, assumptions, as_of)
 
 
 def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None) -> UnderwritingResult:
-    # Reference date for every date-relative term: newest_report_date. Wall-clock dates
-    # are never used — the engine must be deterministic (golden formula set).
+    # Reference date for every date-relative term: caller-supplied as_of, then
+    # newest_report_date. Wall-clock dates are never used, keeping runs deterministic.
     ref = as_of or record.data_quality.newest_report_date
-    debt_data_present = bool(record.mortgages or record.liens)
+    debt_data_present = _has_debt_data(record, assumptions, ref)
     liabilities, potential_weighted = _liabilities(record, assumptions, ref)
     candidates = _candidate_weights(record, assumptions, ref)
     if not candidates:
@@ -376,10 +538,17 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
         dispersion = _q(_clamp(variance.sqrt() / v_exp if v_exp else Decimal("0.30"), Decimal("0.04"), Decimal("0.30")), Q6)
     comp_low, comp_high = _comp_range(record)
     # V_low = max(V×(1−disp), comp_range_low or 0); V_high = min(V×(1+disp), comp_range_high or ∞) (spec §7.2)
-    v_low = money(max(v_exp * (ONE - dispersion), comp_low or ZERO))
+    raw_low = v_exp * (ONE - dispersion)
+    # A comp range wholly above/below the weighted expectation is conflicting
+    # evidence, not permission to invert conservative/expected/optimistic order.
+    v_low = money(max(raw_low, comp_low) if comp_low is not None and comp_low <= v_exp else raw_low)
     v_high_raw = v_exp * (ONE + dispersion)
-    v_high = money(min(v_high_raw, comp_high) if comp_high is not None else v_high_raw)
-    confidence = record.data_quality.mean_extraction_confidence
+    v_high = money(
+        min(v_high_raw, comp_high)
+        if comp_high is not None and comp_high >= v_exp
+        else v_high_raw
+    )
+    confidence = _clamp(record.data_quality.mean_extraction_confidence, ZERO, ONE)
     if len(candidates) == 1:
         confidence = min(confidence, Decimal("0.5"))
     values = {Scenario.CONSERVATIVE: v_low, Scenario.EXPECTED: v_exp, Scenario.OPTIMISTIC: v_high}

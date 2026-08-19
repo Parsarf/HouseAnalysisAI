@@ -9,7 +9,7 @@ reproduction of the hand-computed goldens in ``fixtures/underwriting/``,
 The goldens are computed from the specification formulas (spec S7/S8/S9/S10) by
 ``fixtures/generate_goldens.py``, with every calculation step recorded in the
 ``worksheet.csv`` next to each golden directory. Interpretation decisions are
-documented in that module's docstring ("GOLDEN FORMULA SET v1").
+documented in that module's docstring ("GOLDEN FORMULA SET v2").
 
 Only ``engine_version`` is excluded from comparison: it is metadata the engine
 packages bump on rewrite, not a computed number. Numeric strings are compared
@@ -20,6 +20,7 @@ ordering — must match exactly.
 from __future__ import annotations
 
 import json
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -33,6 +34,7 @@ from strategies import all_strategies, offer_grid
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 SCORING_CONFIG_ID = UUID("20000000-0000-0000-0000-000000000001")
+GOLDEN_AS_OF = date(2026, 8, 18)
 IGNORED_KEYS = {"engine_version"}
 
 
@@ -113,7 +115,7 @@ def test_strategies_and_offer_grid_reproduce_golden(slug: str):
     assumptions = ASSUMPTIONS[golden["assumption_set"]]
     price = Decimal(golden["purchase_price"]) if golden["purchase_price"] is not None else Decimal(0)
     underwriting = underwrite(record, assumptions)
-    results = all_strategies(record, underwriting, assumptions, price)
+    results = all_strategies(record, underwriting, assumptions, price, as_of=GOLDEN_AS_OF)
     grid = offer_grid(underwriting, record.property_id, assumptions, price)
     actual = {"strategies": [r.model_dump(mode="json") for r in results],
               "offer_grid": grid.model_dump(mode="json")}
@@ -131,8 +133,10 @@ def test_scores_reproduce_golden(slug: str):
     price = (Decimal(strategy_golden["purchase_price"])
              if strategy_golden["purchase_price"] is not None else Decimal(0))
     underwriting = underwrite(record, assumptions)
-    results = all_strategies(record, underwriting, assumptions, price)
-    actual = score(record, underwriting, SCORING_CONFIG_ID, results).model_dump(mode="json")
+    results = all_strategies(record, underwriting, assumptions, price, as_of=GOLDEN_AS_OF)
+    actual = score(
+        record, underwriting, SCORING_CONFIG_ID, results, as_of=GOLDEN_AS_OF,
+    ).model_dump(mode="json")
     problems = diff(golden, actual)
     assert not problems, f"{slug}:\n" + "\n".join(problems[:25])
 

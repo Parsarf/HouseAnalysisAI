@@ -1,227 +1,227 @@
 fixture,assumption,stage,step,formula,inputs,value
 01_clean_high_equity,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=500000.00,375000
-01_clean_high_equity,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=500837.48,-106649.98
-01_clean_high_equity,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,183350.02
+01_clean_high_equity,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=499587.48,-105399.98
+01_clean_high_equity,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,189243.92
 01_clean_high_equity,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=408714.00 months=12.0000,50245.68
-01_clean_high_equity,default,strategies,flip[conservative].profit,ARV - all_in,ARV=530840.00 all_in=593069.06,-62229.06
-01_clean_high_equity,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=256848.62 a=0.102000,222189.60
+01_clean_high_equity,default,strategies,flip[conservative].profit,ARV - all_in,ARV=530840.00 all_in=591819.06,-60979.06
+01_clean_high_equity,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=266273.620 a=0.102000,226688.50
 01_clean_high_equity,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=265748.00 price=375000 dcs=15.0000,-109252.00
-01_clean_high_equity,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=470973.36,-7223.36
-01_clean_high_equity,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,267776.64
+01_clean_high_equity,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=467848.36,-4098.36
+01_clean_high_equity,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,273440.62
 01_clean_high_equity,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=383010.00 months=8.0000,34394.20
-01_clean_high_equity,default,strategies,flip[expected].profit,ARV - all_in,ARV=575600.00 all_in=550598.56,25001.44
-01_clean_high_equity,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=319275.64 a=0.073667,291064.68
+01_clean_high_equity,default,strategies,flip[expected].profit,ARV - all_in,ARV=575600.00 all_in=547473.56,28126.44
+01_clean_high_equity,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=330575.640 a=0.073667,295818.97
 01_clean_high_equity,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=327320.00 price=375000 dcs=15.0000,-47680.00
-01_clean_high_equity,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=453198.74,80113.76
-01_clean_high_equity,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,340113.76
+01_clean_high_equity,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=448198.74,85113.76
+01_clean_high_equity,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,345842.69
 01_clean_high_equity,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=366945.00 months=6.0000,26886.15
-01_clean_high_equity,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=631700.00 all_in=529383.14,102316.86
-01_clean_high_equity,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=377863.01 a=0.059500,352325.97
+01_clean_high_equity,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=631700.00 all_in=524383.14,107316.86
+01_clean_high_equity,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=391038.010 a=0.059500,357459.07
 01_clean_high_equity,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=385490.00 price=375000 dcs=15.0000,10490.00
 01_clean_high_equity,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=0,33
 02_owner_only_federal_lien,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=398064.52,300000
-02_owner_only_federal_lien,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=362389.67,-7953.02
-02_owner_only_federal_lien,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,215618.59
+02_owner_only_federal_lien,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=360336.12,-5899.47
+02_owner_only_federal_lien,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,219680.14
 02_owner_only_federal_lien,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=290343.00 months=9.0000,28782.59
-02_owner_only_federal_lien,default,strategies,flip[conservative].profit,ARV - all_in,ARV=423721.94 all_in=425392.10,-1670.16
-02_owner_only_federal_lien,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=242368.04 a=0.080750,220042.06
-02_owner_only_federal_lien,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=255025.36 price=300000 dcs=65.6128,-44974.64
-02_owner_only_federal_lien,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=348423.37,20781.47
-02_owner_only_federal_lien,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,241168.57
+02_owner_only_federal_lien,default,strategies,flip[conservative].profit,ARV - all_in,ARV=423721.94 all_in=423338.55,383.39
+02_owner_only_federal_lien,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=250721.592 a=0.080750,223706.99
+02_owner_only_federal_lien,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=255025.36 price=300000 dcs=64.3455,-44974.64
+02_owner_only_federal_lien,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=345971.76,23233.08
+02_owner_only_federal_lien,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,244995.29
 02_owner_only_federal_lien,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=280245.00 months=6.0000,20817.15
-02_owner_only_federal_lien,default,strategies,flip[expected].profit,ARV - all_in,ARV=427764.52 all_in=403753.45,24011.07
-02_owner_only_federal_lien,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=259275.32 a=0.059500,241914.27
-02_owner_only_federal_lien,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=269735.16 price=300000 dcs=65.6128,-30264.84
-02_owner_only_federal_lien,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=340154.26,43818.78
-02_owner_only_federal_lien,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,261021.36
+02_owner_only_federal_lien,default,strategies,flip[expected].profit,ARV - all_in,ARV=427764.52 all_in=401301.84,26462.68
+02_owner_only_federal_lien,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=268026.926 a=0.059500,245513.86
+02_owner_only_federal_lien,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=269735.16 price=300000 dcs=64.3455,-30264.84
+02_owner_only_federal_lien,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=337304.58,46668.46
+02_owner_only_federal_lien,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,264752.23
 02_owner_only_federal_lien,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=273933.75 months=4.5000,16951.19
-02_owner_only_federal_lien,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=436262.10 all_in=392234.45,44027.65
-02_owner_only_federal_lien,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=273726.42 a=0.048875,258789.40
-02_owner_only_federal_lien,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=283108.47 price=300000 dcs=65.6128,-16891.53
+02_owner_only_federal_lien,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=436262.10 all_in=389384.77,46877.33
+02_owner_only_federal_lien,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=282876.100 a=0.048875,262402.43
+02_owner_only_federal_lien,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=283108.47 price=300000 dcs=64.3455,-16891.53
 02_owner_only_federal_lien,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=0,33
 03_conflicting_mortgages,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=450000.00,340000
-03_conflicting_mortgages,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=463633.78,-108865.03
-03_conflicting_mortgages,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,154634.97
+03_conflicting_mortgages,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=462571.28,-107802.53
+03_conflicting_mortgages,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,160192.65
 03_conflicting_mortgages,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=373966.00 months=12.0000,46075.92
-03_conflicting_mortgages,default,strategies,flip[conservative].profit,ARV - all_in,ARV=482460.00 all_in=548188.05,-65728.05
-03_conflicting_mortgages,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=223855.87 a=0.102000,192794.87
-03_conflicting_mortgages,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=237762.00 price=340000 dcs=60.5463,-102238.00
-03_conflicting_mortgages,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=433640.00,-16265.00
-03_conflicting_mortgages,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,233735.00
+03_conflicting_mortgages,default,strategies,flip[conservative].profit,ARV - all_in,ARV=482460.00 all_in=547125.55,-64665.55
+03_conflicting_mortgages,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=232218.370 a=0.102000,197003.06
+03_conflicting_mortgages,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=237762.00 price=340000 dcs=59.2789,-102238.00
+03_conflicting_mortgages,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=430890.00,-13515.00
+03_conflicting_mortgages,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,239009.76
 03_conflicting_mortgages,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=349690.00 months=8.0000,31506.47
-03_conflicting_mortgages,default,strategies,flip[expected].profit,ARV - all_in,ARV=521400.00 all_in=506447.97,14952.03
-03_conflicting_mortgages,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=282178.50 a=0.073667,256801.02
-03_conflicting_mortgages,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=293580.00 price=340000 dcs=60.5463,-46420.00
-03_conflicting_mortgages,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=415916.86,64064.39
-03_conflicting_mortgages,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,300564.39
+03_conflicting_mortgages,default,strategies,flip[expected].profit,ARV - all_in,ARV=521400.00 all_in=503697.97,17702.03
+03_conflicting_mortgages,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=292228.500 a=0.073667,261197.24
+03_conflicting_mortgages,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=293580.00 price=340000 dcs=59.2789,-46420.00
+03_conflicting_mortgages,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=411479.36,68501.89
+03_conflicting_mortgages,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,305855.50
 03_conflicting_mortgages,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=334517.50 months=6.0000,24616.23
-03_conflicting_mortgages,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=571050.00 all_in=485434.22,85615.78
-03_conflicting_mortgages,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=336022.01 a=0.059500,313011.60
-03_conflicting_mortgages,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=346185.00 price=340000 dcs=60.5463,6185.00
+03_conflicting_mortgages,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=571050.00 all_in=480996.72,90053.28
+03_conflicting_mortgages,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=347759.510 a=0.059500,317725.48
+03_conflicting_mortgages,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=346185.00 price=340000 dcs=59.2789,6185.00
 03_conflicting_mortgages,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 04_active_nts_postponements,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=350000.00,265000
-04_active_nts_postponements,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=439278.45,-163347.20
-04_active_nts_postponements,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,42152.80
+04_active_nts_postponements,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=438465.95,-162534.70
+04_active_nts_postponements,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,48380.78
 04_active_nts_postponements,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=355198.00 months=15.0000,52703.71
-04_active_nts_postponements,default,strategies,flip[conservative].profit,ARV - all_in,ARV=450380.00 all_in=528134.71,-77754.71
-04_active_nts_postponements,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=149873.00 a=0.123250,115584.72
-04_active_nts_postponements,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=162386.00 price=265000 dcs=61.2722,-102614.00
-04_active_nts_postponements,default,strategies,foreclosure[conservative].spread,V_low - total_obligations - repairs - auction_holding,obligations=218500.00 repairs=152880.00 auction_holding=1381.46,-75261.46
-04_active_nts_postponements,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=393829.20,-69204.20
-04_active_nts_postponements,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,125795.80
+04_active_nts_postponements,default,strategies,flip[conservative].profit,ARV - all_in,ARV=450380.00 all_in=527322.21,-76942.21
+04_active_nts_postponements,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=156110.500 a=0.123250,119545.43
+04_active_nts_postponements,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=162386.00 price=265000 dcs=60.0048,-102614.00
+04_active_nts_postponements,default,strategies,foreclosure[conservative].spread,V_low - total_obligations - repairs - auction_holding,obligations=227350.00 repairs=152880.00 auction_holding=1381.46,-84111.46
+04_active_nts_postponements,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=391704.20,-67079.20
+04_active_nts_postponements,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,131264.20
 04_active_nts_postponements,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=318070.00 months=10.0000,34067.23
-04_active_nts_postponements,default,strategies,flip[expected].profit,ARV - all_in,ARV=459200.00 all_in=464688.43,-5488.43
-04_active_nts_postponements,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=201738.80 a=0.087833,175530.01
-04_active_nts_postponements,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=212240.00 price=265000 dcs=61.2722,-52760.00
-04_active_nts_postponements,default,strategies,foreclosure[expected].spread,V_low - total_obligations - repairs - auction_holding,obligations=218500.00 repairs=109200.00 auction_holding=1381.46,-31581.46
-04_active_nts_postponements,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=366300.75,7018.00
-04_active_nts_postponements,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,191518.00
+04_active_nts_postponements,default,strategies,flip[expected].profit,ARV - all_in,ARV=459200.00 all_in=462563.43,-3363.43
+04_active_nts_postponements,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=209288.800 a=0.087833,179449.51
+04_active_nts_postponements,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=212240.00 price=265000 dcs=60.0048,-52760.00
+04_active_nts_postponements,default,strategies,foreclosure[expected].spread,V_low - total_obligations - repairs - auction_holding,obligations=227350.00 repairs=109200.00 auction_holding=1381.46,-40431.46
+04_active_nts_postponements,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=362863.25,10455.50
+04_active_nts_postponements,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,196663.90
 04_active_nts_postponements,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=294865.00 months=7.5000,25526.36
-04_active_nts_postponements,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=484400.00 all_in=430446.11,53953.89
-04_active_nts_postponements,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=247600.25 a=0.070125,224886.82
-04_active_nts_postponements,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=257180.00 price=265000 dcs=61.2722,-7820.00
-04_active_nts_postponements,default,strategies,foreclosure[optimistic].spread,V_low - total_obligations - repairs - auction_holding,obligations=218500.00 repairs=81900.00 auction_holding=1381.46,-4281.46
+04_active_nts_postponements,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=484400.00 all_in=427008.61,57391.39
+04_active_nts_postponements,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=256462.750 a=0.070125,228941.46
+04_active_nts_postponements,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=257180.00 price=265000 dcs=60.0048,-7820.00
+04_active_nts_postponements,default,strategies,foreclosure[optimistic].spread,V_low - total_obligations - repairs - auction_holding,obligations=227350.00 repairs=81900.00 auction_holding=1381.46,-13131.46
 04_active_nts_postponements,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 06_no_debt_data,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=300000.00,225000
-06_no_debt_data,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=270260.67,-33748.17
-06_no_debt_data,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,140251.83
+06_no_debt_data,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=269510.67,-32998.17
+06_no_debt_data,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,143050.57
 06_no_debt_data,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=216954.00 months=9.0000,21810.63
-06_no_debt_data,default,strategies,flip[conservative].profit,ARV - all_in,ARV=285240.00 all_in=316251.20,-31011.20
-06_no_debt_data,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=158751.43 a=0.080750,143520.29
-06_no_debt_data,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=169428.00 price=225000 dcs=58.7952,-55572.00
-06_no_debt_data,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=261255.00,16995.00
-06_no_debt_data,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,181995.00
+06_no_debt_data,default,strategies,flip[conservative].profit,ARV - all_in,ARV=285240.00 all_in=315501.20,-30261.20
+06_no_debt_data,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=163926.430 a=0.080750,146040.74
+06_no_debt_data,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=169428.00 price=225000 dcs=57.5278,-55572.00
+06_no_debt_data,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=259380.00,18870.00
+06_no_debt_data,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,184873.17
 06_no_debt_data,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=209610.00 months=6.0000,15872.70
-06_no_debt_data,default,strategies,flip[expected].profit,ARV - all_in,ARV=321600.00 all_in=303943.70,17656.30
-06_no_debt_data,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=194209.00 a=0.059500,180956.87
-06_no_debt_data,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=203520.00 price=225000 dcs=58.7952,-21480.00
-06_no_debt_data,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=256234.71,63752.79
-06_no_debt_data,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,219752.79
+06_no_debt_data,default,strategies,flip[expected].profit,ARV - all_in,ARV=321600.00 all_in=302068.70,19531.30
+06_no_debt_data,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=200509.000 a=0.059500,183701.06
+06_no_debt_data,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=203520.00 price=225000 dcs=57.5278,-21480.00
+06_no_debt_data,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=253234.71,66752.79
+06_no_debt_data,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,222807.60
 06_no_debt_data,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=205020.00 months=4.5000,12988.65
-06_no_debt_data,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=361200.00 all_in=298910.36,62289.64
-06_no_debt_data,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=228038.29 a=0.048875,215513.30
-06_no_debt_data,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=236640.00 price=225000 dcs=58.7952,11640.00
+06_no_debt_data,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=361200.00 all_in=295910.36,65289.64
+06_no_debt_data,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=235463.290 a=0.048875,218527.78
+06_no_debt_data,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=236640.00 price=225000 dcs=57.5278,11640.00
 06_no_debt_data,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=0,33
 07_negative_equity,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=200000.00,150000
-07_negative_equity,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=228734.96,-71059.96
-07_negative_equity,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,44940.04
+07_negative_equity,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=228234.96,-70559.96
+07_negative_equity,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,47990.28
 07_negative_equity,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=182478.00 months=12.0000,23097.36
-07_negative_equity,default,strategies,flip[conservative].profit,ARV - all_in,ARV=234680.00 all_in=272346.62,-37666.62
-07_negative_equity,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=88494.74 a=0.102000,73228.11
-07_negative_equity,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=99596.00 price=150000 dcs=60.1602,-50404.00
-07_negative_equity,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=209106.64,-23606.64
-07_negative_equity,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,86393.36
+07_negative_equity,default,strategies,flip[conservative].profit,ARV - all_in,ARV=234680.00 all_in=271846.62,-37166.62
+07_negative_equity,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=91544.740 a=0.102000,75374.78
+07_negative_equity,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=99596.00 price=150000 dcs=58.8928,-50404.00
+07_negative_equity,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=207856.64,-22356.64
+07_negative_equity,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,89164.25
 07_negative_equity,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=166770.00 months=8.0000,15653.40
-07_negative_equity,default,strategies,flip[expected].profit,ARV - all_in,ARV=246200.00 all_in=246109.54,90.46
-07_negative_equity,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=116503.86 a=0.073667,104222.72
-07_negative_equity,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=126140.00 price=150000 dcs=60.1602,-23860.00
-07_negative_equity,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=197357.48,15967.52
-07_negative_equity,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,119967.52
+07_negative_equity,default,strategies,flip[expected].profit,ARV - all_in,ARV=246200.00 all_in=244859.54,1340.46
+07_negative_equity,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=120303.860 a=0.073667,106402.12
+07_negative_equity,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=126140.00 price=150000 dcs=58.8928,-23860.00
+07_negative_equity,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=195357.48,17967.52
+07_negative_equity,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,122651.24
 07_negative_equity,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=156952.50 months=6.0000,12186.68
-07_negative_equity,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=264650.00 all_in=232231.29,32418.71
-07_negative_equity,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=141675.39 a=0.059500,130640.60
-07_negative_equity,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=150605.00 price=150000 dcs=60.1602,605.00
+07_negative_equity,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=264650.00 all_in=230231.29,34418.71
+07_negative_equity,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=146225.390 a=0.059500,132931.04
+07_negative_equity,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=150605.00 price=150000 dcs=58.8928,605.00
 07_negative_equity,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 08_active_bankruptcy,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=375000.00,280000
-08_active_bankruptcy,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=338465.77,-42825.15
-08_active_bankruptcy,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,173424.85
+08_active_bankruptcy,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=337497.02,-41856.40
+08_active_bankruptcy,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,176969.37
 08_active_bankruptcy,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=272272.00 months=9.0000,27065.84
-08_active_bankruptcy,default,strategies,flip[conservative].profit,ARV - all_in,ARV=359070.00 all_in=395064.19,-35994.19
-08_active_bankruptcy,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=199257.65 a=0.080750,180246.87
-08_active_bankruptcy,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=211029.00 price=280000 dcs=61.9767,-68971.00
-08_active_bankruptcy,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=326398.78,21413.72
-08_active_bankruptcy,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,226413.72
+08_active_bankruptcy,default,strategies,flip[conservative].profit,ARV - all_in,ARV=359070.00 all_in=394095.44,-35025.44
+08_active_bankruptcy,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=206026.400 a=0.080750,183378.30
+08_active_bankruptcy,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=211029.00 price=280000 dcs=60.7094,-68971.00
+08_active_bankruptcy,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=324023.78,23788.72
+08_active_bankruptcy,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,230037.78
 08_active_bankruptcy,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=262480.00 months=6.0000,19573.60
-08_active_bankruptcy,default,strategies,flip[expected].profit,ARV - all_in,ARV=403800.00 all_in=378747.88,25052.12
-08_active_bankruptcy,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=243865.72 a=0.059500,227420.59
-08_active_bankruptcy,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=253860.00 price=280000 dcs=61.9767,-26140.00
-08_active_bankruptcy,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=319628.37,80356.01
-08_active_bankruptcy,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,274106.00
+08_active_bankruptcy,default,strategies,flip[expected].profit,ARV - all_in,ARV=403800.00 all_in=376372.88,27427.12
+08_active_bankruptcy,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=252040.720 a=0.059500,230822.61
+08_active_bankruptcy,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=253860.00 price=280000 dcs=60.7094,-26140.00
+08_active_bankruptcy,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=315847.12,84137.26
+08_active_bankruptcy,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,277938.78
 08_active_bankruptcy,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=256360.00 months=4.5000,15940.70
-08_active_bankruptcy,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=452850.00 all_in=371900.70,80949.30
-08_active_bankruptcy,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=286320.00 a=0.048875,270827.60
-08_active_bankruptcy,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=295395.00 price=280000 dcs=61.9767,15395.00
+08_active_bankruptcy,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=452850.00 all_in=368119.45,84730.55
+08_active_bankruptcy,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=295901.250 a=0.048875,274562.26
+08_active_bankruptcy,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=295395.00 price=280000 dcs=60.7094,15395.00
 08_active_bankruptcy,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 09_ocr_low_confidence,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=325000.00,245000
-09_ocr_low_confidence,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=342194.37,-85972.50
-09_ocr_low_confidence,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,103777.50
+09_ocr_low_confidence,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=341413.12,-85191.25
+09_ocr_low_confidence,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,107984.15
 09_ocr_low_confidence,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=275723.00 months=12.0000,34286.76
-09_ocr_low_confidence,default,strategies,flip[conservative].profit,ARV - all_in,ARV=355630.00 all_in=405764.31,-50134.31
-09_ocr_low_confidence,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=158026.45 a=0.102000,134963.42
-09_ocr_low_confidence,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=169561.00 price=245000 dcs=53.7046,-75439.00
-09_ocr_low_confidence,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=318573.32,-17135.82
-09_ocr_low_confidence,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,162864.18
+09_ocr_low_confidence,default,strategies,flip[conservative].profit,ARV - all_in,ARV=355630.00 all_in=404983.06,-49353.06
+09_ocr_low_confidence,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=163732.700 a=0.102000,138097.55
+09_ocr_low_confidence,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=169561.00 price=245000 dcs=52.4372,-75439.00
+09_ocr_low_confidence,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=316573.32,-15135.82
+09_ocr_low_confidence,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,166818.71
 09_ocr_low_confidence,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=256445.00 months=8.0000,23425.23
-09_ocr_low_confidence,default,strategies,flip[expected].profit,ARV - all_in,ARV=381700.00 all_in=373171.80,8528.20
-09_ocr_low_confidence,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=200613.43 a=0.073667,181840.92
-09_ocr_low_confidence,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=210490.00 price=245000 dcs=53.7046,-34510.00
-09_ocr_low_confidence,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=304537.17,42115.96
-09_ocr_low_confidence,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,212365.95
+09_ocr_low_confidence,default,strategies,flip[expected].profit,ARV - all_in,ARV=381700.00 all_in=371171.80,10528.20
+09_ocr_low_confidence,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=207538.430 a=0.073667,185098.48
+09_ocr_low_confidence,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=210490.00 price=245000 dcs=52.4372,-34510.00
+09_ocr_low_confidence,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=301318.42,45334.71
+09_ocr_low_confidence,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,216302.15
 09_ocr_low_confidence,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=244396.25 months=6.0000,18307.74
-09_ocr_low_confidence,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=416275.00 all_in=356524.85,59750.15
-09_ocr_low_confidence,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=239802.89 a=0.059500,222815.15
-09_ocr_low_confidence,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=248867.50 price=245000 dcs=53.7046,3867.50
+09_ocr_low_confidence,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=416275.00 all_in=353306.10,62968.90
+09_ocr_low_confidence,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=247946.640 a=0.059500,226294.52
+09_ocr_low_confidence,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=248867.50 price=245000 dcs=52.4372,3867.50
 09_ocr_low_confidence,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 10_released_lien,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=410000.00,310000
-10_released_lien,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=365019.21,-41785.46
-10_released_lien,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,198514.54
+10_released_lien,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=364056.71,-40822.96
+10_released_lien,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,202172.72
 10_released_lien,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=294559.00 months=9.0000,29183.11
-10_released_lien,default,strategies,flip[conservative].profit,ARV - all_in,ARV=385040.00 all_in=425617.72,-40577.72
-10_released_lien,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=221597.39 a=0.080750,201199.89
-10_released_lien,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=232988.00 price=310000 dcs=63.4917,-77012.00
-10_released_lien,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=354322.50,25952.50
-10_released_lien,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,253952.50
+10_released_lien,default,strategies,flip[conservative].profit,ARV - all_in,ARV=385040.00 all_in=424655.22,-39615.22
+10_released_lien,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=229109.890 a=0.080750,204530.21
+10_released_lien,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=232988.00 price=310000 dcs=62.2244,-77012.00
+10_released_lien,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=351822.50,28452.50
+10_released_lien,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,257758.54
 10_released_lien,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=285685.00 months=6.0000,21197.95
-10_released_lien,default,strategies,flip[expected].profit,ARV - all_in,ARV=436100.00 all_in=410637.70,25462.30
-10_released_lien,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=269440.25 a=0.059500,251710.52
-10_released_lien,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=279170.00 price=310000 dcs=63.4917,-30830.00
-10_released_lien,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=348437.90,88878.35
-10_released_lien,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,304578.35
+10_released_lien,default,strategies,flip[expected].profit,ARV - all_in,ARV=436100.00 all_in=408137.70,27962.30
+10_released_lien,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=278490.250 a=0.059500,255359.43
+10_released_lien,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=279170.00 price=310000 dcs=62.2244,-30830.00
+10_released_lien,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=344400.40,92915.85
+10_released_lien,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,308649.61
 10_released_lien,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=280138.75 months=4.5000,17307.98
-10_released_lien,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=491075.00 all_in=404848.82,86226.18
-10_released_lien,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=315319.16 a=0.048875,298569.83
-10_released_lien,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=324177.50 price=310000 dcs=63.4917,14177.50
+10_released_lien,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=491075.00 all_in=400811.32,90263.68
+10_released_lien,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=325906.660 a=0.048875,302595.68
+10_released_lien,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=324177.50 price=310000 dcs=62.2244,14177.50
 10_released_lien,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 11_missing_apn,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=290000.00,220000
-11_missing_apn,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=310017.78,-81389.03
-11_missing_apn,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,89310.97
+11_missing_apn,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=309355.28,-80726.53
+11_missing_apn,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,93144.85
 11_missing_apn,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=249475.00 months=12.0000,31137.00
-11_missing_apn,default,strategies,flip[conservative].profit,ARV - all_in,ARV=320000.00 all_in=367854.78,-47854.78
-11_missing_apn,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=139282.22 a=0.102000,118498.38
-11_missing_apn,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=150500.00 price=220000 dcs=56.7286,-69500.00
-11_missing_apn,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=288100.00,-19125.00
-11_missing_apn,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,142875.00
+11_missing_apn,default,strategies,flip[conservative].profit,ARV - all_in,ARV=320000.00 all_in=367192.28,-47192.28
+11_missing_apn,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=144244.720 a=0.102000,121337.82
+11_missing_apn,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=150500.00 price=220000 dcs=55.4613,-69500.00
+11_missing_apn,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=286350.00,-17375.00
+11_missing_apn,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,146463.41
 11_missing_apn,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=231625.00 months=8.0000,21274.17
-11_missing_apn,default,strategies,flip[expected].profit,ARV - all_in,ARV=342500.00 all_in=337705.42,4794.58
-11_missing_apn,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=177568.75 a=0.073667,160665.55
-11_missing_apn,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=187250.00 price=220000 dcs=56.7286,-32750.00
-11_missing_apn,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=275059.86,34261.39
-11_missing_apn,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,187561.39
+11_missing_apn,default,strategies,flip[expected].profit,ARV - all_in,ARV=342500.00 all_in=335955.42,6544.58
+11_missing_apn,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=183618.750 a=0.073667,163608.54
+11_missing_apn,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=187250.00 price=220000 dcs=55.4613,-32750.00
+11_missing_apn,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=272222.36,37098.89
+11_missing_apn,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,191120.87
 11_missing_apn,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=220468.75 months=6.0000,16632.81
-11_missing_apn,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=372875.00 all_in=322226.11,50648.89
-11_missing_apn,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=212706.70 a=0.059500,197417.54
-11_missing_apn,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=221637.50 price=220000 dcs=56.7286,1637.50
+11_missing_apn,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=372875.00 all_in=319388.61,53486.39
+11_missing_apn,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=219844.200 a=0.059500,200554.53
+11_missing_apn,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=221637.50 price=220000 dcs=55.4613,1637.50
 11_missing_apn,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33
 12_condo_hoa_arrears,default,strategies,purchase_price,round_5000(0.75 x V_exp),V_exp=275000.00,205000
-12_condo_hoa_arrears,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=247949.94,-31146.82
-12_condo_hoa_arrears,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,127103.18
+12_condo_hoa_arrears,default,strategies,cash[conservative].profit,V*(1-resale_pct) - all_in,all_in=247231.19,-30428.07
+12_condo_hoa_arrears,default,strategies,cash[conservative].mao,V*(1-margin) - repairs - holding - acq - resale,,129704.32
 12_condo_hoa_arrears,default,strategies,flip[conservative].financing,points*loan + flat + loan*rate/12*months,loan=195241.60 months=9.0000,19747.95
-12_condo_hoa_arrears,default,strategies,flip[conservative].profit,ARV - all_in,ARV=258446.00 all_in=289935.23,-31489.23
-12_condo_hoa_arrears,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=141569.52 a=0.080750,128036.38
-12_condo_hoa_arrears,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=156216.20 price=205000 dcs=63.5917,-48783.80
+12_condo_hoa_arrears,default,strategies,flip[conservative].profit,ARV - all_in,ARV=258446.00 all_in=289216.48,-30770.48
+12_condo_hoa_arrears,default,strategies,flip[conservative].mao,(K - a*repairs - flat)/(1+a),K=146213.270 a=0.080750,130426.47
+12_condo_hoa_arrears,default,strategies,wholesale[conservative].spread,ARV*investor_pct - repairs - contract,threshold=156216.20 price=205000 dcs=62.3244,-48783.80
 12_condo_hoa_arrears,default,strategies,rental[conservative].noi,EGI - OpEx,egi=24816.00 opex=13629.49,11186.51
-12_condo_hoa_arrears,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=239163.78,15898.72
-12_condo_hoa_arrears,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,165898.72
+12_condo_hoa_arrears,default,strategies,cash[expected].profit,V*(1-resale_pct) - all_in,all_in=237413.78,17648.72
+12_condo_hoa_arrears,default,strategies,cash[expected].mao,V*(1-margin) - repairs - holding - acq - resale,,168559.73
 12_condo_hoa_arrears,default,strategies,flip[expected].financing,points*loan + flat + loan*rate/12*months,loan=189244.00 months=6.0000,14447.08
-12_condo_hoa_arrears,default,strategies,flip[expected].profit,ARV - all_in,ARV=292640.00 all_in=278327.26,14312.74
-12_condo_hoa_arrears,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=175231.82 a=0.059500,163267.81
-12_condo_hoa_arrears,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=187208.00 price=205000 dcs=63.5917,-17792.00
+12_condo_hoa_arrears,default,strategies,flip[expected].profit,ARV - all_in,ARV=292640.00 all_in=276577.26,16062.74
+12_condo_hoa_arrears,default,strategies,flip[expected].mao,(K - a*repairs - flat)/(1+a),K=180906.820 a=0.059500,165843.47
+12_condo_hoa_arrears,default,strategies,wholesale[expected].spread,ARV*investor_pct - repairs - contract,threshold=187208.00 price=205000 dcs=62.3244,-17792.00
 12_condo_hoa_arrears,default,strategies,rental[expected].noi,EGI - OpEx,egi=24816.00 opex=13773.86,11042.14
-12_condo_hoa_arrears,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=234404.28,58917.60
-12_condo_hoa_arrears,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,200667.59
+12_condo_hoa_arrears,default,strategies,cash[optimistic].profit,V*(1-resale_pct) - all_in,all_in=231623.03,61698.85
+12_condo_hoa_arrears,default,strategies,cash[optimistic].mao,V*(1-margin) - repairs - holding - acq - resale,,203486.67
 12_condo_hoa_arrears,default,strategies,flip[optimistic].financing,points*loan + flat + loan*rate/12*months,loan=185495.50 months=4.5000,11865.99
-12_condo_hoa_arrears,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=329480.00 all_in=273657.57,55822.43
-12_condo_hoa_arrears,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=206792.42 a=0.048875,195395.83
-12_condo_hoa_arrears,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=217406.00 price=205000 dcs=63.5917,12406.00
+12_condo_hoa_arrears,default,strategies,flip[optimistic].profit,ARV - all_in,ARV=329480.00 all_in=270876.32,58603.68
+12_condo_hoa_arrears,default,strategies,flip[optimistic].mao,(K - a*repairs - flat)/(1+a),K=213498.670 a=0.048875,198209.34
+12_condo_hoa_arrears,default,strategies,wholesale[optimistic].spread,ARV*investor_pct - repairs - contract,threshold=217406.00 price=205000 dcs=62.3244,12406.00
 12_condo_hoa_arrears,default,strategies,rental[optimistic].noi,EGI - OpEx,egi=24816.00 opex=13918.24,10897.76
 12_condo_hoa_arrears,default,strategies,offer_grid.points,9 offers x 3 scenarios + MAO markers,payoff_fees=1200,33

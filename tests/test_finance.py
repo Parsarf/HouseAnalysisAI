@@ -162,7 +162,7 @@ def test_estimate_balance_amortization():
     # hand-verified: 100k @ 6%, 360-month term, 120 months elapsed
     balance = estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(2010, 6, 15), AS_OF)
     assert balance == Decimal("83685.72")
-    assert estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(2025, 1, 1), AS_OF) == Decimal("100000.00")
+    assert estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(2025, 1, 1), AS_OF) is None
     assert estimate_balance(Decimal(100000), Decimal("0.06"), 360, date(1980, 1, 1), AS_OF) == ZERO
     assert estimate_balance(None, Decimal("0.06"), 360, date(2010, 1, 1), AS_OF) is None
 
@@ -201,6 +201,36 @@ def test_fallback_rate_still_derives_balance():
     assert len(set(confirmed_by_scenario.values())) == 1
 
 
+def test_zero_interest_balance_amortizes_linearly_and_invalid_terms_are_rejected():
+    assert estimate_balance(
+        Decimal("120000"), ZERO, 120, date(2020, 1, 1), date(2025, 1, 1),
+    ) == Decimal("60000.00")
+    assert estimate_balance(
+        Decimal("120000"), ZERO, 0, date(2020, 1, 1), date(2025, 1, 1),
+    ) is not None  # omitted/zero term uses the documented 360-month default
+    assert estimate_balance(
+        Decimal("120000"), ZERO, -1, date(2020, 1, 1), date(2025, 1, 1),
+    ) is None
+    assert estimate_balance(
+        Decimal("120000"), ZERO, 120, date(2020, 1, 31), date(2020, 2, 1),
+    ) == Decimal("120000.00")
+    assert estimate_balance(
+        Decimal("120000"), ZERO, 120, date(2025, 1, 1), date(2020, 1, 1),
+    ) is None
+
+
+def test_same_position_conflict_compares_derived_and_reported_balances():
+    prop = make_property(mortgages=[
+        MortgageRecord(position="first", estimated_balance=tracked("50000")),
+        MortgageRecord(position="FIRST", original_amount=tracked("200000"), rate=Decimal("0.06"),
+                       term_months=360, origination_date=date(2019, 6, 15)),
+    ])
+    result = underwrite(prop, assumptions())
+    assert result.liabilities.confirmed > Decimal("190000")
+    assert len([item for item in result.liabilities.breakdown
+                if item["label"].startswith("mortgage:")]) == 1
+
+
 # --- item 7: published-bid reconciliation, bid_mismatch, undrawn HELOC (spec §7.3) ---
 
 def test_published_bid_reconciles_first_mortgage_and_flags_mismatch():
@@ -233,6 +263,29 @@ def test_undrawn_heloc_is_potential_not_confirmed():
     assert result.liabilities.maximum == Decimal(50000)
 
 
+def test_heloc_limit_without_draw_data_is_never_fabricated_as_confirmed_balance():
+    prop = make_property(mortgages=[
+        MortgageRecord(position="HELOC", original_amount=tracked("50000"),
+                       origination_date=date(2018, 1, 1)),
+    ])
+    result = underwrite(prop, assumptions())
+    assert result.liabilities.confirmed == ZERO
+    assert result.liabilities.potential == Decimal("50000.00")
+    assert result.liabilities.breakdown[0]["basis"] == "heloc_capacity_no_draw_data"
+    assert result.debt_data_present is True
+
+
+def test_position_label_does_not_hide_unknown_heloc_capacity():
+    prop = make_property(mortgages=[
+        MortgageRecord(position="second HELOC", original_amount=tracked("40000"),
+                       origination_date=date(2020, 1, 1)),
+    ])
+    result = underwrite(prop, assumptions())
+    assert result.liabilities.confirmed == ZERO
+    assert result.liabilities.potential == Decimal("40000.00")
+    assert result.debt_data_present is True
+
+
 # --- item 8: missing sqft → unavailable/flagged, never silent $0 repairs ---
 
 def test_missing_sqft_makes_arv_unavailable_not_zero_repairs():
@@ -261,6 +314,16 @@ def test_comp_range_clamps_value_band():
     # single candidate → disp 0.15 → raw band 255000–345000, clamped to comp range
     assert result.value.v_low == Decimal("290000.00")
     assert result.value.v_high == Decimal("310000.00")
+
+
+def test_conflicting_comp_range_never_inverts_scenario_values():
+    prop = make_property(comparables=[
+        ComparableSale(address="2 Main St", price=tracked("450000")),
+        ComparableSale(address="3 Main St", price=tracked("500000")),
+    ])
+    result = underwrite(prop, assumptions())
+    assert result.value.v_low <= result.value.v_expected <= result.value.v_high
+    assert result.value.v_low == Decimal("255000.00")
 
 
 def test_valuation_weights_and_avm_recency_decay():

@@ -22,7 +22,43 @@ from sqlalchemy.engine import Connection
 # open_gating_flag) are excluded; needs_review rows stay rankable.
 RANKINGS_SQL = text(
     """
-    WITH previous AS (
+    WITH active_config AS (
+        SELECT COALESCE(
+            (
+                SELECT id
+                FROM scoring_configs
+                WHERE is_active
+                ORDER BY version DESC NULLS LAST, id DESC
+                LIMIT 1
+            ),
+            (
+                SELECT scoring_config_id
+                FROM scores
+                WHERE scoring_config_id IS NOT NULL
+                ORDER BY computed_at DESC NULLS LAST, id DESC
+                LIMIT 1
+            )
+        ) AS id
+    ),
+    scope_properties AS (
+        SELECT p.id AS property_id
+        FROM properties p
+        WHERE p.merged_into_id IS NULL
+          AND (
+              (:scope_type = 'portfolio' AND :scope_id IS NULL)
+              OR (
+                  :scope_type = 'batch'
+                  AND :scope_id IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM reports report
+                      WHERE report.property_id = p.id
+                        AND report.batch_id = :scope_id
+                  )
+              )
+          )
+    ),
+    previous AS (
         SELECT r.property_id, r.rank
         FROM rankings r
         WHERE r.scope_type = :scope_type
@@ -37,8 +73,11 @@ RANKINGS_SQL = text(
     latest AS (
         SELECT DISTINCT ON (s.property_id) s.property_id, s.overall
         FROM scores s
+        JOIN active_config config ON config.id = s.scoring_config_id
+        JOIN scope_properties scoped ON scoped.property_id = s.property_id
         WHERE NOT (COALESCE(s.gates_applied, '{}'::text[]) && ARRAY['insufficient_data', 'open_gating_flag']::text[])
-        ORDER BY s.property_id, s.computed_at DESC NULLS LAST
+          AND s.overall IS NOT NULL
+        ORDER BY s.property_id, s.computed_at DESC NULLS LAST, s.id DESC
     )
     INSERT INTO rankings (id, scope_type, scope_id, property_id, rank, prev_rank, score, ranked_at)
     SELECT gen_random_uuid(), :scope_type, :scope_id, latest.property_id,
@@ -86,10 +125,22 @@ def compute_ranks(scores: Mapping[UUID, Decimal] | Iterable[tuple[UUID, Decimal]
 
 def rank_scope(conn: Connection, scope_type: str, scope_id: UUID | None = None) -> int:
     """Materialize one rankings snapshot for a scope in a single SQL
-    statement. Scope = batch, saved view, or whole portfolio (scope_id NULL).
-    Returns the number of rows written."""
+    statement. Currently supported scopes are batch and whole portfolio;
+    saved views require their filter membership to be resolved first. Returns
+    the number of rows written."""
+    if scope_type == "portfolio":
+        if scope_id is not None:
+            raise ValueError("portfolio ranking does not accept a scope_id")
+    elif scope_type == "batch":
+        if scope_id is None:
+            raise ValueError("batch ranking requires a scope_id")
+    else:
+        # Saved-view membership must first be evaluated through the validated
+        # filter grammar. Ranking the whole portfolio under a saved-view label
+        # would be silently and materially wrong.
+        raise ValueError(f"unsupported ranking scope: {scope_type}")
     result = conn.execute(RANKINGS_SQL, {"scope_type": scope_type, "scope_id": scope_id})
-    return result.rowcount or 0
+    return max(0, result.rowcount or 0)
 
 
 def load_active_scoring_config(conn: Connection) -> tuple[UUID, dict[str, Any]] | None:

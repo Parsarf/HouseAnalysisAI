@@ -1,6 +1,6 @@
 """WP-7 strategy and offer engine (spec §8/§9). Pure library: no DB, no IO, no floats.
 
-Reconciled against GOLDEN FORMULA SET v1 (fixtures/generate_goldens.py docstring):
+Reconciled against GOLDEN FORMULA SET v2 (fixtures/generate_goldens.py docstring):
 - Cash, rental and offer-grid profit read the as-is scenario value
   (v_low/v_expected/v_high); flip and wholesale read the after-repair value
   (arv_by_scenario), which is None when sqft is missing.
@@ -28,6 +28,7 @@ Deliberate deviations from the golden set, each traced to explicit spec text:
   owner_utilities_monthly key (spec §8 owner-paid utilities); fixture sets
   parameterize neither, so DSCR is null and cash_flow == NOI there.
 """
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from contracts import (
@@ -44,6 +45,7 @@ from contracts import (
     StrategyType,
     UnderwritingResult,
 )
+from finance.transfer_tax import transfer_tax_rate
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -58,6 +60,8 @@ DCS_WHOLESALE_MIN = Decimal(60)
 PAYOFF_FEES_DEFAULT = Decimal(1200)  # spec §9.2 payoff interest/fees default
 GRID_ROUND = Decimal(5000)
 FLIP_BAND_THRESHOLD = Decimal(500000)
+CLOSED_STATUSES = frozenset({"closed", "paid", "released", "satisfied"})
+FIRST_POSITIONS = frozenset({"first", "1", "1st"})
 
 
 def _q(value: Decimal | None, quantum: Decimal = Q2) -> Decimal | None:
@@ -80,7 +84,43 @@ def _v_as_is(underwriting: UnderwritingResult, scenario: Scenario) -> Decimal | 
 
 def _resale_pct(assumptions: AssumptionSet) -> Decimal:
     resale = assumptions.resale
-    return resale.commission_pct + resale.seller_closing_pct + resale.concessions_pct + resale.misc_pct
+    values = (resale.commission_pct, resale.seller_closing_pct,
+              resale.concessions_pct, resale.misc_pct)
+    total = sum(values, ZERO)
+    if any(value < ZERO for value in values) or total >= ONE:
+        raise ValueError("resale percentages must be nonnegative and total less than 100%")
+    return total
+
+
+def _acquisition_pct(assumptions: AssumptionSet) -> Decimal:
+    acquisition = assumptions.acquisition
+    values = (acquisition.closing_pct, acquisition.title_pct, acquisition.acq_fee_pct,
+              transfer_tax_rate(acquisition.transfer_tax_lookup_key))
+    total = sum(values, ZERO)
+    if any(value < ZERO for value in values) or total >= ONE:
+        raise ValueError("acquisition percentages must be nonnegative and total less than 100%")
+    return total
+
+
+def _acquisition_flat(assumptions: AssumptionSet) -> Decimal:
+    acquisition = assumptions.acquisition
+    values = (acquisition.escrow_flat, acquisition.inspection_flat, acquisition.legal_flat)
+    if any(value < ZERO for value in values):
+        raise ValueError("flat acquisition costs must be nonnegative")
+    return sum(values, ZERO)
+
+
+def _acquisition_cost(price: Decimal, assumptions: AssumptionSet) -> Decimal:
+    return _q(price * _acquisition_pct(assumptions) + _acquisition_flat(assumptions))
+
+
+def _cash_mao(value: Decimal, cost: CostBlock, assumptions: AssumptionSet) -> Decimal:
+    if not ZERO <= assumptions.strategy.cash_target_margin < ONE:
+        raise ValueError("cash target margin must be between zero and one")
+    available = (value * (ONE - assumptions.strategy.cash_target_margin)
+                 - cost.repairs - cost.holding - cost.resale
+                 - _acquisition_flat(assumptions))
+    return _q(available / (ONE + _acquisition_pct(assumptions)))
 
 
 def _echo(price: Decimal | None) -> dict[str, Decimal]:
@@ -100,19 +140,26 @@ def _costs(underwriting: UnderwritingResult, scenario: Scenario) -> CostBlock | 
     return underwriting.costs.get(scenario)
 
 
-def data_confidence(record: NormalizedProperty) -> Decimal:
-    """Data Confidence Score, 0-100 (spec §10 DCS formula; golden formula set v1)."""
+def data_confidence(record: NormalizedProperty, as_of: date | None = None) -> Decimal:
+    """Data Confidence Score, 0-100 (spec §10 DCS formula)."""
     quality = record.data_quality
+    as_of = as_of or datetime.now(UTC).date()
     corroborated = sum(1 for count in quality.source_counts_by_field.values() if count >= 2)
-    corroboration = _q(Decimal(corroborated) / Decimal(22), Q6)
-    conflict_penalty = min(ONE, Decimal(quality.material_conflict_count) / Decimal(5))
-    verification = _q(Decimal(quality.verified_field_count) / Decimal(22), Q6)
-    recency = ONE if quality.newest_report_date else ZERO
-    return _q(Decimal(100) * (Decimal("0.30") * quality.critical_field_coverage
+    corroboration = min(ONE, _q(Decimal(corroborated) / Decimal(22), Q6))
+    conflict_penalty = min(ONE, max(ZERO, Decimal(quality.material_conflict_count) / Decimal(5)))
+    verification = min(ONE, _q(Decimal(quality.verified_field_count) / Decimal(22), Q6))
+    coverage = min(ONE, max(ZERO, quality.critical_field_coverage))
+    extraction = min(ONE, max(ZERO, quality.mean_extraction_confidence))
+    if quality.newest_report_date is None:
+        recency = ZERO
+    else:
+        age_days = Decimal(max(0, (as_of - quality.newest_report_date).days))
+        recency = Decimal("0.5") ** (age_days / Decimal(180))
+    return _q(Decimal(100) * (Decimal("0.30") * coverage
                                 + Decimal("0.20") * corroboration + Decimal("0.20") * recency
                                 + Decimal("0.15") * (ONE - conflict_penalty)
                                 + Decimal("0.10") * verification
-                                + Decimal("0.05") * quality.mean_extraction_confidence), Q4)
+                                + Decimal("0.05") * extraction), Q4)
 
 
 def _months_base_from_condition(record: NormalizedProperty, assumptions: AssumptionSet) -> Decimal:
@@ -160,24 +207,36 @@ def _months_base_from_costs(underwriting: UnderwritingResult, assumptions: Assum
 
 def _hard_money(assumptions: AssumptionSet) -> tuple[Decimal, Decimal, Decimal]:
     hard_money = assumptions.strategy.hard_money
-    return (hard_money.get("rate", Decimal(".1")), hard_money.get("points", Decimal(".02")),
-            hard_money.get("ltv", Decimal(".85")))
+    rate = hard_money.get("rate", Decimal(".1"))
+    points = hard_money.get("points", Decimal(".02"))
+    ltv = hard_money.get("ltv", Decimal(".85"))
+    if rate < ZERO or points < ZERO or not ZERO <= ltv <= ONE:
+        raise ValueError("hard-money rate/points must be nonnegative and LTV must be 0-1")
+    return rate, points, ltv
 
 
 def _flip_margin(bands: dict[str, Decimal], arv: Decimal | None) -> Decimal:
     default = bands.get("default", Decimal(".2"))
     if arv is not None and arv >= FLIP_BAND_THRESHOLD:
-        return bands.get("over_500k", default)
-    return bands.get("under_500k", default)
+        margin = bands.get("over_500k", default)
+    else:
+        margin = bands.get("under_500k", default)
+    if not ZERO <= margin < ONE:
+        raise ValueError("flip target margin must be between zero and one")
+    return margin
 
 
 def _flip_mao(arv: Decimal, cost: CostBlock, resale_flip: Decimal, margin_target: Decimal,
               assumptions: AssumptionSet, months: Decimal) -> Decimal:
-    """MAO solving MAO = K - a*(MAO + repairs) - financing_flat (golden formula set)."""
+    """Solve target-margin MAO including price-dependent acquisition/financing."""
     rate, points, ltv = _hard_money(assumptions)
     coeff = ltv * (points + rate / Decimal(12) * months)
-    k_const = _q(arv * (ONE - margin_target) - cost.repairs - cost.holding - resale_flip - cost.acquisition)
-    return _q((k_const - coeff * cost.repairs - assumptions.acquisition.financing_flat) / (ONE + coeff))
+    k_const = (arv * (ONE - margin_target) - cost.repairs - cost.holding - resale_flip
+               - _acquisition_flat(assumptions) - assumptions.acquisition.financing_flat)
+    return _q(
+        (k_const - coeff * cost.repairs)
+        / (ONE + coeff + _acquisition_pct(assumptions))
+    )
 
 
 def _resale_flip(arv: Decimal, assumptions: AssumptionSet) -> Decimal:
@@ -190,12 +249,14 @@ def cash(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
         ctx.prec = PRECISION
         value = _v_as_is(underwriting, scenario)
         cost = _costs(underwriting, scenario)
-        if value is None or not purchase_price or cost is None:
+        if value is None or cost is None:
             return _unavailable(StrategyType.CASH, scenario, "no_value_data", purchase_price)
-        all_in = _q(purchase_price + cost.acquisition + cost.repairs + cost.holding)
+        if purchase_price <= ZERO:
+            return _unavailable(StrategyType.CASH, scenario, "invalid_purchase_price", purchase_price)
+        acquisition = _acquisition_cost(purchase_price, assumptions)
+        all_in = _q(purchase_price + acquisition + cost.repairs + cost.holding)
         profit = _q(value * (ONE - _resale_pct(assumptions)) - all_in)
-        mao = _q(value * (ONE - assumptions.strategy.cash_target_margin) - cost.repairs - cost.holding
-                 - cost.acquisition - cost.resale)
+        mao = _cash_mao(value, cost, assumptions)
         return StrategyResult(strategy=StrategyType.CASH, scenario=scenario,
                               status="viable" if profit >= 0 else "not_viable",
                               mao=mao, all_in_basis=all_in, profit=profit,
@@ -210,8 +271,10 @@ def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
         value = _v_as_is(underwriting, scenario)
         arv = underwriting.value.arv_by_scenario.get(scenario)
         cost = _costs(underwriting, scenario)
-        if value is None or not purchase_price or cost is None:
+        if value is None or cost is None:
             return _unavailable(StrategyType.FLIP, scenario, "no_value_data", purchase_price)
+        if purchase_price <= ZERO:
+            return _unavailable(StrategyType.FLIP, scenario, "invalid_purchase_price", purchase_price)
         if _sqft(record) is None or arv is None:
             return _unavailable(StrategyType.FLIP, scenario, "no_sqft_data", purchase_price)
         months = _q(_months_base_from_condition(record, assumptions) * HOLDING_MULT[scenario], Q4)
@@ -219,10 +282,11 @@ def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
         loan = _q(ltv * (purchase_price + cost.repairs))
         financing = _q(points * loan + assumptions.acquisition.financing_flat + loan * rate / Decimal(12) * months)
         resale_flip = _resale_flip(arv, assumptions)
-        all_in = _q(purchase_price + cost.repairs + cost.holding + financing + cost.acquisition + resale_flip)
+        acquisition = _acquisition_cost(purchase_price, assumptions)
+        all_in = _q(purchase_price + cost.repairs + cost.holding + financing + acquisition + resale_flip)
         profit = _q(arv - all_in)
         down = _q(purchase_price + cost.repairs - loan)
-        coc_denominator = down + cost.holding + cost.acquisition
+        coc_denominator = down + cost.holding + acquisition
         margin_target = _flip_margin(assumptions.strategy.flip_target_margin_by_arv_band, arv)
         return StrategyResult(strategy=StrategyType.FLIP, scenario=scenario,
                               status="viable" if profit >= 0 else "not_viable",
@@ -241,10 +305,15 @@ def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, cont
         ctx.prec = PRECISION
         arv = underwriting.value.arv_by_scenario.get(scenario)
         cost = _costs(underwriting, scenario)
-        if arv is None or not contract_price or cost is None:
+        if arv is None or cost is None:
             reason = "no_value_data" if _v_as_is(underwriting, scenario) is None else "no_sqft_data"
             return _unavailable(StrategyType.WHOLESALE, scenario, reason, contract_price)
+        if contract_price <= ZERO:
+            return _unavailable(StrategyType.WHOLESALE, scenario, "invalid_purchase_price", contract_price)
         dcs = data_confidence if data_confidence is not None else _q((underwriting.confidence or ZERO) * Decimal(100), Q4)
+        if (not ZERO <= assumptions.strategy.wholesale_investor_pct <= ONE
+                or assumptions.strategy.min_assignment_spread < ZERO):
+            raise ValueError("wholesale percentage/spread assumptions are invalid")
         threshold = _q(arv * assumptions.strategy.wholesale_investor_pct - cost.repairs)
         max_contract = _q(threshold - assumptions.strategy.min_assignment_spread)
         spread = _q(threshold - contract_price)
@@ -259,6 +328,8 @@ def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, cont
 def _annual_debt_service(loan: Decimal, annual_rate: Decimal, amort_years: int) -> Decimal:
     if loan <= 0:
         return ZERO
+    if annual_rate < ZERO or amort_years <= 0:
+        raise ValueError("rental rate must be nonnegative and amortization term must be positive")
     monthly_rate = annual_rate / Decimal(12)
     payments = amort_years * 12
     if monthly_rate == 0:
@@ -275,30 +346,49 @@ def rental(record: NormalizedProperty, underwriting: UnderwritingResult, assumpt
             return _unavailable(StrategyType.RENTAL, scenario, "no_rent_data", price)
         value = _v_as_is(underwriting, scenario)
         cost = _costs(underwriting, scenario)
-        if value is None or not price or cost is None:
+        if price <= ZERO:
+            return _unavailable(StrategyType.RENTAL, scenario, "invalid_purchase_price", price)
+        if value is None or cost is None:
             return _unavailable(StrategyType.RENTAL, scenario, "no_value_data", price)
         if _sqft(record) is None:
             return _unavailable(StrategyType.RENTAL, scenario, "no_sqft_data", price)
         config = assumptions.strategy.rental
-        egi = _q(rent * Decimal(12) * (ONE - config.get("vacancy", Decimal(".06"))))
+        vacancy = config.get("vacancy", Decimal(".06"))
+        operating_rates = (
+            config.get("maintenance_pct", Decimal(".08")),
+            config.get("management_pct", Decimal(".08")),
+            config.get("reserves_pct", Decimal(".05")),
+        )
+        if (not ZERO <= vacancy < ONE or any(value < ZERO for value in operating_rates)
+                or sum(operating_rates, ZERO) >= ONE):
+            raise ValueError("rental vacancy and operating percentages are invalid")
+        owner_utilities = config.get("owner_utilities_monthly", ZERO)
+        if owner_utilities < ZERO:
+            raise ValueError("owner-paid utilities must be nonnegative")
+        egi = _q(rent * Decimal(12) * (ONE - vacancy))
         opex = _q((_tracked(record.taxes.annual_taxes) or ZERO)
                   + value * assumptions.holding.insurance_pct_yr
                   + (_tracked(record.hoa.monthly_dues) or ZERO) * Decimal(12)
-                  + config.get("owner_utilities_monthly", ZERO) * Decimal(12)
-                  + egi * (config.get("maintenance_pct", Decimal(".08"))
-                           + config.get("management_pct", Decimal(".08"))
-                           + config.get("reserves_pct", Decimal(".05"))))
+                  + owner_utilities * Decimal(12)
+                  + egi * sum(operating_rates, ZERO))
         noi = _q(egi - opex)
-        invested = price + cost.acquisition + cost.repairs
+        acquisition = _acquisition_cost(price, assumptions)
+        invested = price + acquisition + cost.repairs
         cash_flow = noi
         dscr = None
         ltv, rate = config.get("ltv"), config.get("rate")
         if ltv is not None and rate is not None:
+            amort_years = int(config.get("amort_years", 30))
+            if not ZERO <= ltv <= ONE or rate < ZERO or amort_years <= 0:
+                return _unavailable(
+                    StrategyType.RENTAL, scenario,
+                    "invalid_rental_financing_assumptions", price,
+                )
             loan = _q(price * ltv)
-            debt_service = _annual_debt_service(loan, rate, int(config.get("amort_years", 30)))
+            debt_service = _annual_debt_service(loan, rate, amort_years)
             cash_flow = _q(noi - debt_service)
             dscr = _q(noi / debt_service, Q6) if debt_service > 0 else None
-            invested = price - loan + cost.acquisition + cost.repairs
+            invested = price - loan + acquisition + cost.repairs
         return StrategyResult(strategy=StrategyType.RENTAL, scenario=scenario,
                               status="viable" if cash_flow > 0 else "not_viable", profit=cash_flow,
                               metrics={"egi": egi, "opex": opex, "noi": noi,
@@ -310,13 +400,26 @@ def rental(record: NormalizedProperty, underwriting: UnderwritingResult, assumpt
 
 
 def _first_mortgage(record: NormalizedProperty):
-    return next((mortgage for mortgage in record.mortgages if mortgage.is_open and mortgage.position == "1"), None)
+    candidates = [
+        mortgage for mortgage in record.mortgages
+        if mortgage.is_open and _mortgage_position_key(mortgage.position) == "1"
+    ]
+    return max(candidates, key=lambda mortgage: _tracked(mortgage.estimated_balance) or ZERO, default=None)
+
+
+def _mortgage_position_key(position: str) -> str:
+    normalized = position.strip().casefold()
+    if normalized in FIRST_POSITIONS or normalized.startswith("first"):
+        return "1"
+    if normalized in {"second", "2", "2nd"} or normalized.startswith("second"):
+        return "2"
+    return normalized
 
 
 def _distress_present(record: NormalizedProperty) -> bool:
     if record.foreclosure and record.foreclosure.is_active:
         return True
-    if any(bankruptcy.status == "active" for bankruptcy in record.bankruptcies):
+    if any(bankruptcy.status.casefold() == "active" for bankruptcy in record.bankruptcies):
         return True
     return (_tracked(record.taxes.delinquent_amount) or ZERO) > 0
 
@@ -353,12 +456,26 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
         bid = _tracked(state.published_bid)
         first = _first_mortgage(record)
         obligations = bid if bid is not None else ((_tracked(first.estimated_balance) if first else ZERO) or ZERO)
-        junior_debt = sum((_tracked(mortgage.estimated_balance) or ZERO
-                           for mortgage in record.mortgages if mortgage.is_open and mortgage.position != "1"), ZERO)
+        # Reports often repeat the same mortgage with position aliases (for
+        # example "second" and "2"). Mirror finance's conservative conflict
+        # handling: keep the largest balance at each junior priority instead of
+        # double-counting duplicates as separate surviving debt.
+        junior_by_position: dict[str, Decimal] = {}
+        for mortgage in record.mortgages:
+            position = _mortgage_position_key(mortgage.position)
+            if not mortgage.is_open or position == "1":
+                continue
+            balance = _tracked(mortgage.estimated_balance)
+            if balance is not None:
+                junior_by_position[position] = max(junior_by_position.get(position, ZERO), balance)
+        junior_debt = sum(junior_by_position.values(), ZERO)
         junior_debt += sum((_tracked(lien.amount) or ZERO for lien in record.liens
-                            if lien.status not in ("released", "satisfied")
+                            if lien.status.casefold() not in CLOSED_STATUSES
                             and lien.attachment_basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY), ZERO)
-        total_obligations = _q(obligations + junior_debt + (_tracked(record.taxes.delinquent_amount) or ZERO))
+        transfer_costs = _acquisition_cost(obligations, assumptions) if obligations > ZERO else ZERO
+        total_obligations = _q(obligations + junior_debt
+                               + (_tracked(record.taxes.delinquent_amount) or ZERO)
+                               + transfer_costs)
         holding = assumptions.holding
         monthly = _q((_tracked(record.taxes.annual_taxes) or ZERO) / Decimal(12)
                      + v_low * (holding.insurance_pct_yr + holding.maintenance_pct_yr) / Decimal(12)
@@ -369,7 +486,7 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
         cost = underwriting.costs.get(repair_scenario) or CostBlock()
         repairs = cost.repairs
         spread = _q(v_low - total_obligations - repairs - auction_holding)
-        active_liens = [lien for lien in record.liens if lien.status not in ("released", "satisfied")]
+        active_liens = [lien for lien in record.liens if lien.status.casefold() not in CLOSED_STATUSES]
         flags = {
             "flag_junior_liens_present": (junior_debt > 0, "mortgages/liens"),
             "flag_irs_lien": (any(lien.lien_type == "federal_tax" for lien in active_liens), "liens"),
@@ -380,17 +497,22 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
         }
         return StrategyResult(strategy=StrategyType.FORECLOSURE, scenario=scenario,
                               status="viable" if spread > 0 else "not_viable", profit=spread,
-                              metrics={"total_obligations": total_obligations, "auction_holding": auction_holding,
+                              metrics={"total_obligations": total_obligations,
+                                       "transfer_costs": transfer_costs,
+                                       "auction_holding": auction_holding,
                                        "spread": spread,
                                        **{name: Decimal(1) if fired else Decimal(0) for name, (fired, _) in flags.items()}},
                               notices=[f"{name} (source: {source})" for name, (fired, source) in flags.items() if fired],
                               inputs_echo=_echo(price))
 
 
-def all_strategies(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, price: Decimal) -> list[StrategyResult]:
+def all_strategies(
+    record: NormalizedProperty, underwriting: UnderwritingResult,
+    assumptions: AssumptionSet, price: Decimal, as_of: date | None = None,
+) -> list[StrategyResult]:
     with localcontext() as ctx:
         ctx.prec = PRECISION
-        dcs = data_confidence(record)
+        dcs = data_confidence(record, as_of=as_of)
         results = []
         for scenario in SCENARIO_ORDER:
             results.extend([cash(record, underwriting, assumptions, price, scenario),
@@ -416,10 +538,13 @@ def _weighted_potential(underwriting: UnderwritingResult, assumptions: Assumptio
     """Σ potential_i × attachment_probability[basis_i] over potential liens, per-term quantized."""
     weighted = ZERO
     for item in underwriting.liabilities.breakdown:
+        if item.get("expected_amount") is not None:
+            weighted += _q(item["expected_amount"])
+            continue
         basis = item.get("basis")
         if basis not in (AttachmentBasis.OWNER_NAMED_ONLY.value, AttachmentBasis.UNKNOWN.value):
             continue
-        probability = assumptions.attachment_probability.get(AttachmentBasis(basis), ONE)
+        probability = min(ONE, max(ZERO, assumptions.attachment_probability.get(AttachmentBasis(basis), ONE)))
         weighted += _q(item.get("amount", ZERO) * probability)
     return weighted
 
@@ -429,15 +554,22 @@ def offer_point(underwriting: UnderwritingResult, assumptions: AssumptionSet, of
     price, so slider interpolation between grid points is exact (spec §9.3)."""
     with localcontext() as ctx:
         ctx.prec = PRECISION
+        if offer <= ZERO:
+            raise ValueError("offer must be greater than zero")
+        if underwriting.liabilities.confirmed is None or underwriting.liabilities.potential is None:
+            raise ValueError("liability data is required to calculate seller proceeds")
         cost = _costs(underwriting, scenario) or CostBlock()
         value = _v_as_is(underwriting, scenario)
         confirmed_payoffs = _q(underwriting.liabilities.confirmed + _payoff_fees(underwriting))
         potential_payoffs = underwriting.liabilities.potential
-        closing = _q(offer * assumptions.acquisition.title_pct + assumptions.acquisition.escrow_flat)
+        closing = _q(offer * (
+            assumptions.acquisition.title_pct
+            + transfer_tax_rate(assumptions.acquisition.transfer_tax_lookup_key)
+        ) + assumptions.acquisition.escrow_flat)
         proceeds_high = _q(offer - confirmed_payoffs - closing)
         proceeds_expected = _q(proceeds_high - _weighted_potential(underwriting, assumptions))
         proceeds_low = _q(proceeds_high - potential_payoffs)
-        buyer_basis = _q(offer + cost.acquisition + cost.repairs + cost.holding)
+        buyer_basis = _q(offer + _acquisition_cost(offer, assumptions) + cost.repairs + cost.holding)
         profit = _q(value * (ONE - _resale_pct(assumptions)) - buyer_basis) if value is not None else None
         return OfferPoint(offer_price=offer, scenario=scenario, confirmed_payoffs=confirmed_payoffs,
                           potential_payoffs=potential_payoffs, closing_costs=closing,
@@ -452,7 +584,9 @@ def offer_grid(underwriting: UnderwritingResult, property_id, assumptions: Assum
     with localcontext() as ctx:
         ctx.prec = PRECISION
         v_exp = underwriting.value.v_expected
-        if v_exp is None:
+        if (v_exp is None or underwriting.status != "ok"
+                or underwriting.liabilities.confirmed is None
+                or underwriting.liabilities.potential is None):
             return OfferGrid(property_id=property_id, points=[])
         offers = [_round_5000(v_exp * (Decimal("0.60") + Decimal(index) * Decimal("0.05"))) for index in range(9)]
         months_base = _months_base_from_costs(underwriting, assumptions)
@@ -461,15 +595,14 @@ def offer_grid(underwriting: UnderwritingResult, property_id, assumptions: Assum
             arv = underwriting.value.arv_by_scenario.get(scenario)
             cost = _costs(underwriting, scenario) or CostBlock()
             entries: list[tuple[Decimal, str | None]] = [(offer, None) for offer in offers]
-            mao_cash = _q(_v_as_is(underwriting, scenario) * (ONE - assumptions.strategy.cash_target_margin)
-                          - cost.repairs - cost.holding - cost.acquisition - cost.resale)
+            mao_cash = _cash_mao(_v_as_is(underwriting, scenario), cost, assumptions)
             markers: list[tuple[str, Decimal | None]] = [("mao_cash", mao_cash), ("mao_flip", None)]
             if arv is not None:
                 months = _q(months_base * HOLDING_MULT[scenario], Q4)
                 resale_flip = _resale_flip(arv, assumptions)
                 margin_target = _flip_margin(assumptions.strategy.flip_target_margin_by_arv_band, arv)
                 markers[1] = ("mao_flip", _flip_mao(arv, cost, resale_flip, margin_target, assumptions, months))
-            entries.extend((marker, label) for label, marker in markers if marker is not None)
+            entries.extend((marker, label) for label, marker in markers if marker is not None and marker > ZERO)
             for offer, label in sorted(entries, key=lambda entry: entry[0]):
                 points.append(offer_point(underwriting, assumptions, offer, scenario, label=label))
         return OfferGrid(property_id=property_id, points=points, interpolatable=True)

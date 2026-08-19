@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from math import isfinite
 from typing import Any
 from uuid import UUID
 
@@ -64,6 +65,20 @@ _NONNEGATIVE_PATHS = {
     "transaction_history.amount", "listing_history.price", "rental.estimated_rent",
     "rental.rent_per_sq_ft",
 }
+
+_POSITIVE_PATHS = {
+    "property_details.sq_ft", "property_details.lot_sq_ft",
+    "property_details.lot_acres", "property_details.units",
+    "valuation.estimated_value",
+    "valuation.comparable_sales_value", "valuation.comparable_listing_value",
+    "loans.original_amount", "loans.estimated_balance", "liens.amount",
+    "foreclosure.published_bid", "foreclosure.opening_bid",
+    "foreclosure.winning_bid", "foreclosure.default_amount",
+    "listing_history.price",
+    "rental.estimated_rent", "rental.rent_per_sq_ft",
+}
+
+_CLOSED_STATUSES = {"closed", "paid", "released", "satisfied"}
 
 
 @dataclass(frozen=True)
@@ -135,7 +150,7 @@ def _normalize_dates(payload: dict, issues: list[dict]) -> None:
             row[key] = _date_value(row.get(key), f"{collection}.{index}.{key}", issues)
 
 
-def _check_nonnegative(payload: dict, issues: list[dict]) -> None:
+def _check_numeric_ranges(payload: dict, issues: list[dict]) -> None:
     def visit(value: Any, path: str) -> None:
         if isinstance(value, dict):
             for key, child in value.items():
@@ -144,10 +159,20 @@ def _check_nonnegative(payload: dict, issues: list[dict]) -> None:
             collection_path = path
             for index, child in enumerate(value):
                 visit(child, f"{collection_path}.{index}")
-        elif isinstance(value, (int, float)):
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
             comparable = re.sub(r"\.\d+\.", ".", path)
-            if value < 0 and comparable in _NONNEGATIVE_PATHS:
-                issues.append({"code": "negative_value_rejected", "path": path, "value": value})
+            code = None
+            if isinstance(value, float) and not isfinite(value):
+                code = "nonfinite_value_rejected"
+            elif value < 0 and comparable in _NONNEGATIVE_PATHS:
+                code = "negative_value_rejected"
+            elif value <= 0 and comparable in _POSITIVE_PATHS:
+                code = "nonpositive_value_rejected"
+            elif (comparable == "property_details.year_built"
+                  and not 1600 <= value <= datetime.now(UTC).year + 1):
+                code = "implausible_year_rejected"
+            if code is not None:
+                issues.append({"code": code, "path": path, "value": value})
                 parent = payload
                 parts = path.split(".")
                 for part in parts[:-1]:
@@ -155,6 +180,35 @@ def _check_nonnegative(payload: dict, issues: list[dict]) -> None:
                 parent[parts[-1]] = None
 
     visit(payload, "")
+
+
+def _normalize_labels(payload: dict) -> None:
+    owner_names = []
+    for value in payload["ownership"]["owner_names"]:
+        clean = _clean_text(value)
+        if clean is not None and clean not in owner_names:
+            owner_names.append(clean)
+    payload["ownership"]["owner_names"] = owner_names
+    for loan in payload["loans"]:
+        loan["status"] = _clean_text(loan.get("status"))
+        if loan["status"] is not None:
+            loan["status"] = loan["status"].casefold()
+    for lien in payload["liens"]:
+        lien["type"] = _clean_text(lien.get("type"))
+        lien["status"] = _clean_text(lien.get("status"))
+        if lien["type"] is not None:
+            lien["type"] = lien["type"].casefold()
+        if lien["status"] is not None:
+            lien["status"] = lien["status"].casefold()
+    foreclosure = payload["foreclosure"]
+    foreclosure["stage"] = _clean_text(foreclosure.get("stage"))
+    if foreclosure["stage"] is not None:
+        foreclosure["stage"] = foreclosure["stage"].casefold()
+    for listing in payload["listing_history"]:
+        for key in ("type", "status"):
+            listing[key] = _clean_text(listing.get(key))
+            if listing[key] is not None:
+                listing[key] = listing[key].casefold()
 
 
 def validate_and_normalize(payload: dict) -> CanonicalValidation:
@@ -170,7 +224,8 @@ def validate_and_normalize(payload: dict) -> CanonicalValidation:
     if identity["apn"] is not None:
         identity["apn"] = identity["apn"].strip()
     _normalize_dates(normalized, issues)
-    _check_nonnegative(normalized, issues)
+    _normalize_labels(normalized)
+    _check_numeric_ranges(normalized, issues)
     return CanonicalValidation(
         PropertyReportExtraction.model_validate(normalized), normalized, issues,
     )
@@ -215,6 +270,7 @@ def _confidence(value: float | None, fallback: float = 0.85) -> float:
 
 def canonical_to_normalized(
     extraction: PropertyReportExtraction, property_id: UUID,
+    report_date: date | None = None,
 ) -> NormalizedProperty:
     """Map source facts into the existing deterministic analysis contract."""
     identity = extraction.property_identity
@@ -230,11 +286,22 @@ def canonical_to_normalized(
         sqft=_tracked(details.sq_ft), lot_sqft=_tracked(details.lot_sq_ft),
         year_built=_tracked(details.year_built), units=_tracked(details.units),
     )
+    valuation_as_of = _date(valuation.estimated_value_as_of)
+    reference_date = report_date or valuation_as_of
+    ownership_start = _date(extraction.ownership.transfer_date)
+    years_owned = None
+    if ownership_start is not None and reference_date is not None and reference_date >= ownership_start:
+        years_owned = (Decimal((reference_date - ownership_start).days) / Decimal("365.2425")).quantize(
+            Decimal("0.01")
+        )
+    owner_occupied = extraction.ownership.owner_occupied
     ownership = OwnershipBlock(
         owner_names=extraction.ownership.owner_names,
-        is_owner_occupied=extraction.ownership.owner_occupied,
-        ownership_start_date=_date(extraction.ownership.transfer_date),
+        is_owner_occupied=owner_occupied,
+        is_absentee=None if owner_occupied is None else not owner_occupied,
+        ownership_start_date=ownership_start,
         purchase_price=_tracked(extraction.ownership.purchase_amount),
+        years_owned=years_owned,
     )
     candidates: list[ValuationCandidate] = []
     for kind, value, estimated in (
@@ -247,7 +314,7 @@ def canonical_to_normalized(
             value,
             confidence=_confidence(valuation.estimated_value_confidence)
             if kind == "avm" else 0.8,
-            as_of=_date(valuation.estimated_value_as_of) if kind == "avm" else None,
+            as_of=valuation_as_of if kind == "avm" else None,
             estimated=estimated,
         )
         if tracked is not None:
@@ -263,32 +330,36 @@ def canonical_to_normalized(
         estimated_balance=_tracked(
             loan.estimated_balance, confidence=_confidence(loan.confidence),
         ),
-        balance_method="reported",
-        is_open=(loan.status or "unknown").casefold() not in {
-            "closed", "paid", "released", "satisfied",
-        },
+        balance_method="reported" if loan.estimated_balance is not None else "amortization_v1",
+        is_open=(loan.status or "unknown").casefold() not in _CLOSED_STATUSES,
     ) for loan in extraction.loans]
     liens = [LienRecord(
         lien_type=(lien.type or "other").casefold(),
         amount=_tracked(lien.amount, confidence=_confidence(lien.confidence)),
         status=(lien.status or "unknown").casefold(),
-        attachment_basis=AttachmentBasis.RECORDED_AGAINST_PROPERTY,
+        # The canonical report schema does not establish whether a lien follows
+        # the property or merely names its owner. Treating every lien as recorded
+        # against the property overstates confirmed debt and understates equity.
+        attachment_basis=AttachmentBasis.UNKNOWN,
         attachment_confidence=_confidence(lien.confidence),
         recording_date=_date(lien.recorded_date),
     ) for lien in extraction.liens]
     foreclosure = None
     source_foreclosure = extraction.foreclosure
     if any(value is not None for value in source_foreclosure.model_dump().values()):
-        stage = source_foreclosure.stage or "unknown"
+        stage = (source_foreclosure.stage or "unknown").casefold()
         active = source_foreclosure.in_foreclosure
         if active is None:
-            active = stage.casefold() not in {"unknown", "none", "rescinded", "cancelled", "sold"}
+            active = stage not in {"unknown", "none", "rescinded", "cancelled", "sold"}
+        bid = source_foreclosure.published_bid
+        if bid is None and active:
+            bid = source_foreclosure.opening_bid
         foreclosure = ForeclosureState(
-            stage=stage.casefold(),
+            stage=stage,
             original_sale_date=_date(source_foreclosure.original_sale_date),
             current_sale_date=_date(source_foreclosure.current_sale_date),
             published_bid=_tracked(
-                source_foreclosure.published_bid,
+                bid,
                 confidence=_confidence(source_foreclosure.confidence),
             ),
             default_amount=_tracked(
@@ -300,13 +371,16 @@ def canonical_to_normalized(
         )
     listings = [ListingRecord(
         list_date=_date(row.as_of), price=_tracked(row.price, confidence=_confidence(row.confidence)),
-        status=row.status or row.type or "unknown", dom=row.dom,
+        status=(row.status or row.type or "unknown").casefold(), dom=row.dom,
     ) for row in extraction.listing_history if row.as_of]
     taxes = TaxBlock(
         annual_taxes=_tracked(extraction.tax.annual_taxes),
         assessed_value=_tracked(valuation.assessed_value),
     )
-    rental = RentalBlock(rent_estimate=_tracked(extraction.rental.estimated_rent), source="report")
+    rental = RentalBlock(
+        rent_estimate=_tracked(extraction.rental.estimated_rent, as_of=reference_date),
+        source="report",
+    )
 
     presence = {
         "apn": identity.apn is not None,
@@ -325,31 +399,31 @@ def canonical_to_normalized(
         "liens": bool(liens),
         "rent": extraction.rental.estimated_rent is not None,
     }
-    confidences = [
-        value for value in (
-            valuation.estimated_value_confidence,
-            source_foreclosure.confidence,
-            *(loan.confidence for loan in extraction.loans),
-            *(lien.confidence for lien in extraction.liens),
-            *(ref.confidence for ref in extraction.source_references),
-        ) if value is not None
+    confidence_by_field = {
+        ref.field_path: ref.confidence
+        for ref in extraction.source_references
+        if ref.confidence is not None
+    }
+    fallback_confidences = [
+        ("valuation.estimated_value", valuation.estimated_value_confidence),
+        ("foreclosure", source_foreclosure.confidence),
+        *((f"loans.{index}", loan.confidence) for index, loan in enumerate(extraction.loans)),
+        *((f"liens.{index}", lien.confidence) for index, lien in enumerate(extraction.liens)),
     ]
-    relevant_dates = [
-        value for value in (
-            _date(extraction.ownership.transfer_date),
-            _date(valuation.estimated_value_as_of),
-            _date(source_foreclosure.current_sale_date),
-            _date(source_foreclosure.original_sale_date),
-            *(_date(row.date) for row in extraction.transaction_history),
-        ) if value is not None
-    ]
+    for field_path, value in fallback_confidences:
+        if value is not None:
+            confidence_by_field.setdefault(field_path, value)
+    confidences = [Decimal(str(value)) for value in confidence_by_field.values()]
     quality = DataQualityBlock(
         critical_field_coverage=(
             Decimal(sum(presence.values())) / Decimal(len(presence))
         ).quantize(Decimal("0.0001")),
         source_counts_by_field={key: 1 for key, present in presence.items() if present},
-        newest_report_date=max(relevant_dates, default=None),
-        mean_extraction_confidence=Decimal(str(sum(confidences) / len(confidences))).quantize(
+        # Event dates (a purchase or a future auction) are not report dates and
+        # must not make stale extraction look current. The caller should pass the
+        # report's generated date; AVM as-of is the conservative fallback.
+        newest_report_date=reference_date,
+        mean_extraction_confidence=(sum(confidences, Decimal(0)) / Decimal(len(confidences))).quantize(
             Decimal("0.0001")
         ) if confidences else Decimal("0.5000"),
     )
@@ -369,19 +443,23 @@ def has_grounded_debt(record: NormalizedProperty) -> bool:
     not prove that the property has zero debt.
     """
     for mortgage in record.mortgages:
+        if not mortgage.is_open:
+            continue
         if mortgage.estimated_balance and mortgage.estimated_balance.value is not None:
             return True
         if (mortgage.original_amount and mortgage.original_amount.value is not None
                 and mortgage.origination_date is not None):
             return True
-    if any(lien.amount and lien.amount.value is not None for lien in record.liens):
+    if any(
+        lien.status.casefold() not in _CLOSED_STATUSES
+        and lien.amount and lien.amount.value is not None
+        for lien in record.liens
+    ):
         return True
     foreclosure = record.foreclosure
     return bool(
-        foreclosure and (
-            (foreclosure.published_bid and foreclosure.published_bid.value is not None)
-            or (foreclosure.default_amount and foreclosure.default_amount.value is not None)
-        )
+        foreclosure and foreclosure.is_active
+        and foreclosure.published_bid and foreclosure.published_bid.value is not None
     )
 
 

@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -187,6 +188,41 @@ def test_identity_requires_grounded_street_address_and_never_fabricates():
         **payload["property_identity"], "address_line1": None, "full_address": None,
     }
     assert identity_address(PropertyReportExtraction.model_validate(payload)) is None
+
+
+def test_canonical_normalization_does_not_invent_attachment_or_report_freshness():
+    report_date = date(2026, 2, 1)
+    payload = canonical_payload()
+    payload["ownership"]["owner_occupied"] = False
+    payload["liens"] = [{
+        "type": " Judgment ", "amount": 25000, "recorded_date": "1/2/2025",
+        "document_number": None, "holder": None, "status": " SATISFIED ",
+        "source_page": 2, "confidence": 0.8,
+    }]
+    payload["foreclosure"]["current_sale_date"] = "2026-12-15"
+    validated = validate_and_normalize(payload)
+    record = canonical_to_normalized(validated.extraction, uuid4(), report_date=report_date)
+
+    assert record.liens[0].attachment_basis.value == "unknown"
+    assert record.liens[0].status == "satisfied"
+    assert record.ownership.is_absentee is True
+    # A future auction is an event, not evidence that the source report is future-dated.
+    assert record.data_quality.newest_report_date == report_date
+
+
+def test_canonical_normalization_rejects_nonfinite_nonpositive_and_bad_years():
+    payload = canonical_payload()
+    payload["valuation"]["estimated_value"] = float("inf")
+    payload["property_details"]["sq_ft"] = 0
+    payload["property_details"]["year_built"] = 1200
+    result = validate_and_normalize(payload)
+
+    assert result.extraction.valuation.estimated_value is None
+    assert result.extraction.property_details.sq_ft is None
+    assert result.extraction.property_details.year_built is None
+    assert {issue["code"] for issue in result.issues} >= {
+        "nonfinite_value_rejected", "nonpositive_value_rejected", "implausible_year_rejected",
+    }
 
 
 def test_provider_sends_original_pdf_to_responses_api(tmp_path):

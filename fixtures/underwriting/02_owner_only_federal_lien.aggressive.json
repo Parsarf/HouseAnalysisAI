@@ -37,7 +37,8 @@
         "label": "federal_tax",
         "amount": "128000.00",
         "basis": "owner_named_only",
-        "is_estimated": false
+        "is_estimated": false,
+        "expected_amount": "32000.00"
       }
     ]
   },

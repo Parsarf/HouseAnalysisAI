@@ -7,6 +7,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from contracts import (
     AddressBlock,
     AttachmentBasis,
@@ -135,7 +137,7 @@ def test_dcs_recency_decays_with_report_age():
     quality = record.data_quality
     quality.newest_report_date = AS_OF - timedelta(days=180)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["dcs_recency"] == Decimal(1)  # presence is the independent score contract
+    assert result.components["dcs_recency"] == Decimal("0.500000")
     quality.newest_report_date = None
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
     assert result.components["dcs_recency"] == Decimal(0)
@@ -150,7 +152,7 @@ def test_distress_nts_within_30_days_vs_later():
     far = ForeclosureState(stage="nts", nts_date=AS_OF, current_sale_date=AS_OF + timedelta(days=60), is_active=True)
     record = make_property(foreclosure=far)
     result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
-    assert result.components["distress_nts"] == Decimal(30)
+    assert result.components["distress_nts"] == Decimal(24)
 
 
 def test_distress_recency_decay_halves_at_18_months():
@@ -316,6 +318,47 @@ def test_config_override_changes_scores_without_code_change():
     assert overridden.data_confidence == default.data_confidence
 
 
+def test_fos_weights_and_bounds_are_config_driven():
+    record = make_property()
+    underwriting = make_underwriting(record.property_id)
+    strategies = [make_strategy(StrategyType.CASH, "75000", roi=".25")]
+    config = {
+        "weights": {"fos": {
+            "profit": "0", "roi": "1", "equity_pct": "0",
+            "discount_to_value": "0", "margin_of_safety": "0",
+        }},
+        "bounds": {"roi": ["0", "1"]},
+    }
+    result = score(record, underwriting, uuid4(), strategies, config=config, as_of=AS_OF)
+    assert result.fos == Decimal(25)
+    assert result.components["fos_roi_norm"] == Decimal("0.250000")
+
+
+def test_recommendation_uses_expected_scenario_only():
+    record = make_property()
+    underwriting = make_underwriting(record.property_id)
+    expected = make_strategy(StrategyType.CASH, "50000")
+    optimistic = make_strategy(StrategyType.FLIP, "150000")
+    optimistic.scenario = Scenario.OPTIMISTIC
+    result = score(record, underwriting, uuid4(), [expected, optimistic], as_of=AS_OF)
+    assert result.recommended_strategy == StrategyType.CASH
+
+
+def test_satisfied_liens_are_not_risk_and_dateless_active_status_is_not_erased():
+    record = make_property(
+        liens=[lien("judgment", AttachmentBasis.RECORDED_AGAINST_PROPERTY,
+                    amount="50000", status="satisfied")],
+        bankruptcies=[BankruptcyRecord(chapter="13", status="active")],
+    )
+    result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
+    assert result.components["risk_liens"] == Decimal(0)
+    assert result.components["distress_bankruptcy_active"] == Decimal(12)
+
+    record.bankruptcies.append(BankruptcyRecord(chapter="7", status="active"))
+    result = score(record, make_underwriting(record.property_id), uuid4(), as_of=AS_OF)
+    assert result.components["distress_bankruptcy_active"] == Decimal(12)
+
+
 def test_determinism():
     record = make_property(
         foreclosure=ForeclosureState(stage="nod", nod_date=AS_OF - timedelta(days=100), is_active=True),
@@ -357,11 +400,15 @@ def test_recommended_strategy_near_ties_and_priority_tiebreak():
     ]
     result = score(record, underwriting, uuid4(), strategies, as_of=AS_OF)
     assert result.recommended_strategy == StrategyType.CASH
-    assert result.recommended_alternatives == [StrategyType.FLIP, StrategyType.WHOLESALE]
+    assert result.recommended_alternatives == [StrategyType.FLIP]
 
     tied = [make_strategy(StrategyType.FLIP, "100000"), make_strategy(StrategyType.CASH, "100000")]
     result = score(record, underwriting, uuid4(), tied, as_of=AS_OF)
     assert result.recommended_strategy == StrategyType.CASH  # priority order breaks the tie
+    assert result.recommended_alternatives == [StrategyType.FLIP]
+
+    duplicate_best_type = tied + [make_strategy(StrategyType.CASH, "99000")]
+    result = score(record, underwriting, uuid4(), duplicate_best_type, as_of=AS_OF)
     assert result.recommended_alternatives == [StrategyType.FLIP]
 
 
@@ -406,7 +453,23 @@ def test_rank_scope_executes_single_statement_with_scope_params():
     assert "previous.rank" in sql
     assert "INSERT INTO rankings" in sql
     assert "insufficient_data" in sql and "open_gating_flag" in sql
+    assert "JOIN scope_properties" in sql
+    assert "report.batch_id = :scope_id" in sql
+    assert "SELECT scoring_config_id" in sql  # fallback when no config row is active
     assert params == {"scope_type": "batch", "scope_id": scope_id}
+
+
+def test_rank_scope_rejects_ambiguous_or_unsupported_scopes():
+    class NoExecute:
+        def execute(self, *args, **kwargs):
+            raise AssertionError("invalid scope must not execute SQL")
+
+    with pytest.raises(ValueError):
+        rank_scope(NoExecute(), "batch")
+    with pytest.raises(ValueError):
+        rank_scope(NoExecute(), "portfolio", uuid4())
+    with pytest.raises(ValueError):
+        rank_scope(NoExecute(), "saved_view", uuid4())
 
 
 def test_default_config_is_spec_section_10():
