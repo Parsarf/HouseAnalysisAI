@@ -887,6 +887,12 @@ def test_csv_export_applies_filters(client):
     assert "Austin" not in response.text
 
 
+def test_csv_export_rejects_model_metadata(client):
+    response = client.get("/api/exports/csv", params={"columns": "metadata"})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_input"
+
+
 def test_deal_sheet_and_net_sheet(client):
     response = client.post(f"/api/properties/{PID}/exports/deal-sheet")
     assert response.status_code == 200

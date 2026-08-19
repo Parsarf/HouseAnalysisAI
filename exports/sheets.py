@@ -142,7 +142,6 @@ def deal_sheet_html(prop: NormalizedProperty,
 
     body = f"""
 <h1>{_address_line(prop)}</h1>
-<div class="photo">photo placeholder</div>
 <h2>Executive summary</h2>
 <table>{summary_rows}
 <tr><th>Data confidence</th><td>{confidence}</td></tr>
