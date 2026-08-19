@@ -2887,6 +2887,22 @@
         "title": "Costs",
         "type": "object"
       },
+      "holding_months_base": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Holding Months Base"
+      },
       "debt_data_present": {
         "default": false,
         "title": "Debt Data Present",

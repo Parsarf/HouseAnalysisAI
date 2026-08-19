@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import Literal
 
@@ -49,12 +50,8 @@ class Settings(BaseSettings):
                     missing.append(name)
         if self.analysis_pipeline == "whole_pdf" and not self.extraction_api_key:
             missing.append("ACQ_EXTRACTION_API_KEY")
-        if self.analysis_pipeline == "legacy":
-            try:
-                from ingestion.ocr import get_backend
-                get_backend()
-            except Exception:
-                missing.append("legacy OCR backend")
+        if self.analysis_pipeline == "legacy" and not (shutil.which("ocrmypdf") or shutil.which("tesseract")):
+            missing.append("legacy OCR backend")
         if missing:
             raise RuntimeError("missing production configuration: " + ", ".join(missing))
 
