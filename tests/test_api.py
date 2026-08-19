@@ -333,7 +333,7 @@ def test_login_sets_session_cookie(client, monkeypatch):
 
 def test_validation_error_is_envelope(client):
     response = client.get(f"/api/properties/{PID}/analysis?scenario=bogus")
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_input"
 
 
