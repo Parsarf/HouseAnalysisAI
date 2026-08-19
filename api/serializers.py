@@ -6,7 +6,7 @@ the process as a string — money is never serialized as a float (WP-11 AC #6).
 from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from contracts import (
@@ -50,6 +50,12 @@ def _decimal_map(values: dict | None) -> dict[str, Decimal]:
     return {key: Decimal(str(value)) for key, value in (values or {}).items() if value is not None}
 
 
+def _required(value, field: str):
+    if value is None:
+        raise ValueError(f"persisted {field} is unexpectedly null")
+    return value
+
+
 def property_summary(row: dbm.Property, score: Decimal | None = None, rank: int | None = None,
                      open_flags: int = 0) -> PropertySummary:
     return PropertySummary(id=row.id, apn=row.apn, address_line1=row.address_line1, city=row.city,
@@ -63,27 +69,27 @@ def property_summary(row: dbm.Property, score: Decimal | None = None, rank: int 
 def strategy_result(row: dbm.DealScenario) -> StrategyResult:
     metrics = {key: getattr(row, key) for key in ("cap_rate", "cash_flow", "coc", "arv")}
     metrics.update({key: getattr(row, key) for key in ("purchase_price", "repairs", "holding", "financing", "resale")})
-    return StrategyResult(strategy=StrategyType(row.strategy), scenario=Scenario(row.scenario),
-                          status=row.status or "viable", unavailable_reason=row.unavailable_reason,
+    return StrategyResult(strategy=StrategyType(_required(row.strategy, "strategy")), scenario=Scenario(_required(row.scenario, "scenario")),
+                          status=cast(Literal["viable", "not_viable", "unavailable", "requires_human_review"], row.status or "viable"), unavailable_reason=row.unavailable_reason,
                           mao=row.mao, all_in_basis=row.all_in_basis, profit=row.profit, roi=row.roi,
                           margin_of_safety=row.margin_of_safety,
                           metrics={key: value for key, value in metrics.items() if value is not None})
 
 
 def offer_point(row: dbm.OfferScenario) -> OfferPoint:
-    return OfferPoint(offer_price=row.offer_price, scenario=Scenario(row.scenario),
-                      confirmed_payoffs=row.confirmed_payoffs, potential_payoffs=row.potential_payoffs,
-                      closing_costs=row.closing_costs, proceeds_low=row.proceeds_low,
-                      proceeds_expected=row.proceeds_expected, proceeds_high=row.proceeds_high,
-                      buyer_basis=row.buyer_basis, profit=row.profit, roi=row.roi,
+    return OfferPoint(offer_price=_required(row.offer_price, "offer_price"), scenario=Scenario(_required(row.scenario, "scenario")),
+                      confirmed_payoffs=_required(row.confirmed_payoffs, "confirmed_payoffs"), potential_payoffs=_required(row.potential_payoffs, "potential_payoffs"),
+                      closing_costs=_required(row.closing_costs, "closing_costs"), proceeds_low=_required(row.proceeds_low, "proceeds_low"),
+                      proceeds_expected=_required(row.proceeds_expected, "proceeds_expected"), proceeds_high=_required(row.proceeds_high, "proceeds_high"),
+                      buyer_basis=_required(row.buyer_basis, "buyer_basis"), profit=_required(row.profit, "profit"), roi=row.roi,
                       is_short_sale=bool(row.is_short_sale))
 
 
 def score_set(row: dbm.Score) -> ScoreSet:
-    return ScoreSet(property_id=row.property_id,
+    return ScoreSet(property_id=_required(row.property_id, "property_id"),
                     scoring_config_id=row.scoring_config_id or UUID(int=0),
-                    fos=row.fos, distress=row.distress, data_confidence=row.data_confidence,
-                    risk=row.risk, overall=row.overall, components=_decimal_map(row.components),
+                    fos=_required(row.fos, "fos"), distress=_required(row.distress, "distress"), data_confidence=_required(row.data_confidence, "data_confidence"),
+                    risk=_required(row.risk, "risk"), overall=_required(row.overall, "overall"), components=_decimal_map(row.components),
                     gates_applied=list(row.gates_applied or []), is_rankable="open_gating_flag" not in (row.gates_applied or []),
                     recommended_strategy=None)
 
@@ -153,7 +159,7 @@ def flag_record(row: dbm.Flag, property_row: dbm.Property | None = None) -> Flag
 
 
 def ranking_entry(row: dbm.Ranking) -> RankingEntry:
-    return RankingEntry(property_id=row.property_id, rank=row.rank, prev_rank=row.prev_rank, score=row.score)
+    return RankingEntry(property_id=_required(row.property_id, "property_id"), rank=_required(row.rank, "rank"), prev_rank=row.prev_rank, score=row.score)
 
 
 def tracked_money(value: Decimal | None, confidence: float = 1.0,

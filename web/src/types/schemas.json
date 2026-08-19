@@ -428,7 +428,8 @@
         "enum": [
           "recorded_against_property",
           "owner_named_only",
-          "unknown"
+          "unknown",
+          "undrawn_heloc_capacity"
         ],
         "title": "AttachmentBasis",
         "type": "string"
@@ -2069,7 +2070,8 @@
         "enum": [
           "recorded_against_property",
           "owner_named_only",
-          "unknown"
+          "unknown",
+          "undrawn_heloc_capacity"
         ],
         "title": "AttachmentBasis",
         "type": "string"

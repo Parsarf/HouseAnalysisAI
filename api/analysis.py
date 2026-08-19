@@ -16,10 +16,14 @@ from sqlalchemy.orm import Session
 
 from contracts import (
     AssumptionSet,
+    EntityType,
     ExtractedFactDraft,
     NormalizedProperty,
+    NullReason,
     OfferGrid,
     Scenario,
+    SourceKind,
+    TimelineEvent,
     UnderwritingResult,
 )
 from db import models as dbm
@@ -54,13 +58,13 @@ def load_normalized(session: Session, property_id: UUID) -> NormalizedProperty |
     if not rows:
         return None
     drafts = [ExtractedFactDraft(
-        report_id=row.report_id, extraction_unit_id=row.extraction_unit_id,
-        entity_type=row.entity_type, entity_local_id=row.entity_local_id,
+        report_id=row.report_id or UUID(int=0), extraction_unit_id=row.extraction_unit_id or UUID(int=0),
+        entity_type=EntityType(row.entity_type), entity_local_id=row.entity_local_id,
         field_path=row.field_path, value_raw=row.value_raw, value_parsed=row.value_parsed,
         value_text=row.value_text, value_date=row.value_date, value_bool=row.value_bool,
         unit=row.unit, as_of_date=row.as_of_date, page_number=row.page_number,
         snippet=row.snippet, extraction_confidence=float(row.extraction_confidence),
-        null_reason=row.null_reason, source_kind=row.source_kind,
+        null_reason=NullReason(row.null_reason) if row.null_reason else None, source_kind=SourceKind(row.source_kind),
     ) for row in rows]
     return resolve_facts(property_id, drafts)
 
@@ -152,35 +156,35 @@ def load_flags(session: Session, property_id: UUID):
 
 def load_timeline(session: Session, property_id: UUID):
     """Merge foreclosure, bankruptcy, lien, listing, and change events (spec §11.7)."""
-    events = []
-    for row in session.query(dbm.ForeclosureEvent).filter(dbm.ForeclosureEvent.property_id == property_id).all():
+    events: list[TimelineEvent] = []
+    for foreclosure in session.query(dbm.ForeclosureEvent).filter(dbm.ForeclosureEvent.property_id == property_id).all():
         events.append(serializers.timeline_event(
-            "foreclosure", row.event_date, row.event_type or "foreclosure_event",
-            {"stage": row.stage_after_event, "trustee": row.trustee_name,
-             "published_bid": str(row.published_bid) if row.published_bid is not None else None}))
-    for row in session.query(dbm.BankruptcyEvent).filter(dbm.BankruptcyEvent.property_id == property_id).all():
+            "foreclosure", foreclosure.event_date, foreclosure.event_type or "foreclosure_event",
+            {"stage": foreclosure.stage_after_event, "trustee": foreclosure.trustee_name,
+             "published_bid": str(foreclosure.published_bid) if foreclosure.published_bid is not None else None}))
+    for bankruptcy in session.query(dbm.BankruptcyEvent).filter(dbm.BankruptcyEvent.property_id == property_id).all():
         events.append(serializers.timeline_event(
-            "bankruptcy", row.filing_date, f"chapter_{row.chapter or 'unknown'}_filed",
-            {"case_number": row.case_number, "status": row.status}))
-        if row.discharge_date:
-            events.append(serializers.timeline_event("bankruptcy", row.discharge_date, "discharged",
-                                                     {"case_number": row.case_number}))
-    for row in session.query(dbm.Lien).filter(dbm.Lien.property_id == property_id).all():
+            "bankruptcy", bankruptcy.filing_date, f"chapter_{bankruptcy.chapter or 'unknown'}_filed",
+            {"case_number": bankruptcy.case_number, "status": bankruptcy.status}))
+        if bankruptcy.discharge_date:
+            events.append(serializers.timeline_event("bankruptcy", bankruptcy.discharge_date, "discharged",
+                                                     {"case_number": bankruptcy.case_number}))
+    for lien in session.query(dbm.Lien).filter(dbm.Lien.property_id == property_id).all():
         events.append(serializers.timeline_event(
-            "lien", row.recording_date, f"{row.lien_type or 'lien'}_recorded",
-            {"creditor": row.creditor_normalized or row.creditor_raw,
-             "amount": str(row.amount) if row.amount is not None else None, "status": row.status}))
-    for row in session.query(dbm.Listing).filter(dbm.Listing.property_id == property_id).all():
+            "lien", lien.recording_date, f"{lien.lien_type or 'lien'}_recorded",
+            {"creditor": lien.creditor_normalized or lien.creditor_raw,
+             "amount": str(lien.amount) if lien.amount is not None else None, "status": lien.status}))
+    for listing in session.query(dbm.Listing).filter(dbm.Listing.property_id == property_id).all():
         events.append(serializers.timeline_event(
-            "listing", row.list_date, "listed",
-            {"status": row.status,
-             "price": str(row.list_price) if row.list_price is not None else None}))
-        if row.delist_date:
-            events.append(serializers.timeline_event("listing", row.delist_date, "delisted",
-                                                     {"status": row.status}))
-    for row in session.query(dbm.ChangeEvent).filter(dbm.ChangeEvent.property_id == property_id).all():
+            "listing", listing.list_date, "listed",
+            {"status": listing.status,
+             "price": str(listing.list_price) if listing.list_price is not None else None}))
+        if listing.delist_date:
+            events.append(serializers.timeline_event("listing", listing.delist_date, "delisted",
+                                                     {"status": listing.status}))
+    for change in session.query(dbm.ChangeEvent).filter(dbm.ChangeEvent.property_id == property_id).all():
         events.append(serializers.timeline_event(
-            "change", row.detected_at, row.change_type or "change",
-            {"field_path": row.field_path}))
+            "change", change.detected_at, change.change_type or "change",
+            {"field_path": change.field_path}))
     events.sort(key=lambda event: (event.event_date is None, event.event_date or date.min))
     return events

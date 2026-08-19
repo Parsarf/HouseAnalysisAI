@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING, ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -21,6 +22,9 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from common.db import Base
+
+if TYPE_CHECKING:
+    from contracts import FlagRequest
 
 
 class Timestamped:
@@ -69,6 +73,8 @@ class Batch(Base):
 
 class Property(Base):
     __tablename__ = "properties"
+    identity_flags: ClassVar[list["FlagRequest"]]
+    identity_created: ClassVar[bool]
     __table_args__ = (
         Index(
             "properties_address_active_uq",

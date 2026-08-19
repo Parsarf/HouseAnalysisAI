@@ -17,7 +17,7 @@ from common.storage import DocumentStorage, get_document_storage
 from db import models as dbm
 from identity.service import attach_report
 from ops.db_budget import reserve_budget
-from pipeline.orchestrator import Pipeline
+from pipeline.orchestrator import Computation, Pipeline
 
 from .normalizer import (
     canonical_to_normalized,
@@ -316,7 +316,7 @@ def analyze_report(
     provider: WholePdfProviderClient | None = None,
     storage: DocumentStorage | None = None,
     session_factory=None,
-    compute: Callable[..., object] | None = None,
+    compute: Callable[..., Computation] | None = None,
     identity_resolver: Callable[..., dbm.Property] = attach_report,
 ) -> UUID | None:
     """Analyze one report. Every persisted step is safe to resume after a retry."""

@@ -32,8 +32,10 @@ import hashlib
 import json
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
+from typing import overload
 
 from common.mortgage import is_first, position_key
+from common.rates import estimate_balance
 from contracts import (
     AssumptionSet,
     AttachmentBasis,
@@ -59,12 +61,18 @@ PRECISION = 40  # matches the golden generator
 
 SCENARIO_ORDER = [Scenario.CONSERVATIVE, Scenario.EXPECTED, Scenario.OPTIMISTIC]
 HOLDING_MULT = {Scenario.CONSERVATIVE: Decimal("1.5"), Scenario.EXPECTED: ONE, Scenario.OPTIMISTIC: Decimal("0.75")}
-DCS_WHOLESALE_MIN = Decimal(60)
 PAYOFF_FEES_DEFAULT = Decimal(1200)  # spec §9.2 payoff interest/fees default
 GRID_ROUND = Decimal(5000)
 FLIP_BAND_THRESHOLD = Decimal(500000)
 CLOSED_STATUSES = frozenset({"closed", "paid", "released", "satisfied"})
 FIRST_POSITIONS = frozenset({"first", "1", "1st"})
+
+
+@overload
+def _q(value: Decimal, quantum: Decimal = Q2) -> Decimal: ...
+
+@overload
+def _q(value: None, quantum: Decimal = Q2) -> None: ...
 
 
 def _q(value: Decimal | None, quantum: Decimal = Q2) -> Decimal | None:
@@ -73,6 +81,19 @@ def _q(value: Decimal | None, quantum: Decimal = Q2) -> Decimal | None:
 
 def _tracked(block) -> Decimal | None:
     return block.value if block and block.value is not None else None
+
+
+def _resolved_mortgage_balance(mortgage, as_of: date | None) -> Decimal | None:
+    """Resolve a mortgage balance consistently with finance underwriting."""
+    reported = _tracked(mortgage.estimated_balance)
+    if reported is not None and reported >= ZERO:
+        return reported
+    original = _tracked(mortgage.original_amount)
+    if original is None or mortgage.origination_date is None or "heloc" in (mortgage.position or "").casefold():
+        return None
+    return estimate_balance(original, mortgage.rate, mortgage.term_months,
+                            mortgage.origination_date,
+                            as_of or datetime.now(UTC).date(), "conventional")
 
 
 def _round_5000(value: Decimal) -> Decimal:
@@ -143,28 +164,6 @@ def _costs(underwriting: UnderwritingResult, scenario: Scenario) -> CostBlock | 
     return underwriting.costs.get(scenario)
 
 
-def data_confidence(record: NormalizedProperty, as_of: date | None = None) -> Decimal:
-    """Data Confidence Score, 0-100 (spec §10 DCS formula)."""
-    quality = record.data_quality
-    as_of = as_of or datetime.now(UTC).date()
-    corroborated = sum(1 for count in quality.source_counts_by_field.values() if count >= 2)
-    corroboration = min(ONE, _q(Decimal(corroborated) / Decimal(22), Q6))
-    conflict_penalty = min(ONE, max(ZERO, Decimal(quality.material_conflict_count) / Decimal(5)))
-    verification = min(ONE, _q(Decimal(quality.verified_field_count) / Decimal(22), Q6))
-    coverage = min(ONE, max(ZERO, quality.critical_field_coverage))
-    extraction = min(ONE, max(ZERO, quality.mean_extraction_confidence))
-    if quality.newest_report_date is None:
-        recency = ZERO
-    else:
-        age_days = Decimal(max(0, (as_of - quality.newest_report_date).days))
-        recency = Decimal("0.5") ** (age_days / Decimal(180))
-    return _q(Decimal(100) * (Decimal("0.30") * coverage
-                                + Decimal("0.20") * corroboration + Decimal("0.20") * recency
-                                + Decimal("0.15") * (ONE - conflict_penalty)
-                                + Decimal("0.10") * verification
-                                + Decimal("0.05") * extraction), Q4)
-
-
 def _months_base_from_condition(record: NormalizedProperty, assumptions: AssumptionSet) -> Decimal:
     holding = assumptions.holding
     condition = record.condition.condition if record.condition else "moderate"
@@ -200,10 +199,16 @@ def _months_base_from_costs(underwriting: UnderwritingResult, assumptions: Assum
             continue
         # monthly_expected is linear in v: monthly = flat + v*rate. Solve the flat
         # part from the expected scenario, then score against the other two.
-        flat_est = underwriting.costs[Scenario.EXPECTED].holding / months_exp - rate * values[Scenario.EXPECTED]
+        expected_value = values[Scenario.EXPECTED]
+        if expected_value is None:
+            continue
+        flat_est = underwriting.costs[Scenario.EXPECTED].holding / months_exp - rate * expected_value
         error = ZERO
         for scenario in (Scenario.CONSERVATIVE, Scenario.OPTIMISTIC):
-            predicted = (flat_est + rate * values[scenario]) * _q(months * HOLDING_MULT[scenario], Q4)
+            scenario_value = values[scenario]
+            if scenario_value is None:
+                continue
+            predicted = (flat_est + rate * scenario_value) * _q(months * HOLDING_MULT[scenario], Q4)
             error += abs(underwriting.costs[scenario].holding - predicted)
         if best is None or error < best[0]:
             best = (error, months)
@@ -305,7 +310,7 @@ def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
                               inputs_echo=_echo(purchase_price))
 
 
-def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, contract_price: Decimal, scenario: Scenario, data_confidence: Decimal | None = None) -> StrategyResult:
+def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, contract_price: Decimal, scenario: Scenario, data_confidence: Decimal | None = None, wholesale_min: Decimal = Decimal(60)) -> StrategyResult:
     with localcontext() as ctx:
         ctx.prec = PRECISION
         arv = underwriting.value.arv_by_scenario.get(scenario)
@@ -322,7 +327,7 @@ def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, cont
         threshold = _q(arv * assumptions.strategy.wholesale_investor_pct - cost.repairs)
         max_contract = _q(threshold - assumptions.strategy.min_assignment_spread)
         spread = _q(threshold - contract_price)
-        viable = spread >= assumptions.strategy.min_assignment_spread and dcs >= DCS_WHOLESALE_MIN
+        viable = spread >= assumptions.strategy.min_assignment_spread and dcs >= wholesale_min
         return StrategyResult(strategy=StrategyType.WHOLESALE, scenario=scenario,
                               status="viable" if viable else "not_viable",
                               mao=max_contract, profit=spread,
@@ -424,13 +429,13 @@ def _distress_present(record: NormalizedProperty) -> bool:
     return (_tracked(record.taxes.delinquent_amount) or ZERO) > 0
 
 
-def subject_to(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, price: Decimal, scenario: Scenario) -> StrategyResult:
+def subject_to(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, price: Decimal, scenario: Scenario, as_of: date | None = None) -> StrategyResult:
     """Subject-to / creative: detection only (spec §8). Always requires_human_review;
     the four spec conditions are reported in metrics. rate_vs_market is null because
     the contract carries no market-rate input."""
     value = _v_as_is(underwriting, scenario)
     first = _first_mortgage(record)
-    balance = _tracked(first.estimated_balance) if first else None
+    balance = _resolved_mortgage_balance(first, as_of) if first else None
     if balance is None or not value:
         balance_condition = None
     else:
@@ -444,7 +449,7 @@ def subject_to(record: NormalizedProperty, underwriting: UnderwritingResult, ass
                           inputs_echo=_echo(price))
 
 
-def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, price: Decimal, scenario: Scenario) -> StrategyResult:
+def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, price: Decimal, scenario: Scenario, as_of: date | None = None) -> StrategyResult:
     with localcontext() as ctx:
         ctx.prec = PRECISION
         state = record.foreclosure
@@ -455,7 +460,7 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
             return _unavailable(StrategyType.FORECLOSURE, scenario, "no_value_data", price)
         bid = _tracked(state.published_bid)
         first = _first_mortgage(record)
-        obligations = bid if bid is not None else ((_tracked(first.estimated_balance) if first else ZERO) or ZERO)
+        obligations = bid if bid is not None else ((_resolved_mortgage_balance(first, as_of) if first else ZERO) or ZERO)
         # Reports often repeat the same mortgage with position aliases (for
         # example "second" and "2"). Mirror finance's conservative conflict
         # handling: keep the largest balance at each junior priority instead of
@@ -465,7 +470,7 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
             position = _mortgage_position_key(mortgage.position)
             if not mortgage.is_open or position == "1":
                 continue
-            balance = _tracked(mortgage.estimated_balance)
+            balance = _resolved_mortgage_balance(mortgage, as_of)
             if balance is not None:
                 junior_by_position[position] = max(junior_by_position.get(position, ZERO), balance)
         junior_debt = sum(junior_by_position.values(), ZERO)
@@ -509,18 +514,19 @@ def foreclosure(record: NormalizedProperty, underwriting: UnderwritingResult, as
 def all_strategies(
     record: NormalizedProperty, underwriting: UnderwritingResult,
     assumptions: AssumptionSet, price: Decimal, as_of: date | None = None,
+    data_confidence_value: Decimal | None = None, wholesale_min: Decimal = Decimal(60),
 ) -> list[StrategyResult]:
     with localcontext() as ctx:
         ctx.prec = PRECISION
-        dcs = data_confidence(record, as_of=as_of)
+        dcs = data_confidence_value if data_confidence_value is not None else _q((underwriting.confidence or ZERO) * Decimal(100), Q4)
         results = []
         for scenario in SCENARIO_ORDER:
             results.extend([cash(record, underwriting, assumptions, price, scenario),
                             flip(record, underwriting, assumptions, price, scenario),
-                            wholesale(underwriting, assumptions, price, scenario, data_confidence=dcs),
+                            wholesale(underwriting, assumptions, price, scenario, data_confidence=dcs, wholesale_min=wholesale_min),
                             rental(record, underwriting, assumptions, price, scenario),
-                            subject_to(record, underwriting, assumptions, price, scenario),
-                            foreclosure(record, underwriting, assumptions, price, scenario)])
+                            subject_to(record, underwriting, assumptions, price, scenario, as_of),
+                            foreclosure(record, underwriting, assumptions, price, scenario, as_of)])
         return results
 
 
@@ -543,7 +549,7 @@ def _weighted_potential(underwriting: UnderwritingResult, assumptions: Assumptio
             continue
         basis = item.get("basis")
         if basis == "undrawn_heloc_capacity":
-            weighted += _q(item.get("amount", ZERO) * assumptions.attachment_probability.get(basis, Decimal("0.50")))
+            weighted += _q(item.get("amount", ZERO) * assumptions.attachment_probability.get(AttachmentBasis.UNDRAWN_HELOC_CAPACITY, Decimal("0.50")))
             continue
         if basis not in (AttachmentBasis.OWNER_NAMED_ONLY.value, AttachmentBasis.UNKNOWN.value):
             continue
@@ -598,7 +604,10 @@ def offer_grid(underwriting: UnderwritingResult, property_id, assumptions: Assum
             arv = underwriting.value.arv_by_scenario.get(scenario)
             cost = _costs(underwriting, scenario) or CostBlock()
             entries: list[tuple[Decimal, str | None]] = [(offer, None) for offer in offers]
-            mao_cash = _cash_mao(_v_as_is(underwriting, scenario), cost, assumptions)
+            value = _v_as_is(underwriting, scenario)
+            if value is None:
+                continue
+            mao_cash = _cash_mao(value, cost, assumptions)
             markers: list[tuple[str, Decimal | None]] = [("mao_cash", mao_cash), ("mao_flip", None)]
             if arv is not None:
                 months = _q(months_base * HOLDING_MULT[scenario], Q4)

@@ -25,6 +25,7 @@ All arithmetic runs at decimal precision 40, matching the golden generator.
 """
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, localcontext
+from typing import overload
 
 from common.money import money
 from common.mortgage import is_first, position_key
@@ -75,8 +76,15 @@ def _clamp(value: Decimal, low: Decimal, high: Decimal) -> Decimal:
     return max(low, min(high, value))
 
 
-def _q(value: Decimal, quantum: Decimal) -> Decimal:
-    return value.quantize(quantum, rounding=ROUND_HALF_UP)
+@overload
+def _q(value: Decimal, quantum: Decimal) -> Decimal: ...
+
+@overload
+def _q(value: None, quantum: Decimal) -> None: ...
+
+
+def _q(value: Decimal | None, quantum: Decimal) -> Decimal | None:
+    return value.quantize(quantum, rounding=ROUND_HALF_UP) if value is not None else None
 
 
 def _validate_assumptions(assumptions: AssumptionSet) -> None:
@@ -364,7 +372,7 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             if unknown_heloc_limits:
                 capacity = money(max(unknown_heloc_limits)) or ZERO
                 potential += capacity
-                probability = assumptions.attachment_probability.get("undrawn_heloc_capacity", Decimal("0.50"))
+                probability = assumptions.attachment_probability.get(AttachmentBasis.UNDRAWN_HELOC_CAPACITY, Decimal("0.50"))
                 potential_weighted += money(capacity * _clamp(probability, ZERO, ONE)) or ZERO
                 breakdown.append({
                     "label": f"mortgage:{position}:draw_unknown",
@@ -394,7 +402,7 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             if original is not None and original > balance:
                 undrawn = money(original - balance) or ZERO
                 potential += undrawn
-                probability = assumptions.attachment_probability.get("undrawn_heloc_capacity", Decimal("0.50"))
+                probability = assumptions.attachment_probability.get(AttachmentBasis.UNDRAWN_HELOC_CAPACITY, Decimal("0.50"))
                 potential_weighted += money(undrawn * _clamp(probability, ZERO, ONE)) or ZERO
                 breakdown.append({"label": f"mortgage:{position}:undrawn", "amount": undrawn,
                                   "expected_amount": undrawn, "basis": "undrawn_heloc_capacity",
@@ -408,7 +416,7 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
         if unknown_heloc_limits:
             capacity = money(max(unknown_heloc_limits)) or ZERO
             potential += capacity
-            probability = assumptions.attachment_probability.get("undrawn_heloc_capacity", Decimal("0.50"))
+            probability = assumptions.attachment_probability.get(AttachmentBasis.UNDRAWN_HELOC_CAPACITY, Decimal("0.50"))
             potential_weighted += money(capacity * _clamp(probability, ZERO, ONE)) or ZERO
             breakdown.append({
                 "label": f"mortgage:{position}:draw_unknown",
@@ -426,7 +434,8 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
         has_amount = lien.amount is not None and lien.amount.value is not None
         # Liens with unknown amounts are valued at the type median and land in
         # POTENTIAL whatever their attachment basis (spec §7.3).
-        amount = lien.amount.value if has_amount else assumptions.unknown_lien_medians.get(lien.lien_type, ZERO)
+        amount = (lien.amount.value if lien.amount is not None and lien.amount.value is not None
+                  else assumptions.unknown_lien_medians.get(lien.lien_type, ZERO))
         amount = money(amount) or ZERO
         estimated = lien.amount_is_estimated if has_amount else True
         if amount and not has_amount:
@@ -530,6 +539,10 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
                                   status="insufficient_data", unavailable_reason="no_valuation_candidates",
                                   liabilities=liabilities, debt_data_present=debt_data_present, confidence=ZERO)
     v_exp = money(weighted_sum / weight_sum)
+    if v_exp is None:
+        return UnderwritingResult(property_id=record.property_id, assumption_set_id=assumptions.id, engine_version=ENGINE_VERSION,
+                                  status="insufficient_data", unavailable_reason="valuation_not_numeric",
+                                  liabilities=liabilities, debt_data_present=debt_data_present, confidence=ZERO)
     if len(candidates) == 1:
         dispersion = Decimal("0.15")  # one estimate is not agreement (spec §7.2)
     else:
@@ -572,10 +585,12 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
     costs = {}
     arv_by_scenario: dict[Scenario, Decimal | None] = {}
     for scenario, value in values.items():
-        months = _q(months_base * HOLDING_PERIOD_FACTOR[scenario], Q4)
+        if value is None:
+            continue
+        months = _q(months_base * HOLDING_PERIOD_FACTOR[scenario], Q4) or ZERO
         monthly = money(taxes_annual / MONTHS_PER_YEAR + value * (assumptions.holding.insurance_pct_yr + assumptions.holding.maintenance_pct_yr) / MONTHS_PER_YEAR
-                        + assumptions.holding.utilities_monthly + hoa_dues)
-        holding = money(monthly * months)
+                        + assumptions.holding.utilities_monthly + hoa_dues) or ZERO
+        holding = money(monthly * months) or ZERO
         repair_cost = repairs.get(scenario, ZERO)
         acquisition = money(value * acq_pct + acq_flat)
         resale = money(value * resale_pct)
@@ -584,14 +599,16 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
         potential_s = {Scenario.CONSERVATIVE: liabilities.potential,
                        Scenario.EXPECTED: potential_weighted,
                        Scenario.OPTIMISTIC: ZERO}[scenario]
-        gross = money(value - liabilities.confirmed)
+        confirmed = liabilities.confirmed or ZERO
+        gross = money(value - confirmed) or ZERO
         equity[scenario] = EquityBlock(gross=gross,
-                                       adjusted=money(value - liabilities.confirmed - potential_s),
-                                       net_realizable=money(value * (ONE - resale_pct) - liabilities.confirmed - potential_s - holding),
-                                       equity_pct=_q(gross / value, Q6) if value else None)
+                                       adjusted=money(value - confirmed - potential_s),
+                                       net_realizable=money(value * (ONE - resale_pct) - confirmed - potential_s - holding),
+                                       equity_pct=_q(gross / value, Q6) if value != ZERO else None)
         # ARV is the after-repair value and exists only when repairs are computable
         # (spec §7.2; recapture multiplier 1.0, deliberately unaggressive).
-        arv_by_scenario[scenario] = money(value + repairs[scenario]) if repairs else None
+        repair_value = repairs.get(scenario)
+        arv_by_scenario[scenario] = money(value + repair_value) if repair_value is not None else None
     return UnderwritingResult(property_id=record.property_id, assumption_set_id=assumptions.id, engine_version=ENGINE_VERSION,
                               status="ok", value=ValueBlock(v_low=v_low, v_expected=v_exp, v_high=v_high, dispersion=dispersion,
                               arv_by_scenario=arv_by_scenario,

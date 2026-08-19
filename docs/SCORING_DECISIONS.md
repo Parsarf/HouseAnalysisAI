@@ -18,6 +18,12 @@ The goldens are not regenerated from the engine.
   assumption variants). This is a semantic basis-only delta; the amount and
   all downstream numbers are unchanged, and it prevents an estimated report
   from being presented as verified recorded debt.
+- The regenerated golden numeric values did not move for items 21–22 because
+  the only foreclosure fixture has a published trustee bid, which finance
+  intentionally uses as the first-lien obligation; the original-only path is
+  covered by `test_foreclosure_resolves_original_only_first_mortgage` and shows
+  a nonzero derived obligation. This is expected fixture coverage, not a
+  silently unchanged implementation.
 
 - `dcs_below_40` is the gate name for the §10 DCS-under-40 cap. The previous
   `needs_review` label was too generic for the contract and is replaced.

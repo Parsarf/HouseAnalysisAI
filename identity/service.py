@@ -248,11 +248,11 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
             # row keeps the raw APN but no apn_key, so the unique backstop on
             # apn_key is not tripped and no future auto-merge can occur.
             row, created = _create_property(session, query, address, apn, None, fips, identity, zip5)
-            row.identity_flags = _conflict_flags(existing, row, identity, apn_key) if created else []
-            row.identity_created = created
+            setattr(row, "identity_flags", _conflict_flags(existing, row, identity, apn_key) if created else [])
+            setattr(row, "identity_created", created)
             return row
-        existing.identity_flags = []
-        existing.identity_created = False
+        setattr(existing, "identity_flags", [])
+        setattr(existing, "identity_created", False)
         return existing
     duplicate = _find_fuzzy_duplicate(session, identity, apn_key)
     flags: list[FlagRequest] = []
@@ -260,8 +260,8 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
         candidate, score = duplicate
         if (score >= FUZZY_MERGE_THRESHOLD and identity.house_number
                 and _house_number_of(candidate) == identity.house_number):
-            candidate.identity_flags = []
-            candidate.identity_created = False
+            setattr(candidate, "identity_flags", [])
+            setattr(candidate, "identity_created", False)
             return candidate
         row, created = _create_property(session, query, address, apn, apn_key, fips, identity, zip5)
         if created:
@@ -270,12 +270,12 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
                 payload={"other_property_id": str(candidate.id), "similarity": round(score, 4), "zip5": zip5},
                 financial_impact_usd=None, raised_by="identity",
                 dedupe_key=f"possible-duplicate:{candidate.id}:{identity.address_hash}"))
-        row.identity_flags = flags
-        row.identity_created = created
+        setattr(row, "identity_flags", flags)
+        setattr(row, "identity_created", created)
         return row
     row, created = _create_property(session, query, address, apn, apn_key, fips, identity, zip5)
-    row.identity_flags = []
-    row.identity_created = created
+    setattr(row, "identity_flags", [])
+    setattr(row, "identity_created", created)
     return row
 
 
@@ -311,7 +311,7 @@ def identity_evidence_from_facts(facts) -> IdentityEvidence | None:
     ``entity_local_id`` prevents an address from one property object being
     combined with an APN or ZIP from another.
     """
-    grouped: dict[str, dict[str, object]] = {}
+    grouped: dict[str, dict[str, tuple[str, float, object | None]]] = {}
     for fact in facts:
         entity_type = str(_fact_value(fact, "entity_type") or "")
         if entity_type != "property":

@@ -132,10 +132,10 @@ def sync_flags(session: Session, property_id, requests: list[FlagRequest]) -> li
         open_rows = [row for row in group_rows if row.status == "open"]
         if len(open_rows) <= 1:
             continue
-        winner = max(open_rows, key=lambda row: row.financial_impact_usd or Decimal(-1))
+        legacy_winner = max(open_rows, key=lambda row: row.financial_impact_usd or Decimal(-1))
         for duplicate in open_rows:
-            if duplicate is not winner:
-                _supersede(session, duplicate, winner=winner, reason="superseded_duplicate")
+            if duplicate is not legacy_winner:
+                _supersede(session, duplicate, winner=legacy_winner, reason="superseded_duplicate")
 
     current_groups = set(normalized)
     for key, group_rows in groups.items():
@@ -147,7 +147,7 @@ def sync_flags(session: Session, property_id, requests: list[FlagRequest]) -> li
     for key, (request, logical, base_dedupe, fingerprint) in normalized.items():
         group_rows = groups.get(key, [])
         open_rows = [row for row in group_rows if row.status == "open"]
-        winner = open_rows[0] if open_rows else None
+        winner: Flag | None = open_rows[0] if open_rows else None
         if winner is not None:
             before = {"payload": winner.payload, "financial_impact_usd": winner.financial_impact_usd,
                       "fingerprint": winner.fingerprint}

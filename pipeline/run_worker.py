@@ -20,8 +20,8 @@ def main() -> None:
                "analysis_pipeline": settings.analysis_pipeline}
     if settings.analysis_pipeline == "legacy":
         ocr_backend = get_backend()
-        startup.update(ocr_backend=ocr_backend.name,
-                       ocr_backend_available=ocr_backend.available())
+        startup["ocr_backend"] = str(ocr_backend.name)
+        startup["ocr_backend_available"] = str(ocr_backend.available())
     log.info("worker startup", extra=startup)
     recovered = worker.recover_stale()
     if recovered:

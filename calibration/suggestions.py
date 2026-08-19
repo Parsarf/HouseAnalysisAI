@@ -70,7 +70,7 @@ def build_suggestions(assumptions: AssumptionSet, deals: Iterable[RealizedDeal],
     for analysis in repair_cost_analysis(deals, assumptions, min_sample):
         if analysis.suggested_psf is None or analysis.suggested_psf == analysis.current_psf:
             continue
-        factor = analysis.correction_factor.quantize(Decimal("0.0001"))
+        factor = (analysis.correction_factor or Decimal(0)).quantize(Decimal("0.0001"))
         suggestions.append(CalibrationSuggestion(
             kind=KIND_REPAIR_PSF,
             target=f"repairs.psf_by_condition.{analysis.condition}",
@@ -82,7 +82,7 @@ def build_suggestions(assumptions: AssumptionSet, deals: Iterable[RealizedDeal],
     valuation = valuation_analysis(deals, min_sample)
     if valuation.suggested_weights is not None and valuation.suggested_weights != assumptions.valuation_weights:
         summary = "; ".join(
-            f"{stat.valuation_type} mean abs error {stat.mean_abs_error_pct.quantize(Decimal('0.0001'))}"
+            f"{stat.valuation_type} mean abs error {(stat.mean_abs_error_pct or Decimal(0)).quantize(Decimal('0.0001'))}"
             for stat in valuation.stats)
         suggestions.append(CalibrationSuggestion(
             kind=KIND_VALUATION_WEIGHTS, target="valuation_weights",
@@ -96,8 +96,8 @@ def build_suggestions(assumptions: AssumptionSet, deals: Iterable[RealizedDeal],
             kind=KIND_HOLDING_MARKET_DAYS, target="holding.market_days_default",
             current=assumptions.holding.market_days_default, proposed=holding.suggested_market_days,
             sample_size=holding.sample_size,
-            rationale=(f"Deals hold {holding.mean_bias_days.quantize(Decimal('0.1'))} days "
-                       f"{'longer' if holding.mean_bias_days > 0 else 'shorter'} than predicted "
+            rationale=(f"Deals hold {(holding.mean_bias_days or Decimal(0)).quantize(Decimal('0.1'))} days "
+                       f"{'longer' if (holding.mean_bias_days or Decimal(0)) > 0 else 'shorter'} than predicted "
                        f"on average.")))
     return suggestions
 

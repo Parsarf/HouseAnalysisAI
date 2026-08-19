@@ -1,16 +1,15 @@
 """WP-5 normalization tests. Fully offline: inline ExtractedFactDraft sets, no DB/network."""
-import sys
-import types
 from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 
+from common.rates import estimate_balance
 from contracts import EntityType, FlagType, SourceKind
 from contracts.models import ExtractedFactDraft
 from normalization import normalize_source_kind, resolve_facts
-from normalization.resolver import RESOLVER_VERSION, _amortized_balance
+from normalization.resolver import RESOLVER_VERSION
 
 AS_OF = date(2026, 1, 1)
 PROPERTY_ID = UUID("00000000-0000-0000-0000-0000000000a1")
@@ -173,7 +172,7 @@ def test_derived_balance_uses_spec_amortization():
     assert mortgage.estimated_balance.source_kind == SourceKind.DERIVED
     assert mortgage.estimated_balance.is_estimated is True
     assert mortgage.rate == Decimal("0.065")  # percent normalized to a fraction
-    expected = _amortized_balance(Decimal(300000), Decimal("0.065"), 360, date(2021, 1, 1), AS_OF)
+    expected = estimate_balance(Decimal(300000), Decimal("0.065"), 360, date(2021, 1, 1), AS_OF)
     assert mortgage.estimated_balance.value == expected
     assert Decimal(270000) < mortgage.estimated_balance.value < Decimal(300000)
 
@@ -189,27 +188,18 @@ def test_derived_balance_without_rate_uses_historical_index():
     assert balance.value < Decimal(200000)
 
 
-def test_finance_estimate_balance_is_preferred_when_available(monkeypatch):
-    fake = types.ModuleType("finance")
-    fake.estimate_balance = lambda original, rate, term, start, as_of: Decimal("12345.67")
-    monkeypatch.setitem(sys.modules, "finance", fake)
+def test_shared_rate_estimate_balance_is_used():
     facts = [
         fact(EntityType.MORTGAGE, "m1", "mortgage.original_amount", parsed=Decimal(200000)),
         fact(EntityType.MORTGAGE, "m1", "mortgage.rate", parsed=Decimal("0.05")),
         fact(EntityType.MORTGAGE, "m1", "mortgage.origination_date", when=date(2020, 3, 1)),
     ]
     record = resolve_facts(PROPERTY_ID, facts, as_of=AS_OF)
-    assert record.mortgages[0].estimated_balance.value == Decimal("12345.67")
+    assert record.mortgages[0].estimated_balance.value == estimate_balance(
+        Decimal(200000), Decimal("0.05"), 360, date(2020, 3, 1), AS_OF)
 
 
-def test_finance_estimate_balance_failure_degrades_gracefully(monkeypatch):
-    fake = types.ModuleType("finance")
-
-    def boom(*args):
-        raise RuntimeError("in-flight rewrite")
-
-    fake.estimate_balance = boom
-    monkeypatch.setitem(sys.modules, "finance", fake)
+def test_shared_rate_estimate_balance_is_deterministic():
     facts = [
         fact(EntityType.MORTGAGE, "m1", "mortgage.original_amount", parsed=Decimal(200000)),
         fact(EntityType.MORTGAGE, "m1", "mortgage.rate", parsed=Decimal("0.05")),
@@ -217,7 +207,8 @@ def test_finance_estimate_balance_failure_degrades_gracefully(monkeypatch):
     ]
     record = resolve_facts(PROPERTY_ID, facts, as_of=AS_OF)
     balance = record.mortgages[0].estimated_balance
-    assert balance is not None and balance.value < Decimal(200000)
+    assert balance is not None
+    assert balance.value == estimate_balance(Decimal(200000), Decimal("0.05"), 360, date(2020, 3, 1), AS_OF)
 
 
 def test_released_lien_retained_and_owner_only_basis_preserved():

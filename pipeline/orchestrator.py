@@ -37,7 +37,7 @@ from contracts import (
 )
 from finance import underwrite
 from normalization import resolve_facts
-from scoring import score
+from scoring import data_confidence, score
 from strategies import all_strategies, offer_grid
 
 from . import batch as batch_machine
@@ -79,7 +79,10 @@ def recompute_property(property: NormalizedProperty, assumptions: AssumptionSet,
                        *, config: dict | None = None) -> Computation:
     """Pure compute core: underwrite → strategies → score → offer grid."""
     underwriting_result = underwrite(property, assumptions)
-    strategy_results = all_strategies(property, underwriting_result, assumptions, purchase_price)
+    dcs = data_confidence(property, config=config)
+    wholesale_min = Decimal(str((config or {}).get("gates", {}).get("wholesale_min", 60)))
+    strategy_results = all_strategies(property, underwriting_result, assumptions, purchase_price,
+                                      data_confidence_value=dcs, wholesale_min=wholesale_min)
     score_result = _score_record(property, underwriting_result, scoring_config_id,
                                  strategy_results, config)
     grid = offer_grid(underwriting_result, property.property_id, assumptions, purchase_price)
@@ -106,7 +109,8 @@ def _flag_requests(record: NormalizedProperty, assumptions: AssumptionSet,
 
 def _facts_and_meta(result: object) -> tuple[list, Decimal | None, str | None, str | None]:
     facts = getattr(result, "facts", result)
-    return (list(facts), getattr(result, "cost_usd", None),
+    fact_list = list(facts) if isinstance(facts, (list, tuple)) else []
+    return (fact_list, getattr(result, "cost_usd", None),
             getattr(result, "model", None), getattr(result, "prompt_version", None))
 
 
@@ -265,8 +269,11 @@ class Pipeline:
             from report_analysis.normalizer import underwrite_canonical
             underwriting_result = underwrite_canonical(record, assumptions)
             if underwriting_result.status == "ok":
+                dcs = data_confidence(record, config=config)
+                wholesale_min = Decimal(str((config or {}).get("gates", {}).get("wholesale_min", 60)))
                 strategy_results = all_strategies(
                     record, underwriting_result, assumptions, price,
+                    data_confidence_value=dcs, wholesale_min=wholesale_min,
                 )
                 grid = offer_grid(
                     underwriting_result, record.property_id, assumptions, price,
@@ -312,7 +319,7 @@ class Pipeline:
         unit_id = UUID(str(unit_id))
         extract = extractor or self._extractor
         blocked: AcqError | None = None
-        facts = []
+        facts: list = []
         with self._store_factory() as store:
             unit = store.get_unit(unit_id)
             if unit is None:
@@ -547,11 +554,11 @@ class Pipeline:
 
     def _enqueue(self, name: str, payload: dict, dedupe_key: str | None = None):
         if self._enqueue_hook is not None:
-            return self._enqueue_hook(name, payload, dedupe_key)
+            return self._enqueue_hook(name, payload, dedupe_key or f"{name}:{payload.get('property_id', '')}")
         from common.db import db_session
         from jobs.postgres import PostgresJobQueue
         with db_session() as session:
-            return PostgresJobQueue().enqueue(session, name, json.dumps(payload), dedupe_key)
+            return PostgresJobQueue().enqueue(session, name, json.dumps(payload), dedupe_key or f"{name}:{payload.get('property_id', '')}")
 
 
 __all__ = [

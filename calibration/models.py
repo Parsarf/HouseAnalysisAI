@@ -61,7 +61,9 @@ class RealizedDeal:
             return None
         if None in (self.sale_price, self.purchase_price, self.actual_repairs, self.actual_costs):
             return None
-        return self.sale_price - self.purchase_price - self.actual_repairs - self.actual_costs
+        sale, purchase, repairs, costs = self.sale_price, self.purchase_price, self.actual_repairs, self.actual_costs
+        assert sale is not None and purchase is not None and repairs is not None and costs is not None
+        return sale - purchase - repairs - costs
 
     @property
     def is_hit(self) -> bool:

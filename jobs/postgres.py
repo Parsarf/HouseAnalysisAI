@@ -90,7 +90,7 @@ class PostgresJobQueue:
           WHERE status='running'
             AND (locked_at IS NULL OR locked_at < now() - (:minutes * interval '1 minute'))
         """), {"minutes": minutes})
-        return int(result.rowcount or 0)
+        return int(getattr(result, "rowcount", 0) or 0)
 
     def fail(self, session: Session, job_id: UUID, attempts: int, max_attempts: int, error: str) -> None:
         dead = attempts >= max_attempts

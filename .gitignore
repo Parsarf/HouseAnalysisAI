@@ -9,3 +9,6 @@ documents/
 *.sqlite3
 dist/
 build/
+.egg-info/
+*.egg-info/
+node_modules/

@@ -29,7 +29,7 @@ import pytest
 
 from contracts import AssumptionSet, NormalizedProperty
 from finance import underwrite
-from scoring import score
+from scoring import data_confidence, score
 from strategies import all_strategies, offer_grid
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
@@ -115,7 +115,8 @@ def test_strategies_and_offer_grid_reproduce_golden(slug: str):
     assumptions = ASSUMPTIONS[golden["assumption_set"]]
     price = Decimal(golden["purchase_price"]) if golden["purchase_price"] is not None else Decimal(0)
     underwriting = underwrite(record, assumptions)
-    results = all_strategies(record, underwriting, assumptions, price, as_of=GOLDEN_AS_OF)
+    results = all_strategies(record, underwriting, assumptions, price, as_of=GOLDEN_AS_OF,
+                             data_confidence_value=data_confidence(record, as_of=GOLDEN_AS_OF))
     grid = offer_grid(underwriting, record.property_id, assumptions, price)
     actual = {"strategies": [r.model_dump(mode="json") for r in results],
               "offer_grid": grid.model_dump(mode="json")}
@@ -133,7 +134,8 @@ def test_scores_reproduce_golden(slug: str):
     price = (Decimal(strategy_golden["purchase_price"])
              if strategy_golden["purchase_price"] is not None else Decimal(0))
     underwriting = underwrite(record, assumptions)
-    results = all_strategies(record, underwriting, assumptions, price, as_of=GOLDEN_AS_OF)
+    results = all_strategies(record, underwriting, assumptions, price, as_of=GOLDEN_AS_OF,
+                             data_confidence_value=data_confidence(record, as_of=GOLDEN_AS_OF))
     actual = score(
         record, underwriting, SCORING_CONFIG_ID, results, as_of=GOLDEN_AS_OF,
     ).model_dump(mode="json")

@@ -33,6 +33,7 @@ from contracts import (
     UnderwritingResult,
     ValueBlock,
 )
+from scoring.engine import data_confidence
 from strategies import (
     all_strategies,
     cash,
@@ -45,7 +46,6 @@ from strategies import (
     subject_to,
     wholesale,
 )
-from strategies.engine import data_confidence
 
 D = Decimal
 CENT = D(".01")
@@ -518,14 +518,15 @@ def test_all_strategies_six_by_three_and_deterministic():
     property = _foreclosure_property(rental=RentalBlock(rent_estimate=tv("2000")))
     underwriting = make_underwriting(property.property_id)
     assumption_set = assumptions()
-    first = all_strategies(property, underwriting, assumption_set, D("150000"))
-    second = all_strategies(property, underwriting, assumption_set, D("150000"))
+    dcs = data_confidence(property)
+    first = all_strategies(property, underwriting, assumption_set, D("150000"), data_confidence_value=dcs)
+    second = all_strategies(property, underwriting, assumption_set, D("150000"), data_confidence_value=dcs)
     assert len(first) == 18
     assert [item.model_dump() for item in first] == [item.model_dump() for item in second]
     assert len({item.strategy for item in first}) == 6
     # all_strategies passes the record-derived DCS into the wholesale gate
     wholesale_result = next(r for r in first if r.strategy.value == "wholesale")
-    assert wholesale_result.metrics["dcs"] == data_confidence(property)
+    assert wholesale_result.metrics["dcs"] == dcs
 
 
 def test_missing_sqft_leaves_cash_and_foreclosure_computed():

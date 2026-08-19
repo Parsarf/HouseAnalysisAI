@@ -125,6 +125,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "dcs_low_threshold": Decimal(50),
         "foreclosure_dcs_threshold": Decimal(75),
         "foreclosure_cap": Decimal(70),
+        "wholesale_min": Decimal(60),
     },
 }
 
@@ -393,6 +394,13 @@ def _dcs(record: NormalizedProperty, config: Mapping[str, Any], as_of: date) -> 
     return _q(weighted, Decimal("0.0001")), terms
 
 
+def data_confidence(record: NormalizedProperty, config: Mapping[str, Any] | None = None,
+                    as_of: date | None = None) -> Decimal:
+    """Return the resolved 0–100 DCS used by scoring and strategy gates."""
+    value, _ = _dcs(record, resolve_config(config), as_of or datetime.now(UTC).date())
+    return value
+
+
 def _risk(record: NormalizedProperty, config: Mapping[str, Any], dcs: Decimal) -> tuple[Decimal, dict[str, Decimal]]:
     points_cfg = _points(config, "risk_points")
     gates = _points(config, "gates")
@@ -508,7 +516,6 @@ def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_
         overall=_q(overall, Decimal("0.0001")),
         components=components,
         gates_applied=gates,
-        # needs_review caps the score at 45 but the property stays rankable (spec section 10).
         is_rankable="insufficient_data" not in gates and "open_gating_flag" not in gates,
         recommended_strategy=best.strategy if best else None,
         recommended_alternatives=alternatives,

@@ -216,7 +216,7 @@ class ProviderClient:
         *,
         log_context: dict | None = None,
     ) -> tuple[dict, int, dict[str, int]]:
-        payload = {
+        payload: dict[str, object] = {
             "model": model,
             "messages": messages,
             "response_format": {

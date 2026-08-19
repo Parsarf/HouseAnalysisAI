@@ -162,11 +162,13 @@ def flatten_payload(
             continue
         label = item.get("label")
         value = item.get("value")
-        page_number = item.get("source_page")
-        snippet = item.get("snippet")
-        if not label or value is None or page_number is None or not snippet:
+        page_number_raw = item.get("source_page")
+        snippet_raw = item.get("snippet")
+        if not label or value is None or not isinstance(page_number_raw, int) or not isinstance(snippet_raw, str) or not snippet_raw:
             dropped += 1
             continue
+        page_number = page_number_raw
+        snippet = snippet_raw
         category = item.get("category")
         confidence = item.get("confidence")
         entity_local_id = f"additional_facts[{index}]"

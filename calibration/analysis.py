@@ -246,7 +246,7 @@ def score_band_analysis(deals: Iterable[RealizedDeal],
     scored = [deal for deal in deals if deal.snapshot.overall_score is not None]
     result = []
     for low, high in bands:
-        members = [deal for deal in scored if low <= deal.snapshot.overall_score < high]
+        members = [deal for deal in scored if deal.snapshot.overall_score is not None and low <= deal.snapshot.overall_score < high]
         hits = sum(1 for deal in members if deal.is_hit)
         profits = [profit for deal in members if (profit := deal.realized_profit) is not None]
         result.append(ScoreBandStats(

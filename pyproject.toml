@@ -26,6 +26,10 @@ pythonpath = ["."]
 testpaths = ["tests"]
 markers = ["integration: requires Postgres and supplied product fixtures"]
 
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -40,7 +44,7 @@ target-version = "py312"
 "contracts/__init__.py" = ["F401"]
 "extraction/*.py" = ["BLE001", "DTZ011"]
 "fixtures/generate_goldens.py" = ["FURB157"]
-"identity/service.py" = ["BLE001"]
+"identity/service.py" = ["BLE001", "B010"]
 "jobs/queue.py" = ["BLE001"]
 "normalization/resolver.py" = ["BLE001", "DTZ011"]
 "scoring/engine.py" = ["DTZ011", "FURB157"]

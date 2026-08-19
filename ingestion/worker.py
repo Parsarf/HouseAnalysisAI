@@ -574,12 +574,14 @@ def ingest_document(payload: dict, **hooks) -> Report:
             "stage": "ingestion",
             "success": report.status != ReportStatus.FAILED.value,
         })
+    unit_statuses = committed.get("unit_statuses")
+    unit_count = sum(unit_statuses.values()) if isinstance(unit_statuses, dict) else 0
     log.info("report ingestion transaction committed", extra={
         "event": "ingestion_committed",
         "stage": "ingestion",
         "success": True,
         **committed,
         "transaction_status": "committed",
-        "unit_count": sum(committed.get("unit_statuses", {}).values()),
+        "unit_count": unit_count,
     })
     return report

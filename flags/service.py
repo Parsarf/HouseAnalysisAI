@@ -252,11 +252,16 @@ def _bid_mismatch_flags(record: NormalizedProperty, assumptions: AssumptionSet |
     foreclosure = record.foreclosure
     if not foreclosure or not foreclosure.published_bid or foreclosure.published_bid.value is None:
         return []
-    bid = foreclosure.published_bid.value
+    bid_value = foreclosure.published_bid.value
+    if bid_value is None:
+        return []
+    bid = bid_value
     first = next((mortgage for mortgage in record.mortgages
                   if mortgage.is_open and mortgage.position in ("first", "1")
                   and mortgage.estimated_balance and mortgage.estimated_balance.value is not None), None)
     if first is None:
+        return []
+    if first.estimated_balance is None or first.estimated_balance.value is None:
         return []
     balance = first.estimated_balance.value
     if bid <= 0 or abs(bid - balance) / bid <= BID_MISMATCH_RATIO_THRESHOLD:
@@ -266,7 +271,8 @@ def _bid_mismatch_flags(record: NormalizedProperty, assumptions: AssumptionSet |
         pass  # the engine already gives the published bid precedence (spec §7.3)
 
     def reject_bid(target: NormalizedProperty) -> None:
-        target.foreclosure.published_bid = None  # engine falls back to the estimated balance
+        if target.foreclosure is not None:
+            target.foreclosure.published_bid = None  # engine falls back to the estimated balance
 
     return [FlagRequest(
         property_id=record.property_id, flag_type=FlagType.BID_MISMATCH,

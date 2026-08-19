@@ -13,7 +13,7 @@ class SourceKind(StrEnum):
 class NullReason(StrEnum):
     NOT_PRESENT="not_present"; ILLEGIBLE="illegible"; REDACTED="redacted"; CONFLICTING_IN_SOURCE="conflicting_in_source"
 class AttachmentBasis(StrEnum):
-    RECORDED_AGAINST_PROPERTY="recorded_against_property"; OWNER_NAMED_ONLY="owner_named_only"; UNKNOWN="unknown"
+    RECORDED_AGAINST_PROPERTY="recorded_against_property"; OWNER_NAMED_ONLY="owner_named_only"; UNKNOWN="unknown"; UNDRAWN_HELOC_CAPACITY="undrawn_heloc_capacity"
 class Scenario(StrEnum): CONSERVATIVE="conservative"; EXPECTED="expected"; OPTIMISTIC="optimistic"
 class EntityType(StrEnum):
     PROPERTY="property"; MORTGAGE="mortgage"; LIEN="lien"; FORECLOSURE="foreclosure"; BANKRUPTCY="bankruptcy"; VALUATION="valuation"; LISTING="listing"; COMP="comp"; TAX="tax"; RENTAL="rental"; CONDITION="condition"

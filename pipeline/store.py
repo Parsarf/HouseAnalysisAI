@@ -244,7 +244,7 @@ class SqlStore:
         """(scoring_config_id, config-dict) for scoring.score; defaults when unconfigured."""
         try:
             from scoring import load_active_scoring_config
-            result = load_active_scoring_config(self.session)
+            result = load_active_scoring_config(self.session.connection())
         except Exception as exc:
             from sqlalchemy.exc import ProgrammingError
             if not isinstance(exc, ProgrammingError):
@@ -384,7 +384,7 @@ class SqlStore:
                 self.session.execute(
                     _FACT_INSERT_SQL, _fact_row(property_id, unit["report_id"], unit_id, fact))
         report_outstanding = int(self.session.execute(
-            _REPORT_UNIT_OUTSTANDING_SQL, {"report_id": unit["report_id"]}).scalar())
+            _REPORT_UNIT_OUTSTANDING_SQL, {"report_id": unit["report_id"]}).scalar() or 0)
         identity_unresolved = report_outstanding == 0 and property_id is None
         if property_id is not None:
             self.session.execute(
@@ -405,14 +405,14 @@ class SqlStore:
         outstanding = None
         if property_id is not None:
             outstanding = int(self.session.execute(
-                _UNIT_OUTSTANDING_SQL, {"pid": property_id}).scalar())
+                _UNIT_OUTSTANDING_SQL, {"pid": property_id}).scalar() or 0)
         facts_attached = 0
         if property_id is not None:
             facts_attached = int(self.session.execute(
                 text("SELECT count(*) FROM extracted_facts "
                      "WHERE report_id = :report_id AND property_id = :pid AND is_active"),
                 {"report_id": unit["report_id"], "pid": property_id},
-            ).scalar())
+            ).scalar() or 0)
         return UnitOutcome(
             unit_id=unit_id,
             property_id=property_id,
@@ -488,11 +488,11 @@ class SqlStore:
 
     def rank_scope(self, scope_type: str, scope_id: UUID | None = None) -> int:
         from scoring import rank_scope
-        return rank_scope(self.session, scope_type, scope_id)
+        return rank_scope(self.session.connection(), scope_type, scope_id)
 
     def count_properties(self) -> int:
         return int(self.session.execute(
-            text("SELECT count(*) FROM properties WHERE merged_into_id IS NULL")).scalar())
+            text("SELECT count(*) FROM properties WHERE merged_into_id IS NULL")).scalar() or 0)
 
     def list_property_ids(self, *, limit: int, offset: int) -> list[UUID]:
         return list(self.session.execute(

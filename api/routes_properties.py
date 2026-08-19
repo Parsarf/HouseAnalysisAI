@@ -59,7 +59,8 @@ def _latest_scores(session: Session, property_ids: list[UUID]) -> dict[UUID, dbm
             .all())
     latest: dict[UUID, dbm.Score] = {}
     for row in rows:
-        latest.setdefault(row.property_id, row)
+        if row.property_id is not None:
+            latest.setdefault(row.property_id, row)
     return latest
 
 
@@ -72,7 +73,8 @@ def _latest_ranks(session: Session, property_ids: list[UUID]) -> dict[UUID, int]
             .all())
     latest: dict[UUID, int] = {}
     for row in rows:
-        latest.setdefault(row.property_id, row.rank)
+        if row.property_id is not None and row.rank is not None:
+            latest.setdefault(row.property_id, row.rank)
     return latest
 
 
@@ -187,7 +189,7 @@ def property_detail(property_id: UUID, session: Session = Depends(get_session),
         latest_valuation = money_envelope(serializers.tracked_money(
             valuation_row.value, confidence=float(valuation_row.confidence_reported or 1.0),
             source_kind=SourceKind.API if is_estimate else SourceKind.REPORT))
-        if is_estimate:
+        if is_estimate and latest_valuation is not None:
             latest_valuation.is_estimated = True
     detail = PropertyDetail(**summary.model_dump(), lat=row.lat, lng=row.lng,
                             created_at=row.created_at, updated_at=row.updated_at,
@@ -299,6 +301,8 @@ def create_offer(property_id: UUID, body: OfferRequest, session: Session = Depen
         raise AcqError(ErrorCode.INVALID_INPUT, "no underwriting available for this property",
                        {"property_id": str(property_id)})
     assumptions = analysis_store.load_assumption_set(session)
+    if assumptions is None:
+        raise AcqError(ErrorCode.INVALID_INPUT, "no assumption set available")
     from strategies import offer_point  # lazy: strategies sits downstream of finance
 
     point = offer_point(underwriting, assumptions, body.offer_price, body.scenario, label=body.label)
@@ -344,7 +348,7 @@ def list_notes(property_id: UUID, session: Session = Depends(get_session),
             .filter(dbm.PropertyNote.property_id == property_id)
             .order_by(dbm.PropertyNote.created_at.desc())
             .all())
-    return {"items": dump([NoteRecord(id=row.id, property_id=row.property_id, body=row.body,
+    return {"items": dump([NoteRecord(id=row.id, property_id=property_id, body=row.body,
                                       created_at=row.created_at) for row in rows])}
 
 
@@ -404,6 +408,8 @@ def net_sheet_pdf(property_id: UUID, body: OfferRequest, session: Session = Depe
     normalized = _normalized_or_stub(session, row)
     underwriting = analysis_store.load_underwriting(session, property_id, normalized)
     assumptions = analysis_store.load_assumption_set(session)
+    if assumptions is None:
+        raise AcqError(ErrorCode.INVALID_INPUT, "no assumption set available")
     if underwriting is None or assumptions is None:
         raise AcqError(ErrorCode.INVALID_INPUT, "no underwriting available for this property")
     from strategies import offer_point
@@ -428,6 +434,8 @@ def net_sheet(property_id: UUID, body: OfferRequest, session: Session = Depends(
         raise AcqError(ErrorCode.INVALID_INPUT, "no underwriting available for this property",
                        {"property_id": str(property_id)})
     assumptions = analysis_store.load_assumption_set(session)
+    if assumptions is None:
+        raise AcqError(ErrorCode.INVALID_INPUT, "no assumption set available")
     from strategies import offer_point  # lazy
 
     point = offer_point(underwriting, assumptions, body.offer_price, body.scenario, label=body.label)

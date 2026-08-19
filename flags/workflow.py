@@ -34,7 +34,8 @@ VALUES (:id, :property_id, :entity_type, :entity_local_id, :field_path,
 
 def _history_sql(session: Session):
     def value(column: str) -> str:
-        return f"CAST(:{column} AS jsonb)" if session.bind.dialect.name == "postgresql" else f":{column}"
+        bind = session.bind
+        return f"CAST(:{column} AS jsonb)" if bind is not None and bind.dialect.name == "postgresql" else f":{column}"
     return text(f"""
 INSERT INTO history (id, entity_type, entity_id, action, before, after, at)
 VALUES (:id, :entity_type, :entity_id, :action, {value("before")}, {value("after")}, :at)

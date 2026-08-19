@@ -7,9 +7,10 @@ byte-identical record. Scoring follows §6.2, conflicts §6.3, entity dedupe
 from collections import defaultdict
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Literal, cast
 
-from common.dates import months_between
 from common.money import money
+from common.rates import estimate_balance, historical_rate
 from contracts import (
     AddressBlock,
     AttachmentBasis,
@@ -96,17 +97,6 @@ _LENDER_ALIASES = {"WELLS FARGO BANK NA": "WELLS FARGO", "WELLS FARGO HOME MTG":
                    "CHASE HOME FINANCE": "JPMORGAN CHASE", "NATIONSTAR MTG": "NATIONSTAR",
                    "NATIONSTAR MORTGAGE": "NATIONSTAR"}
 
-# §6.5 fallback when a mortgage has no rate: 30-year fixed yearly averages.
-_HISTORICAL_RATE_INDEX = {2000: Decimal(".081"), 2001: Decimal(".070"), 2002: Decimal(".065"),
-                          2003: Decimal(".058"), 2004: Decimal(".058"), 2005: Decimal(".059"),
-                          2006: Decimal(".064"), 2007: Decimal(".063"), 2008: Decimal(".060"),
-                          2009: Decimal(".050"), 2010: Decimal(".047"), 2011: Decimal(".045"),
-                          2012: Decimal(".037"), 2013: Decimal(".040"), 2014: Decimal(".042"),
-                          2015: Decimal(".039"), 2016: Decimal(".036"), 2017: Decimal(".040"),
-                          2018: Decimal(".045"), 2019: Decimal(".039"), 2020: Decimal(".031"),
-                          2021: Decimal(".030"), 2022: Decimal(".053"), 2023: Decimal(".068"),
-                          2024: Decimal(".067"), 2025: Decimal(".066"), 2026: Decimal(".063")}
-_DEFAULT_HISTORICAL_RATE = Decimal(".065")
 _DEFAULT_TERM_MONTHS = 360
 
 # §7.2 valuation weights, used as hints when extraction provides none.
@@ -151,7 +141,8 @@ class _Context:
     def conflict(self, impact: Decimal | None = None, flag_type: FlagType | None = None,
                  gating: bool = False) -> None:
         self.conflict_count += 1
-        if impact is not None and money(impact) >= _MATERIAL_THRESHOLD:
+        impact_value = money(impact) if impact is not None else None
+        if impact_value is not None and impact_value >= _MATERIAL_THRESHOLD:
             self.material_conflict_count += 1
         if flag_type is not None:
             self.flag(flag_type, impact, gating)
@@ -220,9 +211,12 @@ def _rate_of(fact: ExtractedFactDraft | None) -> Decimal | None:
     return rate
 
 
-def _tracked(fact: ExtractedFactDraft, *, is_estimated: bool | None = None,
+def _tracked(fact: ExtractedFactDraft | None, *, is_estimated: bool | None = None,
              confidence: float | None = None, value: Decimal | None = None,
-             source_kind: SourceKind | None = None, as_of: date | None = None) -> TrackedValue:
+             source_kind: SourceKind | None = None, as_of: date | None = None) -> TrackedValue | None:
+    if fact is None and value is None:
+        return None
+    assert fact is not None
     estimated = (fact.source_kind == SourceKind.DERIVED) if is_estimated is None else is_estimated
     return TrackedValue(value=value if value is not None else fact.value_parsed,
                         confidence=confidence if confidence is not None else fact.extraction_confidence,
@@ -234,7 +228,7 @@ def _tracked(fact: ExtractedFactDraft, *, is_estimated: bool | None = None,
 
 def _specificity(fact: ExtractedFactDraft) -> float:
     """Recorded exact figure > stated range > rounded estimate."""
-    if fact.value_parsed is None:
+    if fact is None or fact.value_parsed is None:
         return 1.0
     raw = (fact.value_raw or "").lower()
     if " to " in raw or raw.count("-") == 1:
@@ -391,45 +385,13 @@ def _same_lien(a_facts: list[ExtractedFactDraft], b_facts: list[ExtractedFactDra
 
 # ---------------------------------------------------------------- derived balances (§6.5)
 
-def _amortized_balance(original: Decimal, rate: Decimal, term_months: int,
-                       origination_date: date, as_of: date) -> Decimal | None:
-    n = months_between(origination_date, as_of)
-    if n <= 0:
-        return money(original)
-    if n >= term_months:
-        return Decimal(0)
-    if rate == 0:
-        return money(original * (term_months - n) / term_months)
-    r = rate / 12
-    growth = (1 + r) ** term_months
-    return money(original * (growth - (1 + r) ** n) / (growth - 1))
-
-
-def _estimate_balance(original: Decimal, rate: Decimal, term_months: int,
-                      origination_date: date, as_of: date) -> Decimal | None:
-    """Prefer WP-6's finance.estimate_balance when it exists; fall back to the §6.5 formula."""
-    estimate = None
-    try:
-        from finance import estimate_balance  # type: ignore[attr-defined]
-    except Exception:
-        estimate_balance = None
-    if callable(estimate_balance):
-        try:
-            estimate = estimate_balance(original, rate, term_months, origination_date, as_of)
-        except Exception:
-            estimate = None
-    if estimate is not None:
-        return money(estimate)
-    return _amortized_balance(original, rate, term_months, origination_date, as_of)
-
-
 def _derive_balance(original: TrackedValue, rate: Decimal | None, term_months: int | None,
                     origination_date: date, ctx: _Context) -> TrackedValue | None:
     rate_estimated = rate is None
     if rate_estimated:
-        rate = _HISTORICAL_RATE_INDEX.get(origination_date.year, _DEFAULT_HISTORICAL_RATE)
-    value = _estimate_balance(original.value, rate, term_months or _DEFAULT_TERM_MONTHS,
-                              origination_date, ctx.as_of)
+        rate = historical_rate(origination_date.year)
+    value = estimate_balance(original.value, rate, term_months or _DEFAULT_TERM_MONTHS,
+                             origination_date, ctx.as_of)
     if value is None:
         return None
     confidence = 0.55 if rate_estimated else min(original.confidence, 0.8)
@@ -483,8 +445,10 @@ def _build_mortgage(facts: list[ExtractedFactDraft],
                         FlagType.CONFLICTING_MORTGAGE)
         balance = _tracked(winners["balance"])
     elif original is not None and original.value is not None and _date_of(winners["date"]) is not None:
+        origination_date = _date_of(winners["date"])
+        assert origination_date is not None
         balance = _derive_balance(original, _rate_of(winners["rate"]), _int(_winner(resolved, "term_months")),
-                                  _date_of(winners["date"]), ctx)
+                                  origination_date, ctx)
         if balance is not None:
             method = "amortization_v1"
             if balance.value == 0:
@@ -541,7 +505,9 @@ def _build_valuation(facts: list[ExtractedFactDraft],
     if hint is None:
         hint = _VALUATION_WEIGHT_HINTS.get(valuation_type)
     reported = _num(_winner(resolved, "reported_confidence"))
-    candidate = ValuationCandidate(valuation_type=valuation_type, value=_tracked(value_fact),
+    tracked_value = _tracked(value_fact)
+    assert tracked_value is not None
+    candidate = ValuationCandidate(valuation_type=valuation_type, value=tracked_value,
                                    value_low=_num(_winner(resolved, "value_low")),
                                    value_high=_num(_winner(resolved, "value_high")),
                                    as_of=_date_of(_winner(resolved, "as_of")) or value_fact.as_of_date,
@@ -557,12 +523,14 @@ def _build_foreclosure(facts: list[ExtractedFactDraft],
     stage_choices = []
     for local_id in sorted({fact.entity_local_id for fact in facts}):
         group = [fact for fact in facts if fact.entity_local_id == local_id]
-        stage_fact = next((fact for fact in group
+        candidate_stage_fact = next((fact for fact in group
                            if _FORECLOSURE_ALIASES.get(_leaf(fact.field_path), _leaf(fact.field_path)) == "stage"
                            and fact.value_text), None)
-        if stage_fact is not None:
+        if candidate_stage_fact is not None:
             latest = max((fact.value_date for fact in group if fact.value_date), default=date.min)
-            stage_choices.append((latest, local_id, stage_fact.value_text.strip(), stage_fact))
+            stage_choices.append((latest, local_id, (candidate_stage_fact.value_text or "").strip(), candidate_stage_fact))
+    stage: str | None
+    stage_fact: ExtractedFactDraft | None
     if stage_choices:
         stage, stage_fact = max(stage_choices)[2], max(stage_choices)[3]
     else:
@@ -578,8 +546,8 @@ def _build_foreclosure(facts: list[ExtractedFactDraft],
         events = [fact for fact in facts
                   if _FORECLOSURE_ALIASES.get(_leaf(fact.field_path), _leaf(fact.field_path)) == "event_type"
                   and fact.value_text]
-        latest = max(events, key=lambda f: (f.value_date or date.min, f.snippet), default=None)
-        stage = (latest.value_text.strip().casefold() if latest else "unknown")
+        latest_event = max(events, key=lambda f: (f.value_date or date.min, f.snippet), default=None)
+        stage = (latest_event.value_text.strip().casefold() if latest_event and latest_event.value_text else "unknown")
     if stage_fact is None:
         stage_fact = _winner(resolved, "stage") or (facts[0] if facts else None)
     is_active = _bool_of(_winner(resolved, "is_active"))
@@ -633,11 +601,12 @@ def _build_comp(facts: list[ExtractedFactDraft], ctx: _Context) -> ComparableSal
     if address is None:
         return None
     price_fact = _winner(resolved, "price")
+    included_value = _bool_of(_winner(resolved, "included"))
     return ComparableSale(address=address, sale_date=_date_of(_winner(resolved, "sale_date")),
                           price=_tracked(price_fact) if price_fact else None,
                           sqft=_num(_winner(resolved, "sqft")), distance=_num(_winner(resolved, "distance")),
                           similarity=_num(_winner(resolved, "similarity")),
-                          included=_bool_of(_winner(resolved, "included")) if _bool_of(_winner(resolved, "included")) is not None else True)
+                          included=included_value if included_value is not None else True)
 
 
 def _build_property_core(facts: list[ExtractedFactDraft], ctx: _Context):
@@ -828,15 +797,15 @@ def resolve_facts(property_id, facts: list[ExtractedFactDraft], *, as_of: date |
         condition_fact = _winner(resolved, "condition")
         level = (_text(condition_fact) or "").casefold()
         if level in CONDITION_LADDER:
-            condition = ConditionSignal(condition=level, evidence=_text(_winner(resolved, "evidence"))
+            condition = ConditionSignal(condition=cast(Literal["pristine", "cosmetic", "moderate", "heavy", "gut"], level), evidence=_text(_winner(resolved, "evidence"))
                                         or (condition_fact.snippet if condition_fact else None))
             break
 
-    listings = sorted((record for group in _group_by_local_id(by_type[EntityType.LISTING])
-                       if (record := _build_listing(group, ctx)) is not None),
+    listings = sorted((listing_record for group in _group_by_local_id(by_type[EntityType.LISTING])
+                       if (listing_record := _build_listing(group, ctx)) is not None),
                       key=lambda r: (r.list_date, r.status))
-    comparables = sorted((record for group in _group_by_local_id(by_type[EntityType.COMP])
-                          if (record := _build_comp(group, ctx)) is not None),
+    comparables = sorted((comp_record for group in _group_by_local_id(by_type[EntityType.COMP])
+                          if (comp_record := _build_comp(group, ctx)) is not None),
                          key=lambda r: (r.address.casefold(), r.sale_date or date.min))
 
     if apn is None:

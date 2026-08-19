@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from math import isfinite
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from contracts import (
@@ -370,7 +370,7 @@ def canonical_to_normalized(
             is_active=active,
         )
     listings = [ListingRecord(
-        list_date=_date(row.as_of), price=_tracked(row.price, confidence=_confidence(row.confidence)),
+        list_date=cast(date, _date(row.as_of)) if row.as_of is not None else date.min, price=_tracked(row.price, confidence=_confidence(row.confidence)),
         status=(row.status or row.type or "unknown").casefold(), dom=row.dom,
     ) for row in extraction.listing_history if row.as_of]
     taxes = TaxBlock(

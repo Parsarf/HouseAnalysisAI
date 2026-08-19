@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+
 from .models import (
     AssumptionSet,
     ExtractedFactDraft,
@@ -15,7 +17,7 @@ from .models import (
 
 
 def export_schemas() -> dict[str, dict]:
-    models = [TrackedValue, ExtractedFactDraft, NormalizedProperty, FlagRequest,
+    models: list[type[BaseModel]] = [TrackedValue, ExtractedFactDraft, NormalizedProperty, FlagRequest,
               FilterClause, MoneyResponse, JobPayload, AssumptionSet, UnderwritingResult,
               StrategyResult, OfferGrid, ScoreSet]
     return {model.__name__: model.model_json_schema() for model in models}
