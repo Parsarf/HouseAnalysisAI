@@ -889,7 +889,7 @@ def test_csv_export_applies_filters(client):
 
 def test_csv_export_rejects_model_metadata(client):
     response = client.get("/api/exports/csv", params={"columns": "metadata"})
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_input"
 
 
