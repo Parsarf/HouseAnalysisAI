@@ -120,6 +120,7 @@ export interface ListPropertiesParams {
   filters?: FilterClause[];
   cursor?: string | null;
   limit?: number;
+  showArchived?: boolean;
 }
 
 export function listProperties(params: ListPropertiesParams = {}): Promise<PropertyListResponse> {
@@ -128,6 +129,7 @@ export function listProperties(params: ListPropertiesParams = {}): Promise<Prope
   if (params.limit !== undefined) search.set("limit", String(params.limit));
   if (params.cursor) search.set("cursor", params.cursor);
   if (params.filters && params.filters.length > 0) search.set("filters", JSON.stringify(params.filters));
+  if (params.showArchived) search.set("show_archived", "true");
   const qs = search.toString();
   return get(`/properties${qs ? `?${qs}` : ""}`);
 }
@@ -138,6 +140,76 @@ export function getProperty(propertyId: string): Promise<PropertyListItem> {
 
 export function updateProperty(propertyId: string, changes: PropertyPatch): Promise<PropertyListItem> {
   return json(`/properties/${encodeURIComponent(propertyId)}`, "PATCH", changes);
+}
+
+export function archiveProperty(propertyId: string): Promise<{ property_id: string; archived_at: string }> {
+  return json(`/properties/${encodeURIComponent(propertyId)}/archive`, "POST");
+}
+
+export function restoreProperty(propertyId: string): Promise<{ property_id: string; archived_at: null }> {
+  return json(`/properties/${encodeURIComponent(propertyId)}/restore`, "POST");
+}
+
+export interface OwnerLinkCandidate {
+  owner_id: string; owner_name: string | null; confidence: "high" | "moderate" | "low";
+  reasons: string[]; property_ids: string[];
+}
+
+export interface UnlinkedOwnerProfile {
+  report_id: string; file_name: string; owner_id: string; owner_name: string | null;
+  link_candidates: OwnerLinkCandidate[];
+}
+
+export function listUnlinkedOwnerProfiles(): Promise<{ items: UnlinkedOwnerProfile[] }> {
+  return get("/owner-profiles/unlinked");
+}
+
+export function confirmOwnerProfileLink(reportId: string, ownerId: string): Promise<{ linked: boolean }> {
+  return json(`/owner-profiles/${encodeURIComponent(reportId)}/link`, "POST", { owner_id: ownerId });
+}
+
+export interface OutreachDraft {
+  draft_id: string; subject: string; body: string; offer_price: string;
+  recipients: Array<{ id: string; value: string; source: string; confidence: string | null; association_warning?: string | null }>;
+  mailing_addresses: string[]; recipient_selected: null; disclosure: string;
+}
+
+export function createOutreachDraft(propertyId: string, payload: Record<string, unknown> = {}): Promise<OutreachDraft> {
+  return json(`/properties/${encodeURIComponent(propertyId)}/outreach-draft`, "POST", payload);
+}
+
+export function updateOutreachDraft(
+  propertyId: string, draftId: string,
+  payload: { subject: string; body: string; recipient?: string | null; status?: "draft" | "sent" },
+): Promise<Record<string, unknown>> {
+  return json(`/properties/${encodeURIComponent(propertyId)}/outreach-drafts/${encodeURIComponent(draftId)}`, "PATCH", payload);
+}
+
+export async function streamChat(
+  messages: Array<{ role: "user" | "assistant"; content: string }>, propertyIds: string[],
+  onDelta: (delta: string) => void, sessionId?: string | null,
+): Promise<string> {
+  const response = await fetch(`${BASE}/chat`, {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, property_ids: propertyIds, session_id: sessionId ?? null }),
+  });
+  if (!response.ok || !response.body) throw new Error(`Chat request failed (${response.status})`);
+  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+  let returnedSessionId = sessionId ?? "";
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n"); buffer = events.pop() ?? "";
+    for (const event of events) {
+      const line = event.split("\n").find((item) => item.startsWith("data: "));
+      if (!line) continue;
+      const payload = JSON.parse(line.slice(6)) as { delta?: string; session_id?: string };
+      if (payload.delta) onDelta(payload.delta);
+      if (payload.session_id) returnedSessionId = payload.session_id;
+    }
+  }
+  if (!returnedSessionId) throw new Error("Chat response omitted its session id");
+  return returnedSessionId;
 }
 
 /** Full analysis payload; the scenario toggle and offer slider work from this without refetching. */

@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   createNote,
+  createOutreachDraft,
   getAnalysis,
   getProperty,
   listNotes,
@@ -15,6 +16,8 @@ import {
   openDealSheet,
   openNetSheet,
   recomputeProperty,
+  restoreProperty,
+  updateOutreachDraft,
   resolveFlag,
   SCENARIOS,
   submitFact,
@@ -23,6 +26,7 @@ import {
   type AnalysisPayload,
   type FactSubmission,
   type NoteRecord,
+  type OutreachDraft,
   type PropertyListItem,
   type ReportRecord,
   type Scenario,
@@ -96,6 +100,9 @@ export function DealPage(props: { propertyId: string }) {
   const [operation, setOperation] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPanel, setActionPanel] = useState<"override" | "merge" | "unmerge" | "net" | null>(null);
+  const [draft, setDraft] = useState<OutreachDraft | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +151,32 @@ export function DealPage(props: { propertyId: string }) {
     try { const note = await createNote(propertyId, noteBody.trim()); setNotes((items) => [note, ...items]); setNoteBody(""); }
     catch (reason) { setActionError(reason instanceof Error ? reason.message : "Unable to save note"); }
   };
+  const draftOutreach = async (instruction?: string) => {
+    setDrafting(true); setActionError(null);
+    try { setDraft(await createOutreachDraft(propertyId, draft ? { offer_price: draft.offer_price, prior_draft: { subject: draft.subject, body: draft.body }, instruction } : {})); setSelectedEmail(""); }
+    catch (reason) { setActionError(reason instanceof Error ? reason.message : "Unable to create draft"); }
+    finally { setDrafting(false); }
+  };
+  const saveDraft = async (status: "draft" | "sent" = "draft") => {
+    if (!draft) return;
+    await updateOutreachDraft(propertyId, draft.draft_id, {
+      subject: draft.subject, body: draft.body,
+      recipient: selectedEmail || null, status,
+    });
+    setOperation(status === "sent" ? "Sent copy recorded" : "Draft changes saved");
+  };
+  const openGmail = async () => {
+    if (!draft || !selectedEmail) return;
+    const compose = window.open("about:blank", "_blank");
+    try {
+      await saveDraft("draft");
+      const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(selectedEmail)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+      if (compose) compose.location.href = url; else window.open(url, "_blank");
+    } catch (reason) {
+      compose?.close();
+      setActionError(reason instanceof Error ? reason.message : "Unable to save outreach draft");
+    }
+  };
 
   if (error) {
     return (
@@ -172,6 +205,15 @@ export function DealPage(props: { propertyId: string }) {
         .map((s) => STRATEGY_LABELS[s] ?? s)
         .join(" / ")
     : null;
+  const ownerProfile = payload.owner_profile as undefined | {
+    owners: Array<{full_name:string;mailing_address?:string|null}>;
+    contacts: Array<{id:string;kind:string;value:string;source:string;confidence?:string|null;association_warning?:string|null}>;
+    liens: Array<{id:string;type?:string;amount?:string;recording_date?:string;status?:string}>;
+    bankruptcies: Array<{id:string;chapter?:string;case_number?:string;filing_date?:string;status?:string;filing_sequence?:number}>;
+    serial_filing: {dismissed_count:number;near_scheduled_sale:boolean;window_days:number};
+    timeline: Array<{kind:string;date?:string;label:string;status?:string;sale_date?:string}>;
+    equity_if_owner_liens_attach?:string|null; owner_lien_total?:string;
+  };
 
   return (
     <section>
@@ -187,10 +229,13 @@ export function DealPage(props: { propertyId: string }) {
         </div>
         <div className="deal-heading-actions">
           {property?.rank && <span className="deal-rank"><small>Portfolio rank</small><strong>#{property.rank}</strong></span>}
+          <Link className="btn btn-secondary" to={`/chat?property=${propertyId}`}>Ask about this property</Link>
+          <button className="btn btn-secondary" disabled={user.read_only || drafting} onClick={() => draftOutreach()}>{drafting ? "Drafting…" : "Draft cash-offer email"}</button>
           <button className="btn btn-secondary" onClick={() => openDealSheet(propertyId).catch((reason: Error) => setActionError(reason.message))}>Open deal sheet</button>
           <button className="btn btn-primary" disabled={user.read_only} onClick={() => { setOperation("Queueing recompute…"); recomputeProperty(propertyId).then(() => setOperation("Recompute queued")).catch((reason: Error) => setActionError(reason.message)); }}>Recompute</button>
         </div>
       </div>
+      {property?.archived_at && <div className="archived-banner"><strong>Archived property</strong><span>This record remains available by direct URL.</span><button className="btn btn-secondary btn-small" disabled={user.read_only} onClick={() => restoreProperty(propertyId).then(() => setProperty({...property,archived_at:null}))}>Restore</button></div>}
       <p style={{ ...mutedText, marginTop: 0 }}>
         {normalized?.apn ? `APN ${normalized.apn}` : "APN missing"}
         {payload.flags.length > 0 && ` · ${payload.flags.length} open flag${payload.flags.length === 1 ? "" : "s"}`}
@@ -252,6 +297,24 @@ export function DealPage(props: { propertyId: string }) {
           )}
         </section>
       )}
+
+      {normalized && <section className="panel owner-intelligence">
+        <div className="panel-heading"><div><span className="eyebrow">Reference-only owner data</span><h2>Owner intelligence</h2></div><span className={normalized.ownership?.is_owner_occupied ? "status-pill status-warning" : "status-pill status-complete"}>Owner occupied: {normalized.ownership?.is_owner_occupied == null ? "Unknown" : normalized.ownership.is_owner_occupied ? "Yes" : "No"}</span></div>
+        {ownerProfile?.serial_filing.dismissed_count ? <div className="owner-alert"><strong>Serial-filing indicator</strong><span>{ownerProfile.serial_filing.dismissed_count} dismissed filing{ownerProfile.serial_filing.dismissed_count === 1 ? "" : "s"}{ownerProfile.serial_filing.near_scheduled_sale ? ` · filing within ${ownerProfile.serial_filing.window_days} days of a scheduled sale` : ""}. Reference only; scoring and underwriting are unchanged.</span></div> : null}
+        {ownerProfile?.owner_lien_total && Number(ownerProfile.owner_lien_total) > 0 && <div className="owner-alert"><strong>Owner-level lien not included in underwriting</strong><span>Equity if attached: <MoneyText money={money(ownerProfile.equity_if_owner_liens_attach, true)} />. Owner-level lien total: <MoneyText money={money(ownerProfile.owner_lien_total, false)} />.</span></div>}
+        {ownerProfile && ownerProfile.owners.length > 0 && <div className="owner-grid"><div><h3>Owners</h3>{ownerProfile.owners.map((owner) => <p key={owner.full_name}><strong>{owner.full_name}</strong><small>{owner.mailing_address ?? "No mailing address"}</small></p>)}</div><div><h3>Contact candidates</h3>{ownerProfile.contacts.length === 0 ? <p className="muted">No contact candidates.</p> : ownerProfile.contacts.map((contact) => <p key={contact.id}><strong>{contact.value}</strong><small>{contact.source} · confidence {contact.confidence ?? "unknown"}{contact.association_warning ? ` · ${contact.association_warning}` : ""}</small></p>)}</div></div>}
+        {ownerProfile?.timeline.length ? <details><summary>Interleaved owner/property timeline</summary><div className="owner-timeline">{ownerProfile.timeline.map((event,index) => <p key={`${event.kind}-${index}`}><time>{event.date ?? "Unknown date"}</time><span><strong>{event.label}</strong>{event.status ? ` · ${event.status}` : ""}{event.sale_date ? ` · sale ${event.sale_date}` : ""}</span></p>)}</div></details> : null}
+        <p className="compliance-note">Owner records are informational only. Have counsel review outreach under California Civil Code §§1695 and 2945 before first send.</p>
+      </section>}
+
+      {draft && <section className="panel outreach-editor">
+        <div className="panel-heading"><div><span className="eyebrow">Cash-offer outreach</span><h2>Email draft</h2></div><button className="btn btn-ghost btn-small" onClick={() => setDraft(null)}>Close</button></div>
+        <label><span>Recipient — select before opening Gmail</span><select className="select-input" value={selectedEmail} onChange={(event) => setSelectedEmail(event.target.value)}><option value="">Choose an email…</option>{draft.recipients.map((recipient) => <option key={recipient.id} value={recipient.value}>{recipient.value} · {recipient.source}{recipient.association_warning ? " · may be relative/stale" : ""}</option>)}</select></label>
+        {draft.recipients.length === 0 && <p className="muted">No email is available. Copy the draft or use the mailing address: {draft.mailing_addresses.join("; ") || "not available"}.</p>}
+        <label><span>Subject</span><input className="text-input" value={draft.subject} onChange={(event) => setDraft({...draft,subject:event.target.value})} /></label>
+        <label><span>Body</span><textarea className="text-area" rows={12} value={draft.body} onChange={(event) => setDraft({...draft,body:event.target.value})} /></label>
+        <div className="action-buttons"><button className="btn btn-secondary" onClick={() => navigator.clipboard.writeText(`${draft.subject}\n\n${draft.body}`)}>Copy</button><button className="btn btn-secondary" onClick={() => saveDraft().catch((reason: Error) => setActionError(reason.message))}>Save changes</button><button className="btn btn-secondary" disabled={drafting} onClick={() => draftOutreach("Make it shorter while preserving the exact offer figure.")}>Make shorter</button><button className="btn btn-primary" disabled={!selectedEmail} onClick={openGmail}>Open Gmail</button><button className="btn btn-secondary" disabled={!selectedEmail} onClick={() => saveDraft("sent").catch((reason: Error) => setActionError(reason.message))}>Mark sent</button><a className="btn btn-ghost" href={`mailto:${encodeURIComponent(selectedEmail)}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`}>Mail app fallback</a></div>
+      </section>}
 
       {/* 2. Scenario toggle — local state, no refetch */}
       {underwriting && (

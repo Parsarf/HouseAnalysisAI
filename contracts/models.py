@@ -99,6 +99,7 @@ class PropertySummary(ContractModel):
     tags: list[str]=[]; next_action: str|None=None; next_action_date: date|None=None
     gut_rating: int|None=None; is_watchlisted: bool=False
     overall_score: Decimal|None=None; rank: int|None=None; open_flags: int=0
+    archived_at: datetime|None=None
 class PropertyDetail(PropertySummary):
     lat: Decimal|None=None; lng: Decimal|None=None
     created_at: datetime|None=None; updated_at: datetime|None=None
@@ -142,3 +143,4 @@ class AnalysisPayload(ContractModel):
     normalized: NormalizedProperty|None=None; underwriting: UnderwritingResult|None=None
     strategies: list[StrategyResult]=[]; offers: OfferGrid|None=None
     scores: ScoreSet|None=None; flags: list[FlagRecord]=[]; timeline: list[TimelineEvent]=[]
+    owner_profile: dict[str, Any]|None=None

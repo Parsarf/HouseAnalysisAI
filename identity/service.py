@@ -2,7 +2,8 @@ import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -11,7 +12,16 @@ from sqlalchemy.orm import Session
 
 from common.locks import acquire_advisory_lock
 from contracts import FlagRequest, FlagType
-from db.models import Property, Report
+from db.models import (
+    BankruptcyEvent,
+    ChangeEvent,
+    Lien,
+    Owner,
+    OwnerContact,
+    Property,
+    PropertyOwner,
+    Report,
+)
 
 from .models import MergeReportMove
 
@@ -77,6 +87,193 @@ class IdentityEvidence:
     fips: str | None = None
     confidence: float | None = None
     source_kind: str | None = None
+
+
+@dataclass(frozen=True)
+class OwnerLinkCandidate:
+    owner_id: UUID
+    confidence: str
+    reasons: list[str]
+    property_ids: list[UUID]
+
+
+def normalize_owner_name(value: str) -> str:
+    """Normalize both `LAST,FIRST MIDDLE` and `FIRST MIDDLE LAST` forms."""
+    cleaned = re.sub(r"[^A-Za-z0-9, ]", " ", value).upper()
+    if "," in cleaned:
+        last, given = cleaned.split(",", 1)
+        tokens = given.split() + last.split()
+    else:
+        tokens = cleaned.split()
+    if len(tokens) < 2:
+        return " ".join(tokens)
+    return f"{tokens[0]} {tokens[-1]}"
+
+
+def normalize_mailing_address(value: str | None) -> str | None:
+    if not value:
+        return None
+    return re.sub(r"[^A-Z0-9]", "", value.upper())
+
+
+def owner_link_candidates(
+    session: Session, full_name: str, mailing_address: str | None, filename: str | None = None,
+) -> list[OwnerLinkCandidate]:
+    """Find owner candidates for merge review without auto-confirming any match."""
+    normalized_name = normalize_owner_name(full_name)
+    mailing_key = normalize_mailing_address(mailing_address)
+    filename_key = re.sub(r"[^a-z0-9]", "", Path(filename or "").stem.casefold())
+    candidates: list[OwnerLinkCandidate] = []
+    for owner in session.execute(select(Owner)).scalars():
+        if normalize_owner_name(owner.full_name) != normalized_name:
+            continue
+        reasons = ["normalized_name"]
+        confidence = "low"
+        if mailing_key and normalize_mailing_address(owner.mailing_address) == mailing_key:
+            reasons.append("mailing_address")
+            confidence = "high"
+        elif filename_key and all(
+            token.casefold() in filename_key for token in normalized_name.split()
+        ):
+            reasons.append("filename_hint")
+            confidence = "moderate"
+        property_ids = list(session.execute(
+            select(PropertyOwner.property_id).where(
+                PropertyOwner.owner_id == owner.id,
+                PropertyOwner.is_current.is_not(False),
+            )
+        ).scalars())
+        candidates.append(OwnerLinkCandidate(owner.id, confidence, reasons, property_ids))
+    order = {"high": 0, "moderate": 1, "low": 2}
+    return sorted(candidates, key=lambda item: (order[item.confidence], str(item.owner_id)))
+
+
+def persist_property_owners(
+    session: Session,
+    property_id: UUID,
+    owner_names: list[str],
+    *,
+    mailing_address: str | None,
+    is_absentee: bool | None,
+    ownership_start_date: date | None,
+) -> list[Owner]:
+    """Upsert authoritative property-report owners and their current links.
+
+    A name alone is not sufficient to merge people across properties. Existing
+    records are reused only when they are already linked to this property or
+    when both normalized name and mailing address agree.
+    """
+    normalized_mailing = normalize_mailing_address(mailing_address)
+    current_links = session.query(PropertyOwner).filter(
+        PropertyOwner.property_id == property_id,
+        PropertyOwner.is_current.is_not(False),
+    ).all()
+    linked_owner_ids = {link.owner_id for link in current_links}
+    current_owners = {
+        owner.id: owner for owner in session.query(Owner).filter(Owner.id.in_(linked_owner_ids)).all()
+    } if linked_owner_ids else {}
+    selected: list[Owner] = []
+    selected_ids: set[UUID] = set()
+    seen_names: set[str] = set()
+    for full_name in owner_names:
+        normalized_name = normalize_owner_name(full_name)
+        if not normalized_name or normalized_name in seen_names:
+            continue
+        seen_names.add(normalized_name)
+        owner = next(
+            (candidate for candidate in current_owners.values()
+             if candidate.name_normalized == normalized_name),
+            None,
+        )
+        if owner is None and normalized_mailing:
+            owner = next((candidate for candidate in session.query(Owner).join(
+                PropertyOwner, PropertyOwner.owner_id == Owner.id,
+            ).filter(
+                Owner.name_normalized == normalized_name,
+            ).all() if normalize_mailing_address(candidate.mailing_address) == normalized_mailing), None)
+        if owner is None:
+            owner = Owner(
+                full_name=full_name.strip(),
+                name_normalized=normalized_name,
+                entity_type="entity" if re.search(
+                    r"\b(?:LLC|LP|INC|CORP|TRUST|ESTATE)\b", full_name.upper(),
+                ) else "person",
+                mailing_address=mailing_address,
+                is_absentee=is_absentee,
+            )
+            session.add(owner)
+            session.flush()
+        else:
+            if owner.mailing_address is None and mailing_address:
+                owner.mailing_address = mailing_address
+            if is_absentee is not None:
+                owner.is_absentee = is_absentee
+        link = session.get(PropertyOwner, (property_id, owner.id))
+        if link is None:
+            link = PropertyOwner(
+                property_id=property_id,
+                owner_id=owner.id,
+                ownership_start_date=ownership_start_date,
+                is_current=True,
+                acquired_via="property_profile",
+            )
+            session.add(link)
+        else:
+            link.is_current = True
+            link.ownership_end_date = None
+            if link.ownership_start_date is None:
+                link.ownership_start_date = ownership_start_date
+        selected.append(owner)
+        selected_ids.add(owner.id)
+    for link in current_links:
+        if selected_ids and link.owner_id not in selected_ids:
+            link.is_current = False
+    session.flush()
+    return selected
+
+
+def confirm_owner_link(session: Session, source_owner_id: UUID, target_owner_id: UUID) -> Owner:
+    """Merge a reviewed owner profile without losing contacts or duplicating identities."""
+    source = session.get(Owner, source_owner_id)
+    target = session.get(Owner, target_owner_id)
+    if source is None or target is None:
+        raise ValueError("owner not found")
+    if source.id == target.id:
+        return target
+    for field in ("age", "gender", "mailing_address", "phone", "email", "entity_type"):
+        if getattr(target, field) is None and getattr(source, field) is not None:
+            setattr(target, field, getattr(source, field))
+    existing_contacts = {
+        (row.kind.casefold(), row.value.casefold(), row.source.casefold())
+        for row in session.query(OwnerContact).filter(OwnerContact.owner_id == target.id).all()
+    }
+    for contact in session.query(OwnerContact).filter(OwnerContact.owner_id == source.id).all():
+        identity = (contact.kind.casefold(), contact.value.casefold(), contact.source.casefold())
+        if identity in existing_contacts:
+            session.delete(contact)
+        else:
+            contact.owner_id = target.id
+            existing_contacts.add(identity)
+    for model in (BankruptcyEvent, Lien):
+        session.query(model).filter(model.owner_id == source.id).update(
+            {"owner_id": target.id}, synchronize_session=False,
+        )
+    session.delete(source)
+    session.flush()
+    return target
+
+
+def _restore_archived(session: Session, property_row: Property) -> None:
+    """Restore only after identity resolution selects this property for the report."""
+    if property_row.archived_at is None:
+        return
+    archived_at = property_row.archived_at
+    property_row.archived_at = None
+    session.add(ChangeEvent(
+        property_id=property_row.id, change_type="restored_new_report",
+        field_path="archived_at", old_value={"archived_at": archived_at.isoformat()},
+        new_value={"archived_at": None},
+    ))
 
 
 def normalize_apn(apn: str | None, fips: str | None = None) -> str | None:
@@ -225,6 +422,7 @@ def _create_property(session: Session, query, address: str, apn: str | None, apn
     except IntegrityError:
         existing = session.execute(query).scalars().first()
         if existing is not None:
+            _restore_archived(session, existing)
             return existing, False
         raise
     return row, True
@@ -251,6 +449,7 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
             setattr(row, "identity_flags", _conflict_flags(existing, row, identity, apn_key) if created else [])
             setattr(row, "identity_created", created)
             return row
+        _restore_archived(session, existing)
         setattr(existing, "identity_flags", [])
         setattr(existing, "identity_created", False)
         return existing
@@ -260,6 +459,7 @@ def resolve_property(session: Session, address: str, apn: str | None = None, fip
         candidate, score = duplicate
         if (score >= FUZZY_MERGE_THRESHOLD and identity.house_number
                 and _house_number_of(candidate) == identity.house_number):
+            _restore_archived(session, candidate)
             setattr(candidate, "identity_flags", [])
             setattr(candidate, "identity_created", False)
             return candidate

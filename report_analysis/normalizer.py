@@ -226,6 +226,36 @@ def validate_and_normalize(payload: dict) -> CanonicalValidation:
     _normalize_dates(normalized, issues)
     _normalize_labels(normalized)
     _check_numeric_ranges(normalized, issues)
+    details = normalized["property_details"]
+    property_type = (details.get("property_type") or "").strip().casefold()
+    if property_type in {"cnd", "condo", "condominium"}:
+        if details.get("lot_sq_ft") is not None or details.get("lot_acres") is not None:
+            issues.append({
+                "code": "condo_common_parcel_lot_ignored",
+                "path": "property_details.lot_sq_ft",
+                "message": "Condo lot figures describe the common parcel, not the unit.",
+            })
+        details["lot_sq_ft"] = None
+        details["lot_acres"] = None
+    apn = identity.get("apn")
+    legal = details.get("legal_description") or ""
+    apn_references = [
+        reference for reference in normalized["source_references"]
+        if reference.get("field_path") == "property_identity.apn"
+    ]
+    independently_sourced = any(
+        "legal" not in (reference.get("evidence") or "").casefold()
+        for reference in apn_references
+    )
+    if (apn and not independently_sourced
+            and re.sub(r"[^A-Z0-9]", "", apn.upper())
+            in re.sub(r"[^A-Z0-9]", "", legal.upper())):
+        issues.append({
+            "code": "apn_legal_description_collision",
+            "path": "property_identity.apn",
+            "message": "APN candidate appears only in the legal-description block and was rejected.",
+        })
+        identity["apn"] = None
     return CanonicalValidation(
         PropertyReportExtraction.model_validate(normalized), normalized, issues,
     )

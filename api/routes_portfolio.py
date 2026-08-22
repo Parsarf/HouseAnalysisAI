@@ -279,15 +279,23 @@ def list_flags(status: str = Query(default="open"), property_id: UUID | None = Q
                limit: int = Query(default=200), session: Session = Depends(get_session),
                user: User = Depends(current_user)) -> dict:
     limit = max(1, min(limit, 1000))
+    active_ids = {row.id for row in session.query(dbm.Property).filter(
+        dbm.Property.archived_at.is_(None),
+    ).all()}
+    if not active_ids:
+        return {"items": []}
     query = session.query(dbm.Flag)
     if status != "all":
         query = query.filter(dbm.Flag.status == status)
     # Migration-consolidated duplicates remain in the database for auditability,
     # but are not part of the human review queue or resolved-history view.
     query = query.filter(or_(dbm.Flag.resolution.is_(None), dbm.Flag.resolution != "superseded_duplicate"))
+    query = query.filter(dbm.Flag.property_id.in_(active_ids))
     if property_id is not None:
         query = query.filter(dbm.Flag.property_id == property_id)
-    rows = query.order_by(dbm.Flag.financial_impact_usd.desc()).limit(limit).all()
+    rows = query.order_by(
+        dbm.Flag.financial_impact_usd.desc().nullslast(), dbm.Flag.id,
+    ).limit(limit).all()
     property_ids = {row.property_id for row in rows}
     properties = session.query(dbm.Property).filter(dbm.Property.id.in_(property_ids)).all() if property_ids else []
     by_id = {row.id: row for row in properties}
@@ -358,10 +366,14 @@ def delete_saved_view(view_id: UUID, session: Session = Depends(get_session),
 @router.get("/rankings")
 def rankings(scope_type: str = Query(default="portfolio"), session: Session = Depends(get_session),
              user: User = Depends(current_user)) -> dict:
+    active_property_ids = {row.id for row in session.query(dbm.Property).filter(
+        dbm.Property.archived_at.is_(None),
+    ).all()}
     rows = (session.query(dbm.Ranking)
             .filter(dbm.Ranking.scope_type == scope_type)
             .order_by(dbm.Ranking.ranked_at.desc())
             .all())
+    rows = [row for row in rows if row.property_id in active_property_ids]
     if not rows:
         return {"items": [], "ranked_at": None}
     latest_at = rows[0].ranked_at
@@ -372,15 +384,24 @@ def rankings(scope_type: str = Query(default="portfolio"), session: Session = De
 
 @router.get("/dashboard")
 def dashboard(session: Session = Depends(get_session), user: User = Depends(current_user)) -> dict:
-    properties = session.query(dbm.Property).filter(dbm.Property.merged_into_id.is_(None)).all()
+    properties = session.query(dbm.Property).filter(
+        dbm.Property.merged_into_id.is_(None), dbm.Property.archived_at.is_(None),
+    ).all()
     by_status = Counter(row.pipeline_status or "new" for row in properties)
     valued_ids = {row.property_id for row in
                   session.query(dbm.Valuation).filter(dbm.Valuation.is_active.is_(True)).all()}
-    open_flags = session.query(dbm.Flag).filter(dbm.Flag.status == "open").count()
-    failed_reports = session.query(dbm.Report).filter(dbm.Report.status.in_([
+    active_ids = {row.id for row in properties}
+    open_flags = sum(
+        row.property_id in active_ids
+        for row in session.query(dbm.Flag).filter(dbm.Flag.status == "open").all()
+    )
+    failed_reports = sum(
+        row.property_id is None or row.property_id in active_ids
+        for row in session.query(dbm.Report).filter(dbm.Report.status.in_([
         "failed", "failed_provider", "failed_validation", "failed_computation",
         "unresolved_identity",
-    ])).count()
+        ])).all()
+    )
     return {"total_properties": len(properties), "by_status": dict(by_status),
             "open_flags": open_flags, "failed_reports": failed_reports,
             "missing_valuation_count": sum(1 for row in properties if row.id not in valued_ids),
@@ -402,13 +423,18 @@ def changes(limit: int = Query(default=100), session: Session = Depends(get_sess
 
 @router.get("/problems")
 def problems(session: Session = Depends(get_session), user: User = Depends(current_user)) -> dict:
-    open_rows = session.query(dbm.Flag).filter(dbm.Flag.status == "open").all()
+    active_ids = {row.id for row in session.query(dbm.Property).filter(
+        dbm.Property.archived_at.is_(None),
+    ).all()}
+    open_rows = [row for row in session.query(dbm.Flag).filter(
+        dbm.Flag.status == "open",
+    ).all() if row.property_id in active_ids]
     gating = [serializers.flag_record(row) for row in open_rows
               if row.flag_type in FlagType.__members__.values() and is_gating(FlagType(row.flag_type))]
-    failed = session.query(dbm.Report).filter(dbm.Report.status.in_([
+    failed = [row for row in session.query(dbm.Report).filter(dbm.Report.status.in_([
         "failed", "failed_provider", "failed_validation", "failed_computation",
         "unresolved_identity",
-    ])).all()
+    ])).all() if row.property_id is None or row.property_id in active_ids]
     return {"gating_flags": dump(gating),
             "failed_reports": [{"id": str(row.id), "batch_id": str(row.batch_id) if row.batch_id else None,
                                 "failure_reason": row.failure_reason, "file_path": row.file_path}
@@ -473,7 +499,7 @@ def export_csv(filters: str | None = Query(default=None), columns: str | None = 
 
     criteria = translate_filters(_parse_filter_param(filters))
     rows = (session.query(dbm.Property)
-            .filter(dbm.Property.merged_into_id.is_(None), *criteria)
+            .filter(dbm.Property.merged_into_id.is_(None), dbm.Property.archived_at.is_(None), *criteria)
             .order_by(dbm.Property.created_at.desc(), dbm.Property.id.desc())
             .all())
     selected = [column.strip() for column in columns.split(",")] if columns else DEFAULT_EXPORT_COLUMNS
@@ -489,11 +515,13 @@ def export_csv(filters: str | None = Query(default=None), columns: str | None = 
 
 @router.get("/exports/full")
 def export_full(session: Session = Depends(get_session),
+                include_owner_contacts: bool = Query(default=False),
                 user: User = Depends(current_user)) -> FileResponse:
     """Create the complete flat export and documents archive."""
     root = Path(tempfile.mkdtemp(prefix="acq-export-"))
     output = root / "acq-export"
-    full_export(session.connection(), output, settings.document_root)
+    full_export(session.connection(), output, settings.document_root,
+                include_owner_contacts=include_owner_contacts)
     archive = root / "acq-export.zip"
     with ZipFile(archive, "w", ZIP_DEFLATED) as bundle:
         for path in output.rglob("*"):
@@ -505,7 +533,10 @@ def export_full(session: Session = Depends(get_session),
 @router.get("/calibration")
 def calibration_summary(session: Session = Depends(get_session),
                         user: User = Depends(current_user)) -> dict:
-    rows = session.query(dbm.RealizedDeal).order_by(dbm.RealizedDeal.created_at.desc()).all()
+    rows = (session.query(dbm.RealizedDeal)
+            .join(dbm.Property, dbm.Property.id == dbm.RealizedDeal.property_id)
+            .filter(dbm.Property.archived_at.is_(None))
+            .order_by(dbm.RealizedDeal.created_at.desc()).all())
     return {"count": len(rows), "items": [json_safe({
         "id": str(row.id), "property_id": str(row.property_id), "outcome": row.outcome,
         "purchase_price": row.purchase_price, "sale_price": row.sale_price,

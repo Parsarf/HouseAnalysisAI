@@ -121,6 +121,7 @@ export interface NormalizedProperty {
   mortgages: MortgageRecord[];
   liens: LienRecord[];
   foreclosure?: ForeclosureState | null;
+  ownership?: { owner_names?: string[]; is_owner_occupied?: boolean | null; is_absentee?: boolean | null };
   open_flags: FlagSummary[];
   resolution_version: string;
   // Remaining blocks from contracts.NormalizedProperty (ownership, taxes, hoa,
@@ -248,6 +249,7 @@ export interface AnalysisPayload {
   scores: ScoreSet | null;
   flags: FlagRecord[];
   timeline: TimelineEvent[];
+  owner_profile?: Record<string, unknown> | null;
 }
 
 /** Alias kept for the first cut of the client/mocks. */
@@ -312,6 +314,7 @@ export interface PropertyListItem {
   lng?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  archived_at?: string | null;
   latest_valuation?: TrackedValue | null;
   // Present once WP-11 serves ranking/underwriting rollups on the list endpoint.
   rank?: number | null;

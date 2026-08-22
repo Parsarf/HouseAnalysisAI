@@ -18,7 +18,8 @@ from urllib.parse import urlparse
 from common.settings import settings
 from extraction.client import MODEL_PRICING
 
-from .schemas import canonical_schema
+from .classification import DocumentKind
+from .schemas import canonical_schema, owner_schema
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,12 @@ Evidence rules:
   tax, and transaction fields when a page can be identified.
 - Do not calculate equity, LTV, offer prices, profit, ROI, scores, or rankings. Python calculates
   derived financial outputs after extraction.
+"""
+
+OWNER_SYSTEM_PROMPT = """Analyze the attached owner or skip-trace profile as one document.
+Return only the owner-profile JSON required by the schema. Extract every phone and email as a
+separate candidate with its source and confidence. Extract person liens and bankruptcy cases.
+Never infer that a lien attaches to a property, and never invent a property address or APN.
 """
 
 
@@ -144,7 +151,8 @@ class WholePdfProviderClient:
         self.transport = transport or _urllib_transport
         self.sleep = sleep
 
-    def analyze_pdf(self, pdf_path: Path, *, log_context: dict | None = None) -> ProviderAnalysis:
+    def analyze_pdf(self, pdf_path: Path, *, doc_kind: DocumentKind = "property_profile",
+                    log_context: dict | None = None) -> ProviderAnalysis:
         if not self.api_key:
             raise PermanentProviderError("extraction API key is not configured")
         pdf_bytes = pdf_path.read_bytes()
@@ -164,14 +172,14 @@ class WholePdfProviderClient:
                         "filename": pdf_path.name or "report.pdf",
                         "file_data": pdf_data_url,
                     },
-                    {"type": "input_text", "text": SYSTEM_PROMPT},
+                    {"type": "input_text", "text": OWNER_SYSTEM_PROMPT if doc_kind == "owner_profile" else SYSTEM_PROMPT},
                 ],
             }],
             "text": {
                 "format": {
                     "type": "json_schema",
-                    "name": "property_report_extraction",
-                    "schema": canonical_schema(),
+                    "name": "owner_profile_extraction" if doc_kind == "owner_profile" else "property_report_extraction",
+                    "schema": owner_schema() if doc_kind == "owner_profile" else canonical_schema(),
                     "strict": True,
                 },
             },

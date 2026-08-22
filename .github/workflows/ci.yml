@@ -33,5 +33,5 @@ jobs:
         run: npm ci && npm run build
       - run: python -m pytest -m "not integration"
       - run: python -m ruff check .
-      - run: python -m mypy api analyst auth calibration changes classification common contracts db exports extraction finance flags identity ingestion jobs normalization ops pipeline scoring strategies
+      - run: python -m mypy api analyst auth calibration changes chat classification common contracts db exports extraction finance flags identity ingestion jobs normalization ops outreach pipeline report_analysis scoring strategies
       - run: lint-imports

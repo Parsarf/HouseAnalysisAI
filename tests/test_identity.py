@@ -1,5 +1,6 @@
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,7 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from sqlalchemy.sql.selectable import Select
 
 from contracts import FlagType
-from db.models import Property, Report
+from db.models import ChangeEvent, Property, Report
 from identity import (
     attach_report,
     identity_evidence_from_facts,
@@ -68,7 +69,7 @@ class _FakeResult:
 class _FakeStore:
     def __init__(self):
         self.lock = threading.Lock()
-        self.rows = {Property: [], Report: [], MergeReportMove: []}
+        self.rows = {Property: [], Report: [], ChangeEvent: [], MergeReportMove: []}
 
     def flush(self, pending):
         with self.lock:
@@ -315,6 +316,43 @@ def test_fuzzy_high_similarity_same_house_number_merges():
     row = resolve_property(session, "1234567 N Avenida De La Palmas Blvd", zip5="91910")
     assert row.id == existing.id
     assert len(store.rows[Property]) == 1
+
+
+def test_exact_new_report_restores_archived_property_and_records_change():
+    store = _FakeStore()
+    session = _FakeSession(store)
+    existing = resolve_property(session, "1420 San Bruno Ave", zip5="94066")
+    existing.archived_at = datetime.now(UTC)
+
+    resolved = resolve_property(session, "1420 San Bruno Avenue", zip5="94066")
+    session.flush()
+
+    assert resolved.id == existing.id
+    assert resolved.archived_at is None
+    assert len(store.rows[Property]) == 1
+    (event,) = store.rows[ChangeEvent]
+    assert event.change_type == "restored_new_report"
+    assert event.new_value == {"archived_at": None}
+
+
+def test_fuzzy_new_report_restores_archived_property_but_nonmatch_does_not():
+    store = _FakeStore()
+    session = _FakeSession(store)
+    existing = resolve_property(
+        session, "1234567 N Avenida De Las Palmas Blvd", zip5="91910",
+    )
+    existing.archived_at = datetime.now(UTC)
+
+    resolved = resolve_property(
+        session, "1234567 N Avenida De La Palmas Blvd", zip5="91910",
+    )
+    assert resolved.id == existing.id
+    assert existing.archived_at is None
+
+    existing.archived_at = datetime.now(UTC)
+    unrelated = resolve_property(session, "789 Oak Ave", zip5="91910")
+    assert unrelated.id != existing.id
+    assert existing.archived_at is not None
 
 
 def test_fuzzy_band_creates_separate_property_and_flags_possible_duplicate():

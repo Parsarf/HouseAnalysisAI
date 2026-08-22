@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ApiError,
+  confirmOwnerProfileLink,
   createAssumptionSet,
   createRealizedDeal,
   estimateBatch,
@@ -12,6 +13,7 @@ import {
   ingestPaste,
   listAssumptionSets,
   listFlags,
+  listUnlinkedOwnerProfiles,
   listProperties,
   previewAssumptionSet,
   resolveFlag,
@@ -163,8 +165,10 @@ export function FlagsPage() {
 
 export function ProblemsPage() {
   const state = useLoad<ProblemsResponse>(getProblems);
+  const ownerReviews = useLoad(listUnlinkedOwnerProfiles);
+  const { user } = useAuth();
   const groups = useMemo(() => { const map = new Map<string, ProblemsResponse["failed_reports"]>(); for (const report of state.data?.failed_reports ?? []) { const key = report.failure_reason ?? "unknown"; map.set(key, [...(map.get(key) ?? []), report]); } return map; }, [state.data]);
-  return <section><PageHeader eyebrow="System health" title="Problems" description="Gating decisions and failed source documents that prevent complete analysis." />{state.loading ? <LoadingGrid /> : state.error ? <ErrorBlock error={state.error} retry={state.refresh} /> : <div className="two-column"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">Decision blockers</span><h2>Gating flags</h2></div><span className="count-chip">{state.data?.gating_flags.length ?? 0}</span></div>{!state.data?.gating_flags.length ? <div className="empty-state compact">No gating flags are open.</div> : state.data.gating_flags.map((flag) => <div className="problem-row" key={flag.id}><div><strong>{flag.flag_type.replace(/_/g, " ")}</strong><small><MoneyText money={money(flag.financial_impact_usd, true)} /></small></div><Link to={`/properties/${flag.property_id}`}>Review →</Link></div>)}</section><section className="panel"><div className="panel-heading"><div><span className="eyebrow">Ingestion</span><h2>Failed reports</h2></div><span className="count-chip">{state.data?.failed_reports.length ?? 0}</span></div>{groups.size === 0 ? <div className="empty-state compact">No report failures.</div> : [...groups.entries()].map(([reason, reports]) => <div className="failure-group" key={reason}><strong>{reason.replace(/_/g, " ")} <span>{reports.length}</span></strong>{reports.map((report) => <div key={report.id}><code>{report.id.slice(0,8)}</code><span>{report.file_path ?? "No file path"}</span>{report.batch_id && <Link to={`/batches?batch=${report.batch_id}`}>Batch</Link>}</div>)}</div>)}</section></div>}
+  return <section><PageHeader eyebrow="System health" title="Problems" description="Gating decisions, owner-link reviews, and failed source documents that prevent complete analysis." />{state.loading ? <LoadingGrid /> : state.error ? <ErrorBlock error={state.error} retry={state.refresh} /> : <><div className="two-column"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">Decision blockers</span><h2>Gating flags</h2></div><span className="count-chip">{state.data?.gating_flags.length ?? 0}</span></div>{!state.data?.gating_flags.length ? <div className="empty-state compact">No gating flags are open.</div> : state.data.gating_flags.map((flag) => <div className="problem-row" key={flag.id}><div><strong>{flag.flag_type.replace(/_/g, " ")}</strong><small><MoneyText money={money(flag.financial_impact_usd, true)} /></small></div><Link to={`/properties/${flag.property_id}`}>Review →</Link></div>)}</section><section className="panel"><div className="panel-heading"><div><span className="eyebrow">Ingestion</span><h2>Failed reports</h2></div><span className="count-chip">{state.data?.failed_reports.length ?? 0}</span></div>{groups.size === 0 ? <div className="empty-state compact">No report failures.</div> : [...groups.entries()].map(([reason, reports]) => <div className="failure-group" key={reason}><strong>{reason.replace(/_/g, " ")} <span>{reports.length}</span></strong>{reports.map((report) => <div key={report.id}><code>{report.id.slice(0,8)}</code><span>{report.file_path ?? "No file path"}</span>{report.batch_id && <Link to={`/batches?batch=${report.batch_id}`}>Batch</Link>}</div>)}</div>)}</section></div><section className="panel owner-review"><div className="panel-heading"><div><span className="eyebrow">Owner identity</span><h2>Owner-document link review</h2></div><span className="count-chip">{ownerReviews.data?.items.length ?? 0}</span></div>{ownerReviews.error ? <ErrorBlock error={ownerReviews.error} retry={ownerReviews.refresh} /> : ownerReviews.loading ? <LoadingGrid /> : !ownerReviews.data?.items.length ? <div className="empty-state compact">No owner profiles are awaiting review.</div> : ownerReviews.data.items.map((profile) => <article className="owner-review-row" key={profile.report_id}><div><strong>{profile.owner_name ?? "Unidentified owner"}</strong><small>{profile.file_name}</small></div>{profile.link_candidates.length === 0 ? <span className="status-pill status-warning">No identity candidate</span> : <div>{profile.link_candidates.map((candidate) => <button key={candidate.owner_id} className="btn btn-secondary btn-small" disabled={user.read_only} onClick={() => confirmOwnerProfileLink(profile.report_id, candidate.owner_id).then(ownerReviews.refresh)}>{candidate.owner_name ?? candidate.owner_id.slice(0,8)} · {candidate.confidence} confidence</button>)}</div>}</article>)}</section></>}
   </section>;
 }
 

@@ -212,7 +212,7 @@ class SqlStore:
 
     def get_property(self, property_id: UUID) -> dict | None:
         row = self.session.execute(
-            text("SELECT id, pipeline_status FROM properties WHERE id = :id"),
+            text("SELECT id, pipeline_status, archived_at FROM properties WHERE id = :id"),
             {"id": property_id}).mappings().first()
         return dict(row) if row else None
 
@@ -492,11 +492,11 @@ class SqlStore:
 
     def count_properties(self) -> int:
         return int(self.session.execute(
-            text("SELECT count(*) FROM properties WHERE merged_into_id IS NULL")).scalar() or 0)
+            text("SELECT count(*) FROM properties WHERE merged_into_id IS NULL AND archived_at IS NULL")).scalar() or 0)
 
     def list_property_ids(self, *, limit: int, offset: int) -> list[UUID]:
         return list(self.session.execute(
-            text("SELECT id FROM properties WHERE merged_into_id IS NULL "
+            text("SELECT id FROM properties WHERE merged_into_id IS NULL AND archived_at IS NULL "
                  "ORDER BY id LIMIT :limit OFFSET :offset"),
             {"limit": limit, "offset": offset}).scalars().all())
 

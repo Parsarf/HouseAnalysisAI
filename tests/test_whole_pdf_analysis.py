@@ -16,13 +16,22 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api import analysis as analysis_store
-from api import routes_properties
+from api import routes_chat, routes_properties
 from api.app import app
 from api.deps import get_queue, get_session
 from auth.dependencies import make_session
+from chat import ChatTurn
 from common.settings import settings
-from contracts import NormalizedProperty
+from contracts import (
+    AddressBlock,
+    EquityBlock,
+    NormalizedProperty,
+    Scenario,
+    UnderwritingResult,
+    ValueBlock,
+)
 from db import models as dbm
+from outreach import Draft
 from report_analysis.normalizer import (
     canonical_to_normalized,
     identity_address,
@@ -98,6 +107,35 @@ def canonical_payload(**overrides):
     return payload
 
 
+def owner_payload():
+    return {
+        "person": {
+            "full_name": "LEWIS,MARLENE C", "age": 72, "gender": "female",
+            "mailing_address": "2549 EASTBLUFF DR # 279, NEWPORT BEACH, CA 92660",
+        },
+        "contacts": [
+            {"kind": "phone", "value": "949-555-0101", "rank": 1,
+             "source": "skip_trace", "confidence": 0.91},
+            {"kind": "email", "value": "marlene@example.com", "rank": 1,
+             "source": "skip_trace", "confidence": 0.85},
+            {"kind": "email", "value": "emanuellewis@hotmail.com", "rank": 2,
+             "source": "skip_trace", "confidence": 0.42},
+        ],
+        "bankruptcies": [
+            {"chapter": "13", "case_number": "A", "court": "CACB",
+             "filing_date": "2018-05-10", "status": "Dismissed", "discharge_date": None},
+            {"chapter": "13", "case_number": "B", "court": "CACB",
+             "filing_date": "2026-03-19", "status": "Dismissed", "discharge_date": None},
+        ],
+        "liens": [{
+            "type": "federal_tax", "amount": 140294, "recorded_date": "2026-05-05",
+            "document_number": "LIEN-1", "holder": "IRS", "status": "open",
+            "confidence": 0.95,
+        }],
+        "source_references": [],
+    }
+
+
 def _assert_strict(node, path="$", *, root=None):
     root = node if root is None else root
     if not isinstance(node, dict):
@@ -147,6 +185,49 @@ def test_sparse_extra_and_missing_foreclosure_data_are_safe():
     normalized = canonical_to_normalized(result.extraction, uuid4())
     assert normalized.valuation_candidates == []
     assert normalized.mortgages == []
+
+
+def test_condo_common_parcel_lot_is_not_used_for_unit():
+    payload = canonical_payload()
+    payload["property_details"]["property_type"] = "CND"
+    payload["property_details"]["lot_sq_ft"] = 407747
+    payload["property_details"]["lot_acres"] = 9.36
+    result = validate_and_normalize(payload)
+    assert result.extraction.property_details.lot_sq_ft is None
+    assert result.extraction.property_details.lot_acres is None
+    assert any(issue["code"] == "condo_common_parcel_lot_ignored" for issue in result.issues)
+
+
+def test_apn_candidate_from_legal_description_is_rejected():
+    payload = canonical_payload()
+    payload["property_identity"]["apn"] = "639-062-15"
+    payload["property_details"]["legal_description"] = "TRACT 123 AP 639-062-15"
+    result = validate_and_normalize(payload)
+    assert result.extraction.property_identity.apn is None
+    assert any(issue["code"] == "apn_legal_description_collision" for issue in result.issues)
+
+
+def test_independently_sourced_apn_is_not_rejected_when_legal_repeats_it():
+    payload = canonical_payload()
+    payload["property_identity"]["apn"] = "931-762-13"
+    payload["property_details"]["legal_description"] = "UNIT 57 AP 931-762-13"
+    payload["source_references"].append({
+        "field_path": "property_identity.apn", "source_page": 1,
+        "confidence": 0.99, "evidence": "Property summary APN field",
+    })
+    result = validate_and_normalize(payload)
+    assert result.extraction.property_identity.apn == "931-762-13"
+
+
+def test_cancelled_listing_is_preserved():
+    payload = canonical_payload()
+    payload["listing_history"] = [{
+        "type": "listing", "status": "cancelled", "as_of": "2026-05-20",
+        "dom": 42, "price": 999000, "source_page": 4, "confidence": 0.95,
+    }]
+    normalized = canonical_to_normalized(validate_and_normalize(payload).extraction, uuid4())
+    assert normalized.listings[0].status == "cancelled"
+    assert normalized.listings[0].price.value == Decimal(999000)
 
 
 def test_missing_debt_is_null_and_missing_valuation_never_creates_equity():
@@ -320,7 +401,7 @@ def _create_property_table(engine):
       baths NUMERIC, sqft NUMERIC, lot_sqft NUMERIC, year_built INTEGER, units INTEGER,
       pipeline_status TEXT, tags TEXT, next_action TEXT, next_action_date DATE,
       gut_rating INTEGER, is_watchlisted BOOLEAN, merged_into_id CHAR(32),
-      underwriting_status TEXT, last_recomputed_at DATETIME, created_at DATETIME,
+      underwriting_status TEXT, last_recomputed_at DATETIME, archived_at DATETIME, created_at DATETIME,
       updated_at DATETIME
     """
     with engine.begin() as connection:
@@ -336,7 +417,11 @@ def whole_pdf_harness(monkeypatch, tmp_path):
     _create_property_table(engine)
     for table in (
         dbm.Batch.__table__, dbm.Report.__table__, dbm.ReportExtraction.__table__,
-        dbm.ExtractionUnit.__table__, dbm.ExtractedFact.__table__,
+        dbm.ExtractionUnit.__table__, dbm.ExtractedFact.__table__, dbm.Owner.__table__,
+        dbm.PropertyOwner.__table__, dbm.OwnerContact.__table__, dbm.Lien.__table__,
+        dbm.BankruptcyEvent.__table__, dbm.ForeclosureEvent.__table__,
+        dbm.ChangeEvent.__table__, dbm.OfferScenario.__table__, dbm.PropertyNote.__table__,
+        dbm.Setting.__table__, dbm.Valuation.__table__,
     ):
         table.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -471,6 +556,373 @@ def test_whole_pdf_upload_to_property_analysis_and_duplicate_reuse(whole_pdf_har
         assert duplicate_report.batch_id == UUID(second["batch_id"])
         assert duplicate_extraction.raw_json == extraction.raw_json
         assert duplicate_extraction.cost_usd == Decimal(0)
+
+
+def test_owner_profile_extracts_all_rows_and_requires_link_confirmation(
+    whole_pdf_harness, monkeypatch,
+):
+    target_owner_id = uuid4()
+    property_id = uuid4()
+    with whole_pdf_harness.transaction() as session:
+        session.execute(text("""
+            INSERT INTO properties
+              (id, address_line1, pipeline_status, is_watchlisted, created_at, updated_at)
+            VALUES (:id, '57 Cottage Ln', 'new', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """), {"id": property_id.hex})
+        session.add(dbm.Owner(
+            id=target_owner_id, full_name="MARLENE C LEWIS", name_normalized="MARLENE LEWIS",
+            entity_type="person",
+            mailing_address="2549 Eastbluff Dr 279, Newport Beach CA 92660",
+        ))
+        session.add(dbm.PropertyOwner(
+            property_id=property_id, owner_id=target_owner_id, is_current=True,
+        ))
+        session.add(dbm.ForeclosureEvent(
+            property_id=property_id, event_type="nts", event_date=date(2026, 2, 3),
+            current_sale_date=date(2026, 3, 19), stage_after_event="auction",
+        ))
+
+    uploaded = _upload(whole_pdf_harness.client, b"%PDF-1.4\nowner profile")
+    report_id = UUID(uploaded["report_ids"][0])
+    monkeypatch.setattr(
+        "report_analysis.service.classify_pdf", lambda _path: ("owner_profile", 0.98),
+    )
+    computed = []
+    result = analyze_report(
+        report_id, batch_id=UUID(uploaded["batch_id"]), provider=StubProvider(owner_payload()),
+        session_factory=whole_pdf_harness.transaction,
+        compute=lambda *args, **kwargs: computed.append(args),
+    )
+    assert result is None
+    assert computed == []
+
+    pending = whole_pdf_harness.client.get("/api/owner-profiles/unlinked")
+    assert pending.status_code == 200
+    (profile,) = pending.json()["items"]
+    assert profile["owner_name"] == "LEWIS,MARLENE C"
+    (candidate,) = profile["link_candidates"]
+    assert candidate["owner_id"] == str(target_owner_id)
+    assert candidate["confidence"] == "high"
+    assert candidate["reasons"] == ["normalized_name", "mailing_address"]
+
+    linked = whole_pdf_harness.client.post(
+        f"/api/owner-profiles/{report_id}/link", json={"owner_id": str(target_owner_id)},
+    )
+    assert linked.status_code == 200
+    assert linked.json()["linked"] is True
+    assert whole_pdf_harness.client.get("/api/owner-profiles/unlinked").json()["items"] == []
+    with whole_pdf_harness.factory() as session:
+        report = session.get(dbm.Report, report_id)
+        assert report.doc_kind == "owner_profile"
+        assert report.property_id is None
+        target_owner = session.get(dbm.Owner, target_owner_id)
+        assert target_owner is not None
+        assert (target_owner.age, target_owner.gender) == (72, "female")
+        assert session.query(dbm.OwnerContact).filter_by(owner_id=target_owner_id).count() == 3
+        bankruptcies = session.query(dbm.BankruptcyEvent).filter_by(
+            owner_id=target_owner_id,
+        ).order_by(dbm.BankruptcyEvent.filing_sequence).all()
+        assert [(row.filing_sequence, row.is_repeat) for row in bankruptcies] == [
+            (1, False), (2, True),
+        ]
+        (lien,) = session.query(dbm.Lien).filter_by(owner_id=target_owner_id).all()
+        assert lien.property_id is None
+        assert lien.attachment_basis == "owner_named_only"
+
+    profile_response = whole_pdf_harness.client.get(
+        f"/api/properties/{property_id}/owner-profile",
+    )
+    assert profile_response.status_code == 200
+    profile_data = profile_response.json()
+    assert len(profile_data["contacts"]) == 3
+    assert profile_data["owner_lien_total"] == "140294.00"
+    assert profile_data["serial_filing"] == {
+        "dismissed_count": 2, "near_scheduled_sale": True, "window_days": 7,
+    }
+    assert [item["kind"] for item in profile_data["timeline"]] == [
+        "bankruptcy", "foreclosure", "bankruptcy",
+    ]
+    normalized = NormalizedProperty(
+        property_id=property_id, address=AddressBlock(), resolution_version="test",
+    )
+    underwriting = UnderwritingResult(
+        property_id=property_id, assumption_set_id=uuid4(), engine_version="test", status="ok",
+        value=ValueBlock(v_expected=Decimal("1198501")),
+        equity={Scenario.EXPECTED: EquityBlock(adjusted=Decimal("572118"))},
+    )
+    monkeypatch.setattr(analysis_store, "load_normalized", lambda *args: normalized)
+    monkeypatch.setattr(analysis_store, "load_underwriting", lambda *args: underwriting)
+    analysis = whole_pdf_harness.client.get(f"/api/properties/{property_id}/analysis").json()
+    assert analysis["owner_profile"]["owner_liens_included_in_underwriting"] is False
+    assert analysis["owner_profile"]["equity_if_owner_liens_attach"] == "431824.00"
+
+
+def test_property_profile_creates_owner_identity_used_by_owner_profile_review(
+    whole_pdf_harness, monkeypatch,
+):
+    property_upload = _upload(whole_pdf_harness.client, b"%PDF-1.4\nproperty profile")
+    property_report_id = UUID(property_upload["report_ids"][0])
+    property_payload = canonical_payload()
+    property_payload["ownership"]["owner_names"] = ["MARLENE C LEWIS"]
+    property_payload["ownership"]["mailing_address"] = (
+        "2549 Eastbluff Dr 279, Newport Beach CA 92660"
+    )
+    analyze_report(
+        property_report_id,
+        batch_id=UUID(property_upload["batch_id"]),
+        provider=StubProvider(property_payload),
+        session_factory=whole_pdf_harness.transaction,
+        compute=lambda *_args, **_kwargs: SimpleNamespace(
+            underwriting=SimpleNamespace(status="ok"),
+        ),
+        identity_resolver=whole_pdf_harness.resolve_identity,
+    )
+    with whole_pdf_harness.factory() as session:
+        property_row = session.get(dbm.Report, property_report_id)
+        assert property_row is not None
+        property_id = property_row.property_id
+        assert property_id is not None
+        (canonical_owner,) = session.query(dbm.Owner).all()
+        assert canonical_owner.name_normalized == "MARLENE LEWIS"
+        assert session.get(dbm.PropertyOwner, (property_id, canonical_owner.id)) is not None
+
+    owner_upload = _upload(whole_pdf_harness.client, b"%PDF-1.4\nowner profile")
+    owner_report_id = UUID(owner_upload["report_ids"][0])
+    monkeypatch.setattr(
+        "report_analysis.service.classify_pdf", lambda _path: ("owner_profile", 0.98),
+    )
+    analyze_report(
+        owner_report_id,
+        batch_id=UUID(owner_upload["batch_id"]),
+        provider=StubProvider(owner_payload()),
+        session_factory=whole_pdf_harness.transaction,
+        compute=lambda *_args, **_kwargs: SimpleNamespace(
+            underwriting=SimpleNamespace(status="ok"),
+        ),
+    )
+    (candidate,) = whole_pdf_harness.client.get(
+        "/api/owner-profiles/unlinked",
+    ).json()["items"][0]["link_candidates"]
+    assert candidate["owner_id"] == str(canonical_owner.id)
+    assert candidate["property_ids"] == [str(property_id)]
+    assert candidate["confidence"] == "high"
+
+
+def test_owner_profile_arriving_first_still_requires_review_after_property_arrives(
+    whole_pdf_harness, monkeypatch,
+):
+    monkeypatch.setattr(
+        "report_analysis.service.classify_pdf", lambda _path: ("owner_profile", 0.98),
+    )
+    owner_upload = _upload(whole_pdf_harness.client, b"%PDF-1.4\nowner first")
+    owner_report_id = UUID(owner_upload["report_ids"][0])
+    analyze_report(
+        owner_report_id, batch_id=UUID(owner_upload["batch_id"]),
+        provider=StubProvider(owner_payload()),
+        session_factory=whole_pdf_harness.transaction,
+    )
+    assert whole_pdf_harness.client.get(
+        "/api/owner-profiles/unlinked",
+    ).json()["items"][0]["link_candidates"] == []
+
+    monkeypatch.setattr(
+        "report_analysis.service.classify_pdf", lambda _path: ("property_profile", 0.98),
+    )
+    property_upload = _upload(whole_pdf_harness.client, b"%PDF-1.4\nproperty second")
+    property_payload = canonical_payload()
+    property_payload["ownership"]["mailing_address"] = (
+        "2549 Eastbluff Dr 279, Newport Beach CA 92660"
+    )
+    analyze_report(
+        UUID(property_upload["report_ids"][0]),
+        batch_id=UUID(property_upload["batch_id"]),
+        provider=StubProvider(property_payload),
+        session_factory=whole_pdf_harness.transaction,
+        compute=lambda *_args, **_kwargs: SimpleNamespace(
+            underwriting=SimpleNamespace(status="ok"),
+        ),
+        identity_resolver=whole_pdf_harness.resolve_identity,
+    )
+    pending = whole_pdf_harness.client.get("/api/owner-profiles/unlinked").json()["items"]
+    (candidate,) = pending[0]["link_candidates"]
+    assert candidate["confidence"] == "high"
+    assert candidate["owner_id"] != pending[0]["owner_id"]
+    with whole_pdf_harness.factory() as session:
+        # The owner-profile record remains unlinked until the explicit review action.
+        assert session.query(dbm.Owner).count() == 2
+        assert session.query(dbm.PropertyOwner).count() == 1
+
+
+def test_archive_filters_portfolio_but_direct_url_and_restore_remain_available(
+    whole_pdf_harness,
+):
+    property_id = uuid4()
+    with whole_pdf_harness.transaction() as session:
+        session.execute(text("""
+            INSERT INTO properties
+              (id, address_line1, pipeline_status, is_watchlisted, created_at, updated_at)
+            VALUES (:id, '10 Archive Way', 'new', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """), {"id": property_id.hex})
+
+    archived = whole_pdf_harness.client.post(f"/api/properties/{property_id}/archive")
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"] is not None
+    assert whole_pdf_harness.client.get("/api/properties").json()["items"] == []
+    archived_items = whole_pdf_harness.client.get(
+        "/api/properties?show_archived=true",
+    ).json()["items"]
+    assert [item["id"] for item in archived_items] == [str(property_id)]
+    assert archived_items[0]["archived_at"] is not None
+    assert whole_pdf_harness.client.get(f"/api/properties/{property_id}").status_code == 200
+    recompute = whole_pdf_harness.client.post(f"/api/properties/{property_id}/recompute")
+    assert recompute.status_code == 400
+    assert recompute.json()["error"]["message"] == "restore this property before recomputing it"
+
+    restored = whole_pdf_harness.client.post(f"/api/properties/{property_id}/restore")
+    assert restored.status_code == 200
+    assert [item["id"] for item in whole_pdf_harness.client.get(
+        "/api/properties",
+    ).json()["items"]] == [str(property_id)]
+    with whole_pdf_harness.factory() as session:
+        changes = session.query(dbm.ChangeEvent).filter_by(property_id=property_id).all()
+        assert [row.change_type for row in changes] == ["archived", "restored"]
+
+
+def test_outreach_draft_uses_grid_contacts_and_persists_edits(
+    whole_pdf_harness, monkeypatch,
+):
+    property_id = uuid4()
+    owner_id = uuid4()
+    with whole_pdf_harness.transaction() as session:
+        session.execute(text("""
+            INSERT INTO properties
+              (id, address_line1, city, state, zip5, beds, baths, pipeline_status,
+               is_watchlisted, created_at, updated_at)
+            VALUES (:id, '57 Cottage Ln', 'Aliso Viejo', 'CA', '92656', 3, 2.5,
+                    'new', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """), {"id": property_id.hex})
+        session.add(dbm.Owner(
+            id=owner_id, full_name="MARLENE C LEWIS", name_normalized="MARLENE LEWIS",
+            entity_type="person", mailing_address="2549 Eastbluff Dr, Newport Beach CA",
+        ))
+        session.add(dbm.PropertyOwner(
+            property_id=property_id, owner_id=owner_id, is_current=True,
+        ))
+        session.add_all([
+            dbm.OwnerContact(owner_id=owner_id, kind="email", value="marlene@example.com",
+                             rank=1, source="skip_trace", confidence=Decimal("0.85")),
+            dbm.OwnerContact(owner_id=owner_id, kind="email", value="relative@example.com",
+                             rank=2, source="skip_trace", confidence=Decimal("0.40")),
+        ])
+        session.add(dbm.OfferScenario(
+            property_id=property_id, offer_price=Decimal("950000"), scenario="expected",
+            confirmed_payoffs=Decimal("626383"), potential_payoffs=Decimal(0),
+            closing_costs=Decimal("10000"), proceeds_low=Decimal("313617"),
+            proceeds_expected=Decimal("313617"), proceeds_high=Decimal("313617"),
+            buyer_basis=Decimal("960000"), profit=Decimal("238501"),
+            roi=Decimal("0.248438"), is_short_sale=False,
+        ))
+
+    class SafeProvider:
+        def generate(self, context, *, prior_draft=None, instruction=None):
+            assert context["offer_price"] == Decimal("950000")
+            return Draft(
+                "Cash offer for 57 Cottage Ln",
+                "We can offer $950,000 cash with no financing contingency and flexible timing.",
+            )
+
+    monkeypatch.setattr(routes_properties, "OutreachProviderClient", SafeProvider)
+    response = whole_pdf_harness.client.post(
+        f"/api/properties/{property_id}/outreach-draft", json={},
+    )
+    assert response.status_code == 200
+    draft = response.json()
+    assert draft["recipient_selected"] is None
+    assert [item["value"] for item in draft["recipients"]] == [
+        "marlene@example.com", "relative@example.com",
+    ]
+    assert draft["recipients"][1]["association_warning"]
+
+    unsafe = whole_pdf_harness.client.patch(
+        f"/api/properties/{property_id}/outreach-drafts/{draft['draft_id']}",
+        json={"subject": draft["subject"], "body": "Your foreclosure prompted $950,000.",
+              "status": "draft"},
+    )
+    assert unsafe.status_code == 400
+    saved = whole_pdf_harness.client.patch(
+        f"/api/properties/{property_id}/outreach-drafts/{draft['draft_id']}",
+        json={"subject": draft["subject"], "body": draft["body"],
+              "recipient": "marlene@example.com", "status": "sent"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["status"] == "sent"
+    assert saved.json()["sent_at"] is not None
+    with whole_pdf_harness.factory() as session:
+        (note,) = session.query(dbm.PropertyNote).filter_by(property_id=property_id).all()
+        assert '"recipient": "marlene@example.com"' in note.body
+
+
+def test_chat_stream_has_server_session_and_contacts_are_tool_only(
+    whole_pdf_harness, monkeypatch,
+):
+    property_id = uuid4()
+    owner_id = uuid4()
+    with whole_pdf_harness.transaction() as session:
+        session.execute(text("""
+            INSERT INTO properties
+              (id, address_line1, pipeline_status, is_watchlisted, created_at, updated_at)
+            VALUES (:id, '57 Cottage Ln', 'new', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """), {"id": property_id.hex})
+        session.add(dbm.Owner(
+            id=owner_id, full_name="MARLENE C LEWIS", name_normalized="MARLENE LEWIS",
+            entity_type="person",
+        ))
+        session.add(dbm.PropertyOwner(
+            property_id=property_id, owner_id=owner_id, is_current=True,
+        ))
+        session.add(dbm.OwnerContact(
+            owner_id=owner_id, kind="email", value="marlene@example.com",
+            rank=1, source="skip_trace", confidence=Decimal("0.85"),
+        ))
+
+    class ToolAwareProvider:
+        def __init__(self):
+            self.contexts = []
+            self.owner_tool_results = []
+
+        def complete(self, messages, structured_context, tool_results, **kwargs):
+            self.contexts.append(structured_context)
+            gathered = {}
+            if "owner" in messages[-1]["content"].casefold():
+                gathered["get_owner_profile"] = kwargs["execute_tool"](
+                    "get_owner_profile", {"property_id": str(property_id)},
+                )
+                self.owner_tool_results.append(gathered["get_owner_profile"])
+            return ChatTurn(
+                "The supplied record supports that answer.", 40, 12,
+                Decimal("0.001"), "fake", gathered,
+            )
+
+    provider = ToolAwareProvider()
+    monkeypatch.setattr(routes_chat, "ChatProviderClient", lambda: provider)
+    first = whole_pdf_harness.client.post("/api/chat", json={
+        "messages": [{"role": "user", "content": "Summarize this property"}],
+        "property_ids": [str(property_id)],
+    })
+    assert first.status_code == 200
+    done = [line for line in first.text.splitlines() if '"done": true' in line]
+    assert len(done) == 1
+    session_id = json.loads(done[0].removeprefix("data: "))["session_id"]
+    assert "marlene@example.com" not in json.dumps(provider.contexts[0], default=str)
+    assert "Eastbluff" not in json.dumps(provider.contexts[0], default=str)
+
+    second = whole_pdf_harness.client.post("/api/chat", json={
+        "session_id": session_id,
+        "messages": [{"role": "user", "content": "What owner contact is available?"}],
+        "property_ids": [str(property_id)],
+    })
+    assert second.status_code == 200
+    assert provider.owner_tool_results[0]["contacts"][0]["value"] == "marlene@example.com"
 
 
 def test_multiple_reports_in_one_batch_resolve_to_one_property(whole_pdf_harness):

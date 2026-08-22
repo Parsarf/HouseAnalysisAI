@@ -1,8 +1,12 @@
 """One strict, nullable canonical schema for whole-property reports."""
 
+from datetime import date
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA_VERSION = "property-report-v1"
+OWNER_SCHEMA_VERSION = "owner-profile-v1"
 
 
 class StrictModel(BaseModel):
@@ -162,6 +166,52 @@ class PropertyReportExtraction(StrictModel):
     source_references: list[SourceReference]
 
 
+class OwnerPerson(StrictModel):
+    full_name: str = Field(min_length=1)
+    age: int | None = Field(ge=0, le=130)
+    gender: str | None
+    mailing_address: str | None
+
+
+class OwnerContact(StrictModel):
+    kind: Literal["phone", "email"]
+    value: str = Field(min_length=1)
+    rank: int | None
+    source: str | None
+    confidence: float | None = Field(ge=0, le=1)
+
+
+class OwnerBankruptcy(StrictModel):
+    chapter: str | None
+    case_number: str | None
+    court: str | None
+    filing_date: date | None
+    status: str | None
+    discharge_date: date | None
+
+
+class OwnerLien(StrictModel):
+    type: str | None
+    amount: float | None
+    recorded_date: date | None
+    document_number: str | None
+    holder: str | None
+    status: str | None
+    confidence: float | None = Field(ge=0, le=1)
+
+
+class OwnerProfileExtraction(StrictModel):
+    person: OwnerPerson
+    contacts: list[OwnerContact]
+    bankruptcies: list[OwnerBankruptcy]
+    liens: list[OwnerLien]
+    source_references: list[SourceReference]
+
+
 def canonical_schema() -> dict:
     """OpenAI strict schema: every object key required, extras forbidden."""
     return PropertyReportExtraction.model_json_schema()
+
+
+def owner_schema() -> dict:
+    return OwnerProfileExtraction.model_json_schema()

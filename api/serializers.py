@@ -63,7 +63,7 @@ def property_summary(row: dbm.Property, score: Decimal | None = None, rank: int 
                            tags=list(row.tags or []), next_action=row.next_action,
                            next_action_date=row.next_action_date, gut_rating=row.gut_rating,
                            is_watchlisted=bool(row.is_watchlisted), overall_score=score, rank=rank,
-                           open_flags=open_flags)
+                           open_flags=open_flags, archived_at=row.archived_at)
 
 
 def strategy_result(row: dbm.DealScenario) -> StrategyResult:

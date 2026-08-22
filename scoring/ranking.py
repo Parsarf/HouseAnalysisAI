@@ -44,6 +44,7 @@ RANKINGS_SQL = text(
         SELECT p.id AS property_id
         FROM properties p
         WHERE p.merged_into_id IS NULL
+          AND p.archived_at IS NULL
           AND (
               (:scope_type = 'portfolio' AND :scope_id IS NULL)
               OR (

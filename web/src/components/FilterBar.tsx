@@ -48,7 +48,7 @@ function parseValue(raw: string, op: FilterOp, kind: FilterFieldDef["kind"]): un
   return raw;
 }
 
-export function FilterBar(props: { clauses: FilterClause[]; onChange: (clauses: FilterClause[]) => void; onApply?: (clauses: FilterClause[]) => Promise<void> | void }) {
+export function FilterBar(props: { clauses: FilterClause[]; onChange: (clauses: FilterClause[]) => void; onApply?: (clauses: FilterClause[]) => Promise<void> | void; showArchived?: boolean; onShowArchived?: (value: boolean) => void }) {
   const [field, setField] = useState<FilterableField>("address");
   const def = FILTERABLE_FIELDS.find((item) => item.field === field) ?? FILTERABLE_FIELDS[0];
   const [op, setOp] = useState<FilterOp>(def.defaultOp);
@@ -71,6 +71,7 @@ export function FilterBar(props: { clauses: FilterClause[]; onChange: (clauses: 
       {op !== "is_null" && (def.kind === "select" ? <select className="select-input" aria-label="Filter value" value={raw} onChange={(event) => setRaw(event.target.value)}><option value="">Choose…</option>{def.options?.map((value) => <option key={value} value={value}>{value.replace(/_/g," ")}</option>)}</select> : def.kind === "boolean" ? <select className="select-input" aria-label="Filter value" value={raw} onChange={(event) => setRaw(event.target.value)}><option value="">Choose…</option><option value="true">Yes</option><option value="false">No</option></select> : <input className="text-input" aria-label="Filter value" type={def.kind === "date" ? "date" : def.kind === "number" && op !== "between" ? "number" : "text"} value={raw} onChange={(event) => setRaw(event.target.value)} onKeyDown={(event) => event.key === "Enter" && add()} placeholder={op === "between" ? "low, high" : op === "in" ? "one, two" : "Value"} />)}
       <button className="btn btn-secondary" onClick={add}>Add filter</button>
     </div>
+    <label className="check-row archive-toggle"><input type="checkbox" checked={Boolean(props.showArchived)} onChange={(event) => props.onShowArchived?.(event.target.checked)} /><span><strong>Show archived</strong></span></label>
     {props.clauses.length > 0 && <div className="active-filters">{props.clauses.map((clause, index) => <span key={`${clause.field}-${index}`}>{describeClause(clause)}<button aria-label={`Remove ${describeClause(clause)}`} onClick={() => props.onChange(props.clauses.filter((_, itemIndex) => itemIndex !== index))}>×</button></span>)}<button className="clear-filters" onClick={() => props.onChange([])}>Clear all</button></div>}
   </div>;
 }

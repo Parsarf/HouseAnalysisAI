@@ -59,6 +59,7 @@ export type Route =
   | { name: "problems" }
   | { name: "assumptions" }
   | { name: "settings" }
+  | { name: "chat" }
   | { name: "not-found" };
 
 export function matchRoute(path: string): Route {
@@ -73,6 +74,7 @@ export function matchRoute(path: string): Route {
   if (pathname === "/problems") return { name: "problems" };
   if (pathname === "/assumptions") return { name: "assumptions" };
   if (pathname === "/settings") return { name: "settings" };
+  if (pathname === "/chat") return { name: "chat" };
   const deal = /^\/properties\/([0-9a-fA-F-]{32,36})$/.exec(pathname);
   if (deal) return { name: "deal", propertyId: deal[1] };
   return { name: "not-found" };

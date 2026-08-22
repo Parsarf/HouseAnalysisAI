@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 from datetime import date
@@ -15,10 +16,12 @@ from sqlalchemy.orm import Session
 from common.errors import ErrorCode
 from common.storage import DocumentStorage, get_document_storage
 from db import models as dbm
-from identity.service import attach_report
+from identity.owners import persist_owner_profile
+from identity.service import attach_report, persist_property_owners
 from ops.db_budget import reserve_budget
 from pipeline.orchestrator import Computation, Pipeline
 
+from .classification import classify_pdf
 from .normalizer import (
     canonical_to_normalized,
     identity_address,
@@ -31,7 +34,12 @@ from .provider import (
     ProviderTimeout,
     WholePdfProviderClient,
 )
-from .schemas import SCHEMA_VERSION, PropertyReportExtraction
+from .schemas import (
+    OWNER_SCHEMA_VERSION,
+    SCHEMA_VERSION,
+    OwnerProfileExtraction,
+    PropertyReportExtraction,
+)
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +96,7 @@ def _reuse_duplicate_extraction(
     ).first()
     if source is None:
         return False, None
+    source_report = session.get(dbm.Report, report.duplicate_of)
     row.property_id = source.property_id
     row.schema_version = source.schema_version
     row.model = source.model
@@ -101,6 +110,9 @@ def _reuse_duplicate_extraction(
     row.duration_ms = 0
     row.retry_count = 0
     report.property_id = source.property_id
+    if source_report is not None:
+        report.doc_kind = source_report.doc_kind
+        report.classification_confidence = source_report.classification_confidence
     report.status = source.status
     report.failure_reason = (
         ErrorCode.IDENTITY_UNRESOLVED.value
@@ -350,6 +362,9 @@ def analyze_report(
                 "success": True,
             })
             return extraction_row.property_id
+        if (extraction_row.status == "complete" and report.doc_kind == "owner_profile"
+                and isinstance(extraction_row.normalized_json, dict)):
+            return None
         if extraction_row.status == "unresolved_identity" and _source_payload(extraction_row):
             report.status = "unresolved_identity"
             report.failure_reason = ErrorCode.IDENTITY_UNRESOLVED.value
@@ -381,6 +396,12 @@ def analyze_report(
                     raise ReportAnalysisFailure("analysis paused by batch budget")
         try:
             with storage.materialize(file_path) as pdf_path:
+                doc_kind, classification_confidence = classify_pdf(pdf_path)
+                with factory() as classification_session:
+                    classified_report = classification_session.get(dbm.Report, report_id)
+                    if classified_report is not None:
+                        classified_report.doc_kind = doc_kind
+                        classified_report.classification_confidence = Decimal(str(classification_confidence))
                 log.info("original PDF materialized", extra={
                     **context,
                     "event": "document_materialized",
@@ -388,7 +409,12 @@ def analyze_report(
                     "success": True,
                     "storage_backend": "s3" if file_path.startswith("s3://") else "filesystem",
                 })
-                provider_result = provider.analyze_pdf(pdf_path, log_context=context)
+                if "doc_kind" in inspect.signature(provider.analyze_pdf).parameters:
+                    provider_result = provider.analyze_pdf(
+                        pdf_path, doc_kind=doc_kind, log_context=context,
+                    )
+                else:
+                    provider_result = provider.analyze_pdf(pdf_path, log_context=context)
             source_payload = provider_result.payload
         except PermanentProviderError as exc:
             _mark_failure(report_id, "failed_provider", "provider_rejected", factory=factory)
@@ -396,6 +422,50 @@ def analyze_report(
         except (ProviderTimeout, ProviderError) as exc:
             _mark_failure(report_id, "failed_provider", "provider_failed", factory=factory)
             raise ReportAnalysisFailure(str(exc)) from exc
+
+    with factory() as kind_session:
+        kind_report = kind_session.get(dbm.Report, report_id)
+        doc_kind = kind_report.doc_kind if kind_report is not None else "property_profile"
+
+    if doc_kind == "owner_profile":
+        try:
+            owner_extraction = OwnerProfileExtraction.model_validate(source_payload)
+        except ValidationError as exc:
+            issues = [{
+                "code": "schema_validation_failed",
+                "path": ".".join(str(part) for part in error["loc"]),
+                "message": error["msg"],
+            } for error in exc.errors()]
+            _mark_failure(report_id, "failed_validation", "schema_validation_failed",
+                          raw_json=source_payload, issues=issues,
+                          provider=provider_result, factory=factory)
+            raise ReportAnalysisFailure("owner extraction failed schema validation") from exc
+        with factory() as owner_session:
+            owner_report = owner_session.get(dbm.Report, report_id)
+            if owner_report is None:
+                raise ReportAnalysisFailure(f"report {report_id} not found")
+            owner_row, candidates = persist_owner_profile(
+                owner_session, owner_extraction, report=owner_report,
+            )
+            extraction_row = _get_or_create_extraction(owner_session, report_id)
+            extraction_row.schema_version = OWNER_SCHEMA_VERSION
+            extraction_row.raw_json = source_payload
+            extraction_row.normalized_json = {
+                "owner_id": str(owner_row.id),
+                "link_candidates": [{
+                    "owner_id": str(candidate.owner_id),
+                    "confidence": candidate.confidence,
+                    "reasons": candidate.reasons,
+                    "property_ids": [str(value) for value in candidate.property_ids],
+                } for candidate in candidates],
+            }
+            extraction_row.status = "complete"
+            if provider_result is not None:
+                _set_provider_metadata(extraction_row, provider_result)
+            owner_report.status = "complete"
+            owner_report.failure_reason = None
+            _refresh_batch(owner_session, owner_report.batch_id)
+        return None
 
     try:
         validated = validate_and_normalize(source_payload)
@@ -448,6 +518,14 @@ def analyze_report(
         _update_property_fields(property_row, validated.extraction)
         normalized_record = canonical_to_normalized(
             validated.extraction, property_row.id, report_date=report.generated_date,
+        )
+        persist_property_owners(
+            session,
+            property_row.id,
+            validated.extraction.ownership.owner_names,
+            mailing_address=validated.extraction.ownership.mailing_address,
+            is_absentee=normalized_record.ownership.is_absentee,
+            ownership_start_date=normalized_record.ownership.ownership_start_date,
         )
         extraction_row.property_id = property_row.id
         extraction_row.raw_json = source_payload

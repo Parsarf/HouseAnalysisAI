@@ -1,5 +1,7 @@
 """Property-scoped endpoints (WP-11, spec §16)."""
 import json
+from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query
@@ -26,12 +28,14 @@ from contracts import (
 from db import models as dbm
 from exports import deal_sheet_html, net_sheet_html, write_export
 from jobs.postgres import PostgresJobQueue
+from outreach import Draft, OutreachProviderClient, generate_draft, validate_draft
 
 from . import analysis as analysis_store
 from . import serializers
 from .deps import enqueue, get_queue, get_session
 from .filters import cursor_condition, parse_sort, translate_filters
 from .pagination import decode_cursor, encode_cursor
+from .routes_owner import owner_profile_payload
 from .serializers import dump, money_envelope
 
 router = APIRouter(prefix="/api/properties", tags=["properties"])
@@ -93,12 +97,15 @@ def _open_flag_counts(session: Session, property_ids: list[UUID]) -> dict[UUID, 
 @router.get("")
 def list_properties(filters: str | None = Query(default=None), sort: str | None = Query(default=None),
                     limit: int = Query(default=50), cursor: str | None = Query(default=None),
+                    show_archived: bool = Query(default=False),
                     session: Session = Depends(get_session), user: User = Depends(current_user)) -> dict:
     limit = max(1, min(limit, MAX_LIMIT))
     clauses = _parse_filter_param(filters)
     criteria = translate_filters(clauses)
     sort_field, sort_column, descending = parse_sort(sort)
     query = session.query(dbm.Property).filter(dbm.Property.merged_into_id.is_(None), *criteria)
+    if not show_archived:
+        query = query.filter(dbm.Property.archived_at.is_(None))
     if cursor:
         sort_value, cursor_id = decode_cursor(cursor, sort_field)
         query = query.filter(cursor_condition(sort_column, descending, sort_value, cursor_id))
@@ -211,6 +218,144 @@ def update_property(property_id: UUID, changes: dict, session: Session = Depends
     return dump(serializers.property_summary(row))
 
 
+@router.post("/{property_id}/archive")
+def archive_property(property_id: UUID, session: Session = Depends(get_session),
+                     user: User = Depends(write_user)) -> dict:
+    row = _get_property(session, property_id)
+    if row.archived_at is None:
+        row.archived_at = datetime.now(UTC)
+        session.add(dbm.ChangeEvent(
+            property_id=row.id, change_type="archived", field_path="archived_at",
+            old_value={"archived_at": None}, new_value={"archived_at": row.archived_at.isoformat()},
+        ))
+    session.flush()
+    return {"property_id": str(row.id), "archived_at": row.archived_at.isoformat()}
+
+
+@router.post("/{property_id}/restore")
+def restore_property(property_id: UUID, session: Session = Depends(get_session),
+                     user: User = Depends(write_user)) -> dict:
+    row = _get_property(session, property_id)
+    previous = row.archived_at
+    row.archived_at = None
+    if previous is not None:
+        session.add(dbm.ChangeEvent(
+            property_id=row.id, change_type="restored", field_path="archived_at",
+            old_value={"archived_at": previous.isoformat()}, new_value={"archived_at": None},
+        ))
+    session.flush()
+    return {"property_id": str(row.id), "archived_at": None}
+
+
+@router.post("/{property_id}/outreach-draft")
+def outreach_draft(property_id: UUID, body: dict, session: Session = Depends(get_session),
+                   user: User = Depends(write_user)) -> dict:
+    property_row = _get_property(session, property_id)
+    requested = body.get("offer_price")
+    query = session.query(dbm.OfferScenario).filter(dbm.OfferScenario.property_id == property_id)
+    if requested is not None:
+        query = query.filter(dbm.OfferScenario.offer_price == Decimal(str(requested)))
+    offer = query.order_by(
+        dbm.OfferScenario.is_short_sale.asc(), dbm.OfferScenario.profit.desc().nullslast(),
+        dbm.OfferScenario.offer_price.desc(),
+    ).first()
+    if offer is None:
+        raise AcqError(
+            ErrorCode.INVALID_INPUT,
+            "offer_price must be an existing calculated offer-grid point"
+            if requested is not None else "no calculated offer is available",
+        )
+    normalized = analysis_store.load_normalized(session, property_id)
+    owner_profile = owner_profile_payload(session, property_id)
+    context = {
+        "property_id": str(property_id),
+        "address": property_row.address_line1,
+        "city": property_row.city, "state": property_row.state, "zip5": property_row.zip5,
+        "property_type": property_row.property_type,
+        "beds": property_row.beds, "baths": property_row.baths,
+        "offer_price": offer.offer_price, "scenario": offer.scenario,
+        "buyer_basis": offer.buyer_basis, "closing_costs": offer.closing_costs,
+        "owner_names": normalized.ownership.owner_names if normalized else [],
+    }
+    try:
+        draft = generate_draft(
+            OutreachProviderClient(), context,
+            prior_draft=body.get("prior_draft"), instruction=body.get("instruction"),
+        )
+    except ValueError as exc:
+        raise AcqError(ErrorCode.INVALID_INPUT, str(exc)) from exc
+    note = dbm.PropertyNote(
+        property_id=property_id,
+        body="[outreach-draft] " + json.dumps({
+            "subject": draft.subject, "body": draft.body,
+            "offer_price": str(offer.offer_price), "status": "draft",
+        }),
+    )
+    session.add(note)
+    session.flush()
+    return dump({
+        "draft_id": note.id, "subject": draft.subject, "body": draft.body,
+        "offer_price": offer.offer_price,
+        "recipients": [contact for contact in owner_profile["contacts"] if contact["kind"] == "email"],
+        "mailing_addresses": [owner["mailing_address"] for owner in owner_profile["owners"]
+                              if owner["mailing_address"]],
+        "recipient_selected": None,
+        "disclosure": settings.outreach_disclosure,
+    })
+
+
+@router.patch("/{property_id}/outreach-drafts/{draft_id}")
+def update_outreach_draft(
+    property_id: UUID, draft_id: UUID, body: dict,
+    session: Session = Depends(get_session), user: User = Depends(write_user),
+) -> dict:
+    property_row = _get_property(session, property_id)
+    note = session.get(dbm.PropertyNote, draft_id)
+    prefix = "[outreach-draft] "
+    if note is None or note.property_id != property_id or not note.body.startswith(prefix):
+        raise AcqError(ErrorCode.NOT_FOUND, "outreach draft not found")
+    try:
+        stored = json.loads(note.body.removeprefix(prefix))
+        offer_price = Decimal(str(stored["offer_price"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise AcqError(ErrorCode.INTERNAL, "stored outreach draft is invalid") from exc
+    subject = str(body.get("subject") or "").strip()
+    draft_body = str(body.get("body") or "").strip()
+    if not subject or not draft_body:
+        raise AcqError(ErrorCode.INVALID_INPUT, "subject and body are required")
+    context = {
+        "address": property_row.address_line1, "city": property_row.city,
+        "state": property_row.state, "zip5": property_row.zip5,
+        "beds": property_row.beds, "baths": property_row.baths,
+        "offer_price": offer_price,
+    }
+    draft = Draft(subject, draft_body)
+    if not validate_draft(draft, context):
+        raise AcqError(
+            ErrorCode.INVALID_INPUT,
+            "draft contains prohibited distress language or an ungrounded number",
+        )
+    status = str(body.get("status") or "draft")
+    if status not in {"draft", "sent"}:
+        raise AcqError(ErrorCode.INVALID_INPUT, "draft status must be draft or sent")
+    recipient = str(body.get("recipient") or "").strip() or None
+    if status == "sent":
+        emails = {
+            str(contact["value"]) for contact in owner_profile_payload(session, property_id)["contacts"]
+            if contact["kind"] == "email"
+        }
+        if recipient not in emails:
+            raise AcqError(ErrorCode.INVALID_INPUT, "select a current recipient before sending")
+    stored.update({
+        "subject": subject, "body": draft_body, "status": status,
+        "recipient": recipient,
+        "sent_at": datetime.now(UTC).isoformat() if status == "sent" else stored.get("sent_at"),
+    })
+    note.body = prefix + json.dumps(stored)
+    session.flush()
+    return dump({"draft_id": note.id, **stored})
+
+
 @router.get("/{property_id}/analysis")
 def property_analysis(property_id: UUID, scenario: Scenario = Query(default=Scenario.EXPECTED),
                       session: Session = Depends(get_session), user: User = Depends(current_user)) -> dict:
@@ -220,13 +365,23 @@ def property_analysis(property_id: UUID, scenario: Scenario = Query(default=Scen
                        {"merged_into_id": str(row.merged_into_id)})
     normalized = analysis_store.load_normalized(session, property_id)
     underwriting = analysis_store.load_underwriting(session, property_id, normalized)
+    owner_profile = owner_profile_payload(session, property_id)
+    expected_equity = None
+    if underwriting is not None and Scenario.EXPECTED in underwriting.equity:
+        expected_equity = underwriting.equity[Scenario.EXPECTED].adjusted
+    owner_lien_total = Decimal(str(owner_profile.get("owner_lien_total") or 0))
+    owner_profile["equity_if_owner_liens_attach"] = (
+        expected_equity - owner_lien_total if expected_equity is not None else None
+    )
+    owner_profile["owner_liens_included_in_underwriting"] = False
     payload = AnalysisPayload(
         property_id=property_id, scenario=scenario, normalized=normalized, underwriting=underwriting,
         strategies=analysis_store.load_strategies(session, property_id),
         offers=analysis_store.load_offers(session, property_id, scenario, underwriting),
         scores=analysis_store.load_scores(session, property_id),
         flags=analysis_store.load_flags(session, property_id),
-        timeline=analysis_store.load_timeline(session, property_id))
+        timeline=analysis_store.load_timeline(session, property_id),
+        owner_profile=owner_profile)
     return dump(payload)
 
 
@@ -312,7 +467,9 @@ def create_offer(property_id: UUID, body: OfferRequest, session: Session = Depen
 @router.post("/{property_id}/recompute")
 def recompute(property_id: UUID, body: dict | None = None, session: Session = Depends(get_session),
               queue: PostgresJobQueue = Depends(get_queue), user: User = Depends(write_user)) -> dict:
-    _get_property(session, property_id)
+    property_row = _get_property(session, property_id)
+    if property_row.archived_at is not None:
+        raise AcqError(ErrorCode.INVALID_INPUT, "restore this property before recomputing it")
     job_id = enqueue(session, queue, "recompute_property",
                      {"property_id": str(property_id), "reason": (body or {}).get("reason") or "manual"},
                      f"recompute:{property_id}")

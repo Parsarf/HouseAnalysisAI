@@ -162,8 +162,14 @@ class Pipeline:
         })
         with self._store_factory() as store:
             store.acquire_property_lock(property_id)
-            if store.get_property(property_id) is None:
+            property_state = store.get_property(property_id)
+            if property_state is None:
                 raise AcqError(ErrorCode.NOT_FOUND, f"property {property_id} not found")
+            if property_state.get("archived_at") is not None:
+                raise AcqError(
+                    ErrorCode.INVALID_INPUT,
+                    f"property {property_id} is archived; restore it before recomputing",
+                )
             facts = store.load_facts(property_id)
             assumptions = store.load_assumptions(assumption_set_id)
             scoring_config_id, config = store.active_scoring_config()

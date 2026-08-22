@@ -206,3 +206,45 @@ def test_full_export_copies_documents(sqlite_connection, tmp_path):
     (docs / "p1" / "page.txt").write_text("page text")
     full_export(sqlite_connection, tmp_path / "out", documents_root=docs)
     assert (tmp_path / "out" / "documents" / "p1" / "page.txt").read_text() == "page text"
+
+
+def test_full_export_excludes_archived_documents_and_contacts_by_default(tmp_path):
+    engine = create_engine("sqlite:///:memory:")
+    documents = tmp_path / "documents"
+    active_doc = documents / "active" / "original.pdf"
+    archived_doc = documents / "archived" / "original.pdf"
+    owner_doc = documents / "owner" / "original.pdf"
+    for path in (active_doc, archived_doc, owner_doc):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.parent.name)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE properties (id text, archived_at datetime)"))
+        connection.execute(text("CREATE TABLE liens (id text, property_id text)"))
+        connection.execute(text("CREATE TABLE mortgages (id text, property_id text)"))
+        connection.execute(text("CREATE TABLE scores (id text, property_id text)"))
+        connection.execute(text("CREATE TABLE extracted_facts (id text, property_id text)"))
+        connection.execute(text(
+            "CREATE TABLE reports (id text, property_id text, file_path text, ocr_path text)",
+        ))
+        connection.execute(text(
+            "CREATE TABLE owner_contacts (id text, owner_id text, kind text, value text)",
+        ))
+        connection.execute(text("CREATE TABLE property_owners (property_id text, owner_id text)"))
+        connection.execute(text("INSERT INTO properties VALUES ('active', NULL), ('archived', '2026-08-01')"))
+        connection.execute(text(
+            "INSERT INTO reports VALUES "
+            "('r1', 'active', :active, NULL), ('r2', 'archived', :archived, NULL), "
+            "('r3', NULL, :owner, NULL)",
+        ), {"active": str(active_doc), "archived": str(archived_doc), "owner": str(owner_doc)})
+        connection.execute(text("INSERT INTO property_owners VALUES ('active', 'o1')"))
+        connection.execute(text("INSERT INTO owner_contacts VALUES ('c1', 'o1', 'email', 'owner@example.com')"))
+
+        default_paths = full_export(connection, tmp_path / "default", documents)
+        assert "owner_contacts.csv" not in {path.name for path in default_paths}
+        assert (tmp_path / "default/documents/active/original.pdf").is_file()
+        assert not (tmp_path / "default/documents/archived/original.pdf").exists()
+        assert not (tmp_path / "default/documents/owner/original.pdf").exists()
+
+        full_export(connection, tmp_path / "opt-in", documents, include_owner_contacts=True)
+        contacts = list(csv.DictReader((tmp_path / "opt-in/owner_contacts.csv").open()))
+        assert contacts[0]["value"] == "owner@example.com"

@@ -1,4 +1,5 @@
 import shutil
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -30,6 +31,12 @@ class Settings(BaseSettings):
     extraction_frontier_model: str = "gpt-4o"
     extraction_timeout_seconds: float = 180.0
     extraction_max_retries: int = 3
+    chat_model: str = "gpt-4o-mini"
+    chat_session_token_cap: int = 20_000
+    chat_daily_spend_cap_usd: Decimal = Decimal("10.00")
+    chat_history_messages: int = 12
+    outreach_disclosure: str = ""
+    serial_filing_sale_window_days: int = 7
 
     def validate_production(self) -> None:
         """Fail fast for deployment mistakes while keeping local tests frictionless."""

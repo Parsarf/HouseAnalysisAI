@@ -118,6 +118,7 @@ class Property(Base):
     merged_into_id: Mapped[UUID | None] = mapped_column(ForeignKey("properties.id"))
     underwriting_status: Mapped[str | None] = mapped_column(Text)
     last_recomputed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -137,6 +138,7 @@ class Report(Base):
     batch_id: Mapped[UUID | None] = mapped_column(ForeignKey("batches.id"))
     property_id: Mapped[UUID | None] = mapped_column(ForeignKey("properties.id"))
     report_type: Mapped[str | None] = mapped_column(String(60))
+    doc_kind: Mapped[str | None] = mapped_column(String(30), index=True)
     vendor: Mapped[str | None] = mapped_column(String(120))
     generated_date: Mapped[date | None] = mapped_column(Date)
     file_path: Mapped[str] = mapped_column(Text)
@@ -221,6 +223,8 @@ class Owner(Base):
     is_absentee: Mapped[bool | None] = mapped_column(Boolean)
     phone: Mapped[str | None] = mapped_column(String(40))
     email: Mapped[str | None] = mapped_column(String(255))
+    age: Mapped[int | None] = mapped_column(Integer)
+    gender: Mapped[str | None] = mapped_column(String(30))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
@@ -235,6 +239,21 @@ class PropertyOwner(Base):
     ownership_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 6))
     is_current: Mapped[bool | None] = mapped_column(Boolean)
     acquired_via: Mapped[str | None] = mapped_column(String(60))
+
+
+class OwnerContact(Base):
+    __tablename__ = "owner_contacts"
+    __table_args__ = (UniqueConstraint("owner_id", "kind", "value", "source"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(20))
+    value: Mapped[str] = mapped_column(String(255))
+    rank: Mapped[int | None] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(120))
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class DocumentSignature(Base):

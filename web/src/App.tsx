@@ -14,12 +14,14 @@ import {
   SettingsPage,
 } from "./pages/Operations";
 import { PropertiesPage } from "./pages/PropertiesPage";
+import { ChatPage } from "./pages/ChatPage";
 import { Link, matchRoute, navigate, usePath } from "./router";
 
 const NAV = [
   ["properties", "/", "Portfolio", "▦"],
   ["dashboard", "/dashboard", "Dashboard", "◫"],
   ["rankings", "/rankings", "Rankings", "↗"],
+  ["chat", "/chat", "Chat", "✦"],
   ["flags", "/flags", "Flags", "◇"],
   ["changes", "/changes", "Changes", "◌"],
   ["batches", "/batches", "Batches", "↑"],
@@ -52,6 +54,7 @@ function AppShell(props: { user: MeResponse; onSignOut: () => void }) {
           {route.name === "deal" && <DealPage propertyId={route.propertyId} />}
           {route.name === "dashboard" && <DashboardPage />}
           {route.name === "rankings" && <RankingsPage />}
+          {route.name === "chat" && <ChatPage />}
           {route.name === "flags" && <FlagsPage />}
           {route.name === "changes" && <ChangesPage />}
           {route.name === "batches" && <BatchesPage />}
