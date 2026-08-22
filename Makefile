@@ -8,7 +8,7 @@ lint:
 	lint-imports
 
 typecheck:
-	python -m mypy api analyst auth calibration changes chat classification common contracts db exports extraction finance flags identity ingestion jobs normalization ops outreach pipeline report_analysis scoring strategies
+	python -m mypy api analyst auth calibration changes chat classification common contracts db explanation exports extraction finance flags identity ingestion jobs normalization ops outreach pipeline report_analysis scoring strategies
 
 web:
 	cd web && npm ci && npm run build

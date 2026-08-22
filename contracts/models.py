@@ -144,3 +144,62 @@ class AnalysisPayload(ContractModel):
     strategies: list[StrategyResult]=[]; offers: OfferGrid|None=None
     scores: ScoreSet|None=None; flags: list[FlagRecord]=[]; timeline: list[TimelineEvent]=[]
     owner_profile: dict[str, Any]|None=None
+
+# --- Explainability / audit-trace contracts -----------------------------------
+ValueKind = Literal["reported","extracted","manual","resolved","derived","estimated","calculated"]
+class ExplanationInput(ContractModel):
+    name: str; value: Any; display_value: str|None=None
+    note: str|None=None; source_fact_id: UUID|None=None
+class ExplanationStep(ContractModel):
+    order: int=0; label: str; formula: str|None=None
+    substitution: str|None=None; result: Any=None; display_result: str|None=None
+class ExplanationAssumption(ContractModel):
+    name: str; value: Any; display_value: str|None=None
+    assumption_set_id: UUID|None=None; note: str|None=None
+class ExplanationSource(ContractModel):
+    fact_id: UUID|None=None; report_id: UUID|None=None
+    report_name: str|None=None; vendor: str|None=None; report_type: str|None=None
+    source_kind: str|None=None; page_number: int|None=None; snippet: str|None=None
+    value_raw: str|None=None; value_parsed: str|None=None
+    extraction_confidence: float|None=Field(default=None,ge=0,le=1)
+    extraction_unit_id: UUID|None=None; ocr_applied: bool=False
+    is_active: bool=True; is_superseded: bool=False; is_winner: bool=False
+    prompt_version: str|None=None; model: str|None=None
+    field_path: str|None=None
+    source_url: str|None=None
+class ExplanationCandidate(ContractModel):
+    value: Any; display_value: str|None=None
+    confidence: Decimal|None=None; source_kind: str|None=None
+    origin: Literal["reported","extracted","derived","estimated","manual"]|None=None
+    derivation_inputs: list[ExplanationInput]=[]
+    is_winner: bool=False; reason: str|None=None
+    source: ExplanationSource|None=None
+class ExplanationResolution(ContractModel):
+    method: str|None=None; winner_description: str|None=None
+    reason: str|None=None; resolution_version: str|None=None
+class ExplanationConflict(ContractModel):
+    description: str; magnitude: str|None=None
+    fields: list[str]=[]; flag_type: str|None=None
+class ExplanationSensitivity(ContractModel):
+    question: str; effect: str; delta: Any|None=None
+class ExplanationTrace(ContractModel):
+    """Structured audit trace for one displayed figure.
+
+    Produced by the same engine execution that produced the persisted result —
+    never by an independent recomputation (no formula drift)."""
+    key: str; title: str; description: str
+    value: Any=None; display_value: str|None=None; value_kind: ValueKind="calculated"
+    confidence: Decimal|None=None; data_confidence: Decimal|None=None
+    engine: str|None=None; engine_version: str|None=None
+    formula: str|None=None; formula_display: str|None=None
+    inputs: list[ExplanationInput]=[]; steps: list[ExplanationStep]=[]
+    assumptions: list[ExplanationAssumption]=[]
+    source_facts: list[ExplanationSource]=[]
+    candidates: list[ExplanationCandidate]=[]
+    resolution: ExplanationResolution|None=None
+    warnings: list[str]=[]; unresolved_dependencies: list[str]=[]
+    conflicts: list[ExplanationConflict]=[]
+    sensitivity: list[ExplanationSensitivity]=[]
+    assumption_set_id: UUID|None=None; scoring_config_id: UUID|None=None
+    computed_at: datetime|None=None
+    children: list["ExplanationTrace"]=[]

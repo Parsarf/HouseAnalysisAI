@@ -94,10 +94,65 @@ def _strategy_rank(result: StrategyResult) -> Decimal:
     return result.mao if result.mao is not None else Decimal(-1)
 
 
+def _audit_appendix(prop: NormalizedProperty, underwriting: UnderwritingResult | None,
+                    assumptions) -> str:
+    """Audit appendix (#32): key assumptions, estimated-vs-reported markers,
+    warnings, and the trace reference so exported numbers stay auditable."""
+    from contracts import AssumptionSet as AS
+
+    rows: list[tuple[str, str]] = []
+    if isinstance(assumptions, AS):
+        acquisition = assumptions.acquisition
+        rows.append(("Acquisition costs", f"closing {_esc(acquisition.closing_pct)} + title "
+                   f"{_esc(acquisition.title_pct)} + fee {_esc(acquisition.acq_fee_pct)}"
+                   + (f" + transfer tax (key {_esc(acquisition.transfer_tax_lookup_key)})"
+                      if acquisition.transfer_tax_lookup_key else "")))
+        resale = assumptions.resale
+        rows.append(("Resale costs", f"commission {_esc(resale.commission_pct)} + closing "
+                    f"{_esc(resale.seller_closing_pct)} + concessions {_esc(resale.concessions_pct)}"
+                    + f" + misc {_esc(resale.misc_pct)}"))
+        repairs = assumptions.repairs
+        rows.append(("Repairs $/sqft by condition",
+                     "; ".join(f"{_esc(condition)}: {_esc(rate)}"
+                               for condition, rate in sorted(repairs.psf_by_condition.items()))
+                     + f" (regional index {_esc(repairs.regional_index)})"))
+        holding = assumptions.holding
+        holding_text = (f"acquisition {_esc(holding.acquisition_months)} months + "
+                        f"repair months by condition + market time "
+                        f"{_esc(holding.market_days_default)} days")
+        rows.append(("Holding period", holding_text))
+    derived_balances = any(
+        item.get("basis") == "amortization_v1"
+        for item in ((underwriting.liabilities.breakdown if underwriting else []) or []))
+    warnings: list[str] = []
+    if derived_balances:
+        warnings.append("One or more mortgage balances are amortization estimates, not lender "
+                        "payoff statements.")
+    warnings.append("Extraction confidence values reflect the system's confidence in the extracted "
+                    "information, not a guaranteed probability that an obligation is valid.")
+    warning_items = "".join(f"<li>{_esc(warning)}</li>" for warning in warnings)
+    reference = ""
+    if underwriting is not None:
+        reference = (f"<tr><th>Assumption set</th><td>{underwriting.assumption_set_id}</td></tr>"
+                     f"<tr><th>Engine version</th><td>{_esc(underwriting.engine_version)}</td></tr>"
+                     f"<tr><th>Explanation traces</th><td>GET /api/properties/"
+                     f"{prop.property_id}/explain/&lt;figure&gt; (value.expected, equity.expected, "
+                     f"liabilities.confirmed, strategy.&hellip;, score.overall)</td></tr>")
+    return (
+        "<h2>Audit appendix</h2>"
+        "<table>"
+        + "".join(f"<tr><th>{label}</th><td>{value}</td></tr>" for label, value in rows)
+        + reference
+        + "</table>"
+        + (f"<ul>{warning_items}</ul>" if warnings else "")
+    )
+
+
 def deal_sheet_html(prop: NormalizedProperty,
                     underwriting: UnderwritingResult | None = None,
                     strategies: list[StrategyResult] | None = None,
-                    scores: ScoreSet | None = None) -> str:
+                    scores: ScoreSet | None = None,
+                    assumptions=None) -> str:
     """One-page deal sheet (spec §9.4). Renders for missing-data properties."""
     strategies = strategies or []
     top = sorted((s for s in strategies if s.mao is not None), key=_strategy_rank, reverse=True)[:2]
@@ -150,6 +205,7 @@ def deal_sheet_html(prop: NormalizedProperty,
 <table><tr><th>Strategy</th><th>Scenario</th><th>MAO</th><th>Profit</th></tr>{strategy_rows}</table>
 <h2>Distress timeline</h2>
 <table>{timeline_html}</table>
+{_audit_appendix(prop, underwriting, assumptions)}
 <div class="footer">{footer}</div>
 """
     return _PAGE.format(body=body)

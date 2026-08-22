@@ -34,6 +34,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { EvidenceDrawer } from "../components/EvidenceDrawer";
+import { ExplainButton } from "../components/Explain";
 import { formatPercentString, MoneyText } from "../components/Money";
 import { OfferSimulator } from "../components/OfferSimulator";
 import { parseScore, ScoreBar } from "../components/ScoreBar";
@@ -259,27 +260,33 @@ export function DealPage(props: { propertyId: string }) {
             <SummaryStat label="Est. value (expected)">
               <MoneyText money={money(underwriting.value.v_expected, true)} />
               <EvidenceButton onEvidence={setEvidenceField} fieldPath="valuation.v_expected" />
+              <ExplainButton propertyId={propertyId} explainKey="value.expected" label="how?" />
             </SummaryStat>
             <SummaryStat label="Confirmed debt">
               <MoneyText money={money(underwriting.liabilities.confirmed)} />
               <EvidenceButton onEvidence={setEvidenceField} fieldPath="liabilities.confirmed" />
+              <ExplainButton propertyId={propertyId} explainKey="liabilities.confirmed" label="how?" />
             </SummaryStat>
             <SummaryStat label="Potential obligations">
               <MoneyText money={money(underwriting.liabilities.potential, true)} />
+              <ExplainButton propertyId={propertyId} explainKey="liabilities.potential" label="how?" />
             </SummaryStat>
             <SummaryStat label={`Equity (${scenario})`}>
               <MoneyText money={money(equity?.adjusted, true)} />
               {equity?.equity_pct !== null && equity?.equity_pct !== undefined && (
                 <span style={{ fontSize: 13, color: palette.muted }}> ({formatPercentString(equity.equity_pct)})</span>
               )}
+              <ExplainButton propertyId={propertyId} explainKey={`equity.${scenario}`} label="how?" />
             </SummaryStat>
             {scores && (
               <>
                 <SummaryStat label="Distress">
                   <ScoreBar value={parseScore(scores.distress) ?? 0} />
+                  <ExplainButton propertyId={propertyId} explainKey="score.distress" label="why?" />
                 </SummaryStat>
                 <SummaryStat label="Confidence">
                   <ScoreBar value={parseScore(scores.data_confidence) ?? 0} />
+                  <ExplainButton propertyId={propertyId} explainKey="score.data_confidence" label="why?" />
                 </SummaryStat>
               </>
             )}
@@ -287,6 +294,7 @@ export function DealPage(props: { propertyId: string }) {
           {recommendation && (
             <p style={{ marginBottom: 0 }}>
               <strong>Recommended:</strong> {recommendation}
+              <ExplainButton propertyId={propertyId} explainKey="recommendation.strategy" label="why this strategy?" />
               {!scores?.is_rankable && (
                 <span style={{ color: palette.bad, marginLeft: 8 }}>not rankable until gating flags are resolved</span>
               )}
@@ -367,9 +375,9 @@ export function DealPage(props: { propertyId: string }) {
           <h3 style={cardTitle}>Financial breakdown</h3>
           {underwriting && (
             <div className="liability-summary">
-              <div><span>Confirmed</span><strong><MoneyText money={money(underwriting.liabilities.confirmed)} /></strong></div>
-              <div><span>Potential</span><strong><MoneyText money={money(underwriting.liabilities.potential, true)} /></strong></div>
-              <div><span>Maximum exposure</span><strong><MoneyText money={money(underwriting.liabilities.maximum, true)} /></strong></div>
+              <div><span>Confirmed</span><strong><MoneyText money={money(underwriting.liabilities.confirmed)} /></strong><ExplainButton propertyId={propertyId} explainKey="liabilities.confirmed" label="how?" /></div>
+              <div><span>Potential</span><strong><MoneyText money={money(underwriting.liabilities.potential, true)} /></strong><ExplainButton propertyId={propertyId} explainKey="liabilities.potential" label="how?" /></div>
+              <div><span>Maximum exposure</span><strong><MoneyText money={money(underwriting.liabilities.maximum, true)} /></strong><ExplainButton propertyId={propertyId} explainKey="liabilities.maximum" label="how?" /></div>
             </div>
           )}
           {underwriting && underwriting.liabilities.breakdown.length > 0 && (
@@ -531,9 +539,9 @@ export function DealPage(props: { propertyId: string }) {
                   )}
                 </p>
                 <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
-                  <SummaryStat label="MAO"><MoneyText money={money(result.mao, true)} /></SummaryStat>
+                  <SummaryStat label="MAO"><MoneyText money={money(result.mao, true)} /><ExplainButton propertyId={propertyId} explainKey={`strategy.${result.strategy}.${scenario}.mao`} label="why this MAO?" /></SummaryStat>
                   <SummaryStat label="All-in basis"><MoneyText money={money(result.all_in_basis, true)} /></SummaryStat>
-                  <SummaryStat label="Profit"><MoneyText money={money(result.profit, true)} /></SummaryStat>
+                  <SummaryStat label="Profit"><MoneyText money={money(result.profit, true)} /><ExplainButton propertyId={propertyId} explainKey={`strategy.${result.strategy}.${scenario}`} label="how?" /></SummaryStat>
                   <SummaryStat label="ROI">{formatPercentString(result.roi)}</SummaryStat>
                   <SummaryStat label="Margin of safety">{formatPercentString(result.margin_of_safety)}</SummaryStat>
                 </div>
@@ -558,7 +566,7 @@ export function DealPage(props: { propertyId: string }) {
       {/* 5. Offer simulator */}
       {offers && (
         <section style={card}>
-          <h3 style={cardTitle}>Offer simulator</h3>
+          <h3 style={cardTitle}>Offer simulator <ExplainButton propertyId={propertyId} explainKey="offers.simulator" label="how are these points calculated?" /></h3>
           <OfferSimulator grid={offers} scenario={scenario} propertyId={propertyId} />
         </section>
       )}
@@ -595,18 +603,23 @@ export function DealPage(props: { propertyId: string }) {
           <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 10 }}>
             <SummaryStat label="Overall">
               <ScoreBar value={parseScore(scores.overall) ?? 0} />
+              <ExplainButton propertyId={propertyId} explainKey="score.overall" label="breakdown" />
             </SummaryStat>
             <SummaryStat label="Financial opportunity">
               <ScoreBar value={parseScore(scores.fos) ?? 0} />
+              <ExplainButton propertyId={propertyId} explainKey="score.fos" label="why?" />
             </SummaryStat>
             <SummaryStat label="Distress">
               <ScoreBar value={parseScore(scores.distress) ?? 0} />
+              <ExplainButton propertyId={propertyId} explainKey="score.distress" label="why?" />
             </SummaryStat>
             <SummaryStat label="Data confidence">
               <ScoreBar value={parseScore(scores.data_confidence) ?? 0} />
+              <ExplainButton propertyId={propertyId} explainKey="score.data_confidence" label="why?" />
             </SummaryStat>
             <SummaryStat label="Risk">
               <ScoreBar value={parseScore(scores.risk) ?? 0} />
+              <ExplainButton propertyId={propertyId} explainKey="score.risk" label="why?" />
             </SummaryStat>
           </div>
           {Object.keys(scores.components).length > 0 && (

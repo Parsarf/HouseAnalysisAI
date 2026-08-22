@@ -537,7 +537,9 @@ def deal_sheet(property_id: UUID, session: Session = Depends(get_session),
     underwriting = analysis_store.load_underwriting(session, property_id, normalized)
     strategies = analysis_store.load_strategies(session, property_id)
     scores = analysis_store.load_scores(session, property_id)
-    return deal_sheet_html(normalized, underwriting=underwriting, strategies=strategies, scores=scores)
+    assumptions = analysis_store.load_assumption_set(session)
+    return deal_sheet_html(normalized, underwriting=underwriting, strategies=strategies, scores=scores,
+                           assumptions=assumptions)
 
 
 @router.post("/{property_id}/exports/deal-sheet.pdf")

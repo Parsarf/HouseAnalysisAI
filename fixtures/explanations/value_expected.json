@@ -1,0 +1,516 @@
+{
+ "assumption_set_id": null,
+ "assumptions": [
+  {
+   "assumption_set_id": "10000000-0000-0000-0000-000000000001",
+   "display_value": "default v1",
+   "name": "Assumption set",
+   "note": null,
+   "value": "default v1"
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "{'cosmetic': '18', 'moderate': '42', 'heavy': '78', 'gut': '135'}",
+   "name": "Repair $/sqft by condition",
+   "note": null,
+   "value": {
+    "cosmetic": "18",
+    "gut": "135",
+    "heavy": "78",
+    "moderate": "42"
+   }
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "1",
+   "name": "Regional repair index",
+   "note": null,
+   "value": "1"
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "{'comp': '1'}",
+   "name": "Valuation candidate weights",
+   "note": null,
+   "value": {
+    "comp": "1"
+   }
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "{'cosmetic': '2', 'moderate': '4', 'heavy': '6', 'gut': '9'}",
+   "name": "Holding months by condition",
+   "note": null,
+   "value": {
+    "cosmetic": "2",
+    "gut": "9",
+    "heavy": "6",
+    "moderate": "4"
+   }
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "fixed at 15% \u2014 a single valuation candidate shows no independent agreement",
+   "name": "dispersion",
+   "note": null,
+   "value": "fixed at 15% \u2014 a single valuation candidate shows no independent agreement"
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "capped at 50% because only one valuation candidate exists",
+   "name": "valuation confidence cap",
+   "note": null,
+   "value": "capped at 50% because only one valuation candidate exists"
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "{'cosmetic': Decimal('18'), 'moderate': Decimal('42'), 'heavy': Decimal('78'), 'gut': Decimal('135')}",
+   "name": "$ per sqft by condition",
+   "note": null,
+   "value": "{'cosmetic': Decimal('18'), 'moderate': Decimal('42'), 'heavy': Decimal('78'), 'gut': Decimal('135')}"
+  }
+ ],
+ "candidates": [
+  {
+   "confidence": "0.85",
+   "derivation_inputs": [],
+   "display_value": "450000",
+   "is_winner": true,
+   "origin": "extracted",
+   "reason": "included in the weighted blend with adjusted weight 1",
+   "source": null,
+   "source_kind": "report",
+   "value": "450000"
+  }
+ ],
+ "children": [],
+ "confidence": "0.5",
+ "conflicts": [],
+ "data_confidence": "0.8",
+ "description": "A weighted blend of every valuation candidate extracted from your reports (AVM, comparable-sale estimate, comparable listing, assessed value, list price). The candidates are reported figures; the blend itself is calculated.",
+ "display_value": "450000",
+ "engine": "finance",
+ "engine_version": "finance-3",
+ "formula": "\u03a3(candidate \u00d7 adjusted weight) / \u03a3(weights)",
+ "formula_display": "\u03a3(candidate \u00d7 adjusted weight) / \u03a3(weights)",
+ "inputs": [
+  {
+   "display_value": "265000",
+   "name": "Liability line: mortgage:1",
+   "note": "bucket=reported; basis=recorded",
+   "source_fact_id": null,
+   "value": "265000.00"
+  },
+  {
+   "display_value": "moderate",
+   "name": "Condition level",
+   "note": "reported condition",
+   "source_fact_id": null,
+   "value": "moderate"
+  },
+  {
+   "display_value": "conservative",
+   "name": "Potential bucket used",
+   "note": "conservative uses full potential; expected uses probability-weighted potential; optimistic uses none",
+   "source_fact_id": null,
+   "value": "conservative"
+  },
+  {
+   "display_value": "expected",
+   "name": "Potential bucket used",
+   "note": "conservative uses full potential; expected uses probability-weighted potential; optimistic uses none",
+   "source_fact_id": null,
+   "value": "expected"
+  },
+  {
+   "display_value": "optimistic",
+   "name": "Potential bucket used",
+   "note": "conservative uses full potential; expected uses probability-weighted potential; optimistic uses none",
+   "source_fact_id": null,
+   "value": "optimistic"
+  }
+ ],
+ "key": "value.expected",
+ "resolution": {
+  "method": "weighted_blend_v1",
+  "reason": "Each candidate's weight reflects source type, reported confidence, recency, and comparable quality.",
+  "resolution_version": null,
+  "winner_description": "All valuation candidates contribute; none is chosen alone."
+ },
+ "scoring_config_id": null,
+ "sensitivity": [
+  {
+   "delta": "-45000.00",
+   "effect": "Equity and cash-strategy profit fall by roughly 45000; the overall score falls with them.",
+   "question": "If the expected value were 10% lower?"
+  }
+ ],
+ "source_facts": [],
+ "steps": [
+  {
+   "display_result": "265000",
+   "formula": "confirmed += reported/derived balance",
+   "label": "Confirmed mortgage balance (1)",
+   "order": 1,
+   "result": "265000.00",
+   "substitution": "balance=265000, basis=recorded, bucket=reported"
+  },
+  {
+   "display_result": "265000",
+   "formula": "\u03a3 confirmed mortgage balances + confirmed liens + delinquent taxes/hoa arrears",
+   "label": "Confirmed obligations total",
+   "order": 2,
+   "result": "265000.00",
+   "substitution": "265000"
+  },
+  {
+   "display_result": "0",
+   "formula": "\u03a3 potential amounts (owner-named liens, undrawn HELOC capacity, unknown-amount medians)",
+   "label": "Potential obligations total",
+   "order": 3,
+   "result": "0",
+   "substitution": "0"
+  },
+  {
+   "display_result": "265000",
+   "formula": "confirmed + potential",
+   "label": "Maximum exposure",
+   "order": 4,
+   "result": "265000.00",
+   "substitution": "265000 + 0"
+  },
+  {
+   "display_result": "1",
+   "formula": "weight = base_weight \u00d7 adjustments",
+   "label": "Valuation candidate weight (comp)",
+   "order": 5,
+   "result": "1.000000",
+   "substitution": "1 \u00d7 1"
+  },
+  {
+   "display_result": "450000",
+   "formula": "\u03a3(value \u00d7 adjusted weight) / \u03a3(adjusted weights)",
+   "label": "Weighted valuation sum",
+   "order": 6,
+   "result": "450000.00",
+   "substitution": "(450000 \u00d7 1)"
+  },
+  {
+   "display_result": "1",
+   "formula": "\u03a3(adjusted weights)",
+   "label": "Total candidate weight",
+   "order": 7,
+   "result": "1.000000",
+   "substitution": "1"
+  },
+  {
+   "display_result": "450000",
+   "formula": "weighted_sum / weight_sum",
+   "label": "Expected value",
+   "order": 8,
+   "result": "450000.00",
+   "substitution": "450000 / 1"
+  },
+  {
+   "display_result": "382500",
+   "formula": "V \u00d7 (1 \u2212 dispersion), clamped up to the lowest comparable evidence",
+   "label": "Conservative value (V low)",
+   "order": 9,
+   "result": "382500.00",
+   "substitution": "450000 \u00d7 (1 \u2212 0.15)"
+  },
+  {
+   "display_result": "517500",
+   "formula": "V \u00d7 (1 + dispersion), clamped down to the highest comparable evidence",
+   "label": "Optimistic value (V high)",
+   "order": 10,
+   "result": "517500.00",
+   "substitution": "450000 \u00d7 (1 + 0.15)"
+  },
+  {
+   "display_result": "71400",
+   "formula": "sqft \u00d7 $/sqft(condition) \u00d7 regional index",
+   "label": "Base repair budget",
+   "order": 11,
+   "result": "71400.00",
+   "substitution": "1700 \u00d7 42 \u00d7 1"
+  },
+  {
+   "display_result": "99960",
+   "formula": "repair_base \u00d7 scenario multiplier",
+   "label": "Repairs (conservative)",
+   "order": 12,
+   "result": "99960.00",
+   "substitution": "71400 \u00d7 1.4"
+  },
+  {
+   "display_result": "71400",
+   "formula": "repair_base \u00d7 scenario multiplier",
+   "label": "Repairs (expected)",
+   "order": 13,
+   "result": "71400.00",
+   "substitution": "71400 \u00d7 1"
+  },
+  {
+   "display_result": "53550",
+   "formula": "repair_base \u00d7 scenario multiplier",
+   "label": "Repairs (optimistic)",
+   "order": 14,
+   "result": "53550.00",
+   "substitution": "71400 \u00d7 0.75"
+  },
+  {
+   "display_result": "0.025",
+   "formula": "closing% + title% + acquisition fee% + transfer tax%",
+   "label": "Acquisition cost rate",
+   "order": 15,
+   "result": "0.025",
+   "substitution": "closing 0.01 + title 0.005 + fee 0.01 + transfer tax 0"
+  },
+  {
+   "display_result": "3600",
+   "formula": "escrow + inspection + legal",
+   "label": "Acquisition flat costs",
+   "order": 16,
+   "result": "3600",
+   "substitution": "1500 + 600 + 1500"
+  },
+  {
+   "display_result": "0.0725",
+   "formula": "commission% + seller closing% + concessions% + misc%",
+   "label": "Resale cost rate",
+   "order": 17,
+   "result": "0.0725",
+   "substitution": "0.05 + 0.01 + 0.01 + 0.0025"
+  },
+  {
+   "display_result": "8",
+   "formula": "acquisition months + repair months(condition) + market days / 30",
+   "label": "Holding period (base)",
+   "order": 18,
+   "result": "8",
+   "substitution": "8"
+  },
+  {
+   "display_result": "12",
+   "formula": "base months \u00d7 scenario factor",
+   "label": "Holding period (conservative)",
+   "order": 19,
+   "result": "12.0000",
+   "substitution": "8 \u00d7 1.5"
+  },
+  {
+   "display_result": "875.94",
+   "formula": "annual taxes/12 + value \u00d7 (insurance%yr + maintenance%yr)/12 + utilities + HOA dues",
+   "label": "Monthly carrying cost (conservative)",
+   "order": 20,
+   "result": "875.94",
+   "substitution": "5100/12 + 382500\u00d7(0.0035+0.005)/12 + 180 + 0"
+  },
+  {
+   "display_result": "10511.28",
+   "formula": "monthly \u00d7 months",
+   "label": "Holding cost (conservative)",
+   "order": 21,
+   "result": "10511.28",
+   "substitution": "875.94 \u00d7 12"
+  },
+  {
+   "display_result": "13162.5",
+   "formula": "value \u00d7 acq_pct + flat",
+   "label": "Acquisition costs (conservative)",
+   "order": 22,
+   "result": "13162.50",
+   "substitution": "382500 \u00d7 0.025 + 3600"
+  },
+  {
+   "display_result": "27731.25",
+   "formula": "value \u00d7 resale%",
+   "label": "Resale costs (conservative)",
+   "order": 23,
+   "result": "27731.25",
+   "substitution": "382500 \u00d7 0.0725"
+  },
+  {
+   "display_result": "117500",
+   "formula": "value \u2212 confirmed obligations",
+   "label": "Gross equity (conservative)",
+   "order": 24,
+   "result": "117500.00",
+   "substitution": "382500 \u2212 265000"
+  },
+  {
+   "display_result": "117500",
+   "formula": "value \u2212 confirmed \u2212 scenario potential bucket",
+   "label": "Adjusted equity (conservative)",
+   "order": 25,
+   "result": "117500.00",
+   "substitution": "382500 \u2212 265000 \u2212 0"
+  },
+  {
+   "display_result": "79257.47",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 confirmed \u2212 potential \u2212 holding",
+   "label": "Net realizable equity (conservative)",
+   "order": 26,
+   "result": "79257.47",
+   "substitution": "382500 \u00d7 (1\u22120.0725) \u2212 265000 \u2212 0 \u2212 10511.28"
+  },
+  {
+   "display_result": "482460",
+   "formula": "value + repairs (recapture multiplier 1.0)",
+   "label": "After-repair value ARV (conservative)",
+   "order": 27,
+   "result": "482460.00",
+   "substitution": "382500 + 99960"
+  },
+  {
+   "display_result": "8",
+   "formula": "base months \u00d7 scenario factor",
+   "label": "Holding period (expected)",
+   "order": 28,
+   "result": "8.0000",
+   "substitution": "8 \u00d7 1"
+  },
+  {
+   "display_result": "923.75",
+   "formula": "annual taxes/12 + value \u00d7 (insurance%yr + maintenance%yr)/12 + utilities + HOA dues",
+   "label": "Monthly carrying cost (expected)",
+   "order": 29,
+   "result": "923.75",
+   "substitution": "5100/12 + 450000\u00d7(0.0035+0.005)/12 + 180 + 0"
+  },
+  {
+   "display_result": "7390",
+   "formula": "monthly \u00d7 months",
+   "label": "Holding cost (expected)",
+   "order": 30,
+   "result": "7390.00",
+   "substitution": "923.75 \u00d7 8"
+  },
+  {
+   "display_result": "14850",
+   "formula": "value \u00d7 acq_pct + flat",
+   "label": "Acquisition costs (expected)",
+   "order": 31,
+   "result": "14850.00",
+   "substitution": "450000 \u00d7 0.025 + 3600"
+  },
+  {
+   "display_result": "32625",
+   "formula": "value \u00d7 resale%",
+   "label": "Resale costs (expected)",
+   "order": 32,
+   "result": "32625.00",
+   "substitution": "450000 \u00d7 0.0725"
+  },
+  {
+   "display_result": "185000",
+   "formula": "value \u2212 confirmed obligations",
+   "label": "Gross equity (expected)",
+   "order": 33,
+   "result": "185000.00",
+   "substitution": "450000 \u2212 265000"
+  },
+  {
+   "display_result": "185000",
+   "formula": "value \u2212 confirmed \u2212 scenario potential bucket",
+   "label": "Adjusted equity (expected)",
+   "order": 34,
+   "result": "185000.00",
+   "substitution": "450000 \u2212 265000 \u2212 0"
+  },
+  {
+   "display_result": "144985",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 confirmed \u2212 potential \u2212 holding",
+   "label": "Net realizable equity (expected)",
+   "order": 35,
+   "result": "144985.00",
+   "substitution": "450000 \u00d7 (1\u22120.0725) \u2212 265000 \u2212 0 \u2212 7390"
+  },
+  {
+   "display_result": "521400",
+   "formula": "value + repairs (recapture multiplier 1.0)",
+   "label": "After-repair value ARV (expected)",
+   "order": 36,
+   "result": "521400.00",
+   "substitution": "450000 + 71400"
+  },
+  {
+   "display_result": "6",
+   "formula": "base months \u00d7 scenario factor",
+   "label": "Holding period (optimistic)",
+   "order": 37,
+   "result": "6.0000",
+   "substitution": "8 \u00d7 0.75"
+  },
+  {
+   "display_result": "971.56",
+   "formula": "annual taxes/12 + value \u00d7 (insurance%yr + maintenance%yr)/12 + utilities + HOA dues",
+   "label": "Monthly carrying cost (optimistic)",
+   "order": 38,
+   "result": "971.56",
+   "substitution": "5100/12 + 517500\u00d7(0.0035+0.005)/12 + 180 + 0"
+  },
+  {
+   "display_result": "5829.36",
+   "formula": "monthly \u00d7 months",
+   "label": "Holding cost (optimistic)",
+   "order": 39,
+   "result": "5829.36",
+   "substitution": "971.56 \u00d7 6"
+  },
+  {
+   "display_result": "16537.5",
+   "formula": "value \u00d7 acq_pct + flat",
+   "label": "Acquisition costs (optimistic)",
+   "order": 40,
+   "result": "16537.50",
+   "substitution": "517500 \u00d7 0.025 + 3600"
+  },
+  {
+   "display_result": "37518.75",
+   "formula": "value \u00d7 resale%",
+   "label": "Resale costs (optimistic)",
+   "order": 41,
+   "result": "37518.75",
+   "substitution": "517500 \u00d7 0.0725"
+  },
+  {
+   "display_result": "252500",
+   "formula": "value \u2212 confirmed obligations",
+   "label": "Gross equity (optimistic)",
+   "order": 42,
+   "result": "252500.00",
+   "substitution": "517500 \u2212 265000"
+  },
+  {
+   "display_result": "252500",
+   "formula": "value \u2212 confirmed \u2212 scenario potential bucket",
+   "label": "Adjusted equity (optimistic)",
+   "order": 43,
+   "result": "252500.00",
+   "substitution": "517500 \u2212 265000 \u2212 0"
+  },
+  {
+   "display_result": "209151.89",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 confirmed \u2212 potential \u2212 holding",
+   "label": "Net realizable equity (optimistic)",
+   "order": 44,
+   "result": "209151.89",
+   "substitution": "517500 \u00d7 (1\u22120.0725) \u2212 265000 \u2212 0 \u2212 5829.36"
+  },
+  {
+   "display_result": "571050",
+   "formula": "value + repairs (recapture multiplier 1.0)",
+   "label": "After-repair value ARV (optimistic)",
+   "order": 45,
+   "result": "571050.00",
+   "substitution": "517500 + 53550"
+  }
+ ],
+ "title": "Expected market value",
+ "unresolved_dependencies": [],
+ "value": "450000.00",
+ "value_kind": "calculated",
+ "warnings": []
+}

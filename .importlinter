@@ -16,6 +16,7 @@ root_packages =
     flags
     identity
     ingestion
+    explanation
     jobs
     normalization
     ops

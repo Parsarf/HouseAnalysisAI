@@ -14,6 +14,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import UUID
 
+from common.trace import TraceRecorder, show
 from contracts import (
     AttachmentBasis,
     NormalizedProperty,
@@ -25,6 +26,7 @@ from contracts import (
 )
 
 ZERO = Decimal(0)
+ENGINE_VERSION = "scoring-3"
 ONE = Decimal(1)
 HUNDRED = Decimal(100)
 DAYS_PER_MONTH = Decimal("30.4375")
@@ -444,7 +446,7 @@ def _risk(record: NormalizedProperty, config: Mapping[str, Any], dcs: Decimal) -
 
 def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_config_id: UUID,
           strategies: list[StrategyResult] | None = None, config: Mapping[str, Any] | None = None,
-          as_of: date | None = None) -> ScoreSet:
+          as_of: date | None = None, trace: TraceRecorder | None = None) -> ScoreSet:
     """Score a property per spec section 10. ``config`` is a scoring_configs
     row (or partial override dict); when omitted the in-code DEFAULT_CONFIG is
     used. ``as_of`` anchors all recency math (defaults to today)."""
@@ -462,11 +464,34 @@ def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_
     margin = best.margin_of_safety if best else None
     if expected_value and best and best.mao is not None:
         discount = _q((expected_value - best.mao) / expected_value, Decimal("0.000001"))
+        if trace is not None:
+            trace.step(label="Discount to value",
+                       formula="(expected value − best MAO) / expected value",
+                       inputs={"expected value": expected_value, "best MAO": best.mao},
+                       substitution=f"({show(expected_value)} − {show(best.mao)}) / {show(expected_value)}",
+                       result=discount)
     else:
         discount = ZERO
+        if trace is not None:
+            trace.unresolved("Discount to value: no viable recommended strategy with an MAO, "
+                             "so the discount term is zero.")
 
     fos, fos_norm = _fos(resolved, profit, roi, equity_pct, discount, margin)
     fos = _q(fos, Decimal("0.0001"))
+    if trace is not None:
+        fos_weights = _weights(resolved, "fos")
+        for key in ("profit", "roi", "equity_pct", "discount_to_value", "margin_of_safety"):
+            low_b, high_b = _bound(resolved, key)
+            raw_value = {"profit": profit, "roi": roi, "equity_pct": equity_pct,
+                         "discount_to_value": discount, "margin_of_safety": margin}[key]
+            normalized_value = fos_norm.get(f"fos_{key}_norm")
+            trace.step(label=f"Financial Opportunity term: {key.replace('_', ' ')}",
+                       formula=f"clamp(({key} − {show(low_b)}) / ({show(high_b)} − {show(low_b)}), 0, 1) × weight {show(fos_weights[key])}",
+                       inputs={"raw": raw_value, "weight": fos_weights[key]},
+                       substitution=f"{show(raw_value)} → {show(normalized_value)} × {show(fos_weights[key])}",
+                       result=_q(HUNDRED * fos_weights[key] * (normalized_value or ZERO), Decimal("0.0001")))
+            if raw_value is None:
+                trace.unresolved(f"Financial Opportunity term '{key}' had no input value and contributes nothing.")
     distress, distress_terms = _distress(record, resolved, as_of, equity_pct)
     dcs, dcs_terms = _dcs(record, resolved, as_of)
     risk, risk_terms = _risk(record, resolved, dcs)
@@ -477,6 +502,14 @@ def score(record: NormalizedProperty, underwriting: UnderwritingResult, scoring_
         overall_weights["fos"] * fos + overall_weights["distress"] * distress
         + overall_weights["dcs"] * dcs - overall_weights["risk"] * risk
     )
+    if trace is not None:
+        trace.step(label="Overall score",
+                   formula="fos×w_fos + distress×w_distress + dcs×w_dcs − risk×w_risk, clamped to 0-100",
+                   inputs={"FoS weight": overall_weights["fos"], "distress weight": overall_weights["distress"],
+                           "DCS weight": overall_weights["dcs"], "risk weight": overall_weights["risk"]},
+                   substitution=f"{show(fos)}×{show(overall_weights['fos'])} + {show(distress)}×{show(overall_weights['distress'])}"
+                               f" + {show(dcs)}×{show(overall_weights['dcs'])} − {show(risk)}×{show(overall_weights['risk'])}",
+                   result=overall)
 
     gates: list[str] = []
     if underwriting.status != "ok":

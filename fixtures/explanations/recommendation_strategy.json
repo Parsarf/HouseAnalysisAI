@@ -1,0 +1,34 @@
+{
+ "assumption_set_id": null,
+ "assumptions": [],
+ "candidates": [],
+ "children": [],
+ "confidence": null,
+ "conflicts": [],
+ "data_confidence": null,
+ "description": "ACQ recommends the viable strategy with the highest normalized expected profit at the current purchase-price basis; near-ties become alternatives.",
+ "display_value": null,
+ "engine": "scoring",
+ "engine_version": "scoring-3",
+ "formula": null,
+ "formula_display": null,
+ "inputs": [],
+ "key": "recommendation.strategy",
+ "resolution": {
+  "method": "none-viable",
+  "reason": "Every strategy was gated or unprofitable at this basis.",
+  "resolution_version": null,
+  "winner_description": "no viable strategies"
+ },
+ "scoring_config_id": null,
+ "sensitivity": [],
+ "source_facts": [],
+ "steps": [],
+ "title": "Recommended strategy",
+ "unresolved_dependencies": [
+  "No viable strategy at the current purchase price \u2014 nothing can be recommended yet."
+ ],
+ "value": null,
+ "value_kind": "estimated",
+ "warnings": []
+}

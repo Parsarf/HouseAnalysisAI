@@ -17,6 +17,15 @@ from .models import (
     EquityBlock,
     ErrorDetail,
     ErrorEnvelope,
+    ExplanationAssumption,
+    ExplanationCandidate,
+    ExplanationConflict,
+    ExplanationInput,
+    ExplanationResolution,
+    ExplanationSensitivity,
+    ExplanationSource,
+    ExplanationStep,
+    ExplanationTrace,
     ExtractedFactDraft,
     FailureCode,
     FilterClause,
@@ -66,6 +75,7 @@ from .models import (
     UnderwritingResult,
     ValuationCandidate,
     ValueBlock,
+    ValueKind,
 )
 
 __all__ = [name for name in globals() if not name.startswith("_")]

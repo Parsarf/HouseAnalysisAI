@@ -1,0 +1,276 @@
+{
+ "assumption_set_id": null,
+ "assumptions": [],
+ "candidates": [],
+ "children": [
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "185000",
+   "engine": "finance",
+   "engine_version": "finance-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "equity.expected.gross",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "Gross equity",
+   "unresolved_dependencies": [],
+   "value": "185000.00",
+   "value_kind": "calculated",
+   "warnings": []
+  },
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "185000",
+   "engine": "finance",
+   "engine_version": "finance-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "equity.expected.adjusted",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "Adjusted equity",
+   "unresolved_dependencies": [],
+   "value": "185000.00",
+   "value_kind": "calculated",
+   "warnings": []
+  },
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "144985",
+   "engine": "finance",
+   "engine_version": "finance-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "equity.expected.net_realizable",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "Net realizable equity",
+   "unresolved_dependencies": [],
+   "value": "144985.00",
+   "value_kind": "calculated",
+   "warnings": []
+  },
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "0.411111",
+   "engine": "finance",
+   "engine_version": "finance-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "equity.expected.equity_pct",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "Equity percentage",
+   "unresolved_dependencies": [],
+   "value": "0.411111",
+   "value_kind": "calculated",
+   "warnings": []
+  }
+ ],
+ "confidence": null,
+ "conflicts": [],
+ "data_confidence": null,
+ "description": "Equity is what remains for the seller after debt. Gross uses confirmed debt only; adjusted also subtracts this scenario's potential bucket; net realizable also subtracts resale costs and holding.",
+ "display_value": "185000",
+ "engine": "finance",
+ "engine_version": "finance-3",
+ "formula": "adjusted equity = value \u2212 confirmed \u2212 scenario potential bucket",
+ "formula_display": "adjusted equity = value \u2212 confirmed \u2212 scenario potential bucket",
+ "inputs": [
+  {
+   "display_value": null,
+   "name": "Liability line: mortgage:1",
+   "note": "bucket=reported; basis=recorded",
+   "source_fact_id": null,
+   "value": "265000.00"
+  },
+  {
+   "display_value": null,
+   "name": "Condition level",
+   "note": "reported condition",
+   "source_fact_id": null,
+   "value": "moderate"
+  },
+  {
+   "display_value": null,
+   "name": "Potential bucket used",
+   "note": "conservative uses full potential; expected uses probability-weighted potential; optimistic uses none",
+   "source_fact_id": null,
+   "value": "conservative"
+  },
+  {
+   "display_value": null,
+   "name": "Potential bucket used",
+   "note": "conservative uses full potential; expected uses probability-weighted potential; optimistic uses none",
+   "source_fact_id": null,
+   "value": "expected"
+  },
+  {
+   "display_value": null,
+   "name": "Potential bucket used",
+   "note": "conservative uses full potential; expected uses probability-weighted potential; optimistic uses none",
+   "source_fact_id": null,
+   "value": "optimistic"
+  },
+  {
+   "display_value": null,
+   "name": "Potential bucket used",
+   "note": "conservative subtracts full potential; expected subtracts the probability-weighted amount; optimistic subtracts nothing",
+   "source_fact_id": null,
+   "value": "expected"
+  }
+ ],
+ "key": "equity.expected",
+ "resolution": null,
+ "scoring_config_id": null,
+ "sensitivity": [
+  {
+   "delta": "-45000.00",
+   "effect": "Expected equity falls by about 45000 (equity moves dollar-for-dollar with value).",
+   "question": "If this property's value were 10% lower?"
+  }
+ ],
+ "source_facts": [],
+ "steps": [
+  {
+   "display_result": "265000",
+   "formula": "\u03a3 confirmed mortgage balances + confirmed liens + delinquent taxes/hoa arrears",
+   "label": "Confirmed obligations total",
+   "order": 1,
+   "result": "265000.00",
+   "substitution": "265000"
+  },
+  {
+   "display_result": "0",
+   "formula": "\u03a3 potential amounts (owner-named liens, undrawn HELOC capacity, unknown-amount medians)",
+   "label": "Potential obligations total",
+   "order": 2,
+   "result": "0",
+   "substitution": "0"
+  },
+  {
+   "display_result": "117500",
+   "formula": "value \u2212 confirmed obligations",
+   "label": "Gross equity (conservative)",
+   "order": 3,
+   "result": "117500.00",
+   "substitution": "382500 \u2212 265000"
+  },
+  {
+   "display_result": "117500",
+   "formula": "value \u2212 confirmed \u2212 scenario potential bucket",
+   "label": "Adjusted equity (conservative)",
+   "order": 4,
+   "result": "117500.00",
+   "substitution": "382500 \u2212 265000 \u2212 0"
+  },
+  {
+   "display_result": "79257.47",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 confirmed \u2212 potential \u2212 holding",
+   "label": "Net realizable equity (conservative)",
+   "order": 5,
+   "result": "79257.47",
+   "substitution": "382500 \u00d7 (1\u22120.0725) \u2212 265000 \u2212 0 \u2212 10511.28"
+  },
+  {
+   "display_result": "185000",
+   "formula": "value \u2212 confirmed obligations",
+   "label": "Gross equity (expected)",
+   "order": 6,
+   "result": "185000.00",
+   "substitution": "450000 \u2212 265000"
+  },
+  {
+   "display_result": "185000",
+   "formula": "value \u2212 confirmed \u2212 scenario potential bucket",
+   "label": "Adjusted equity (expected)",
+   "order": 7,
+   "result": "185000.00",
+   "substitution": "450000 \u2212 265000 \u2212 0"
+  },
+  {
+   "display_result": "144985",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 confirmed \u2212 potential \u2212 holding",
+   "label": "Net realizable equity (expected)",
+   "order": 8,
+   "result": "144985.00",
+   "substitution": "450000 \u00d7 (1\u22120.0725) \u2212 265000 \u2212 0 \u2212 7390"
+  },
+  {
+   "display_result": "252500",
+   "formula": "value \u2212 confirmed obligations",
+   "label": "Gross equity (optimistic)",
+   "order": 9,
+   "result": "252500.00",
+   "substitution": "517500 \u2212 265000"
+  },
+  {
+   "display_result": "252500",
+   "formula": "value \u2212 confirmed \u2212 scenario potential bucket",
+   "label": "Adjusted equity (optimistic)",
+   "order": 10,
+   "result": "252500.00",
+   "substitution": "517500 \u2212 265000 \u2212 0"
+  },
+  {
+   "display_result": "209151.89",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 confirmed \u2212 potential \u2212 holding",
+   "label": "Net realizable equity (optimistic)",
+   "order": 11,
+   "result": "209151.89",
+   "substitution": "517500 \u00d7 (1\u22120.0725) \u2212 265000 \u2212 0 \u2212 5829.36"
+  }
+ ],
+ "title": "Expected equity",
+ "unresolved_dependencies": [],
+ "value": "185000.00",
+ "value_kind": "calculated",
+ "warnings": [
+  "Equity depends on the estimated market value and liability completeness; undiscovered liens would reduce it."
+ ]
+}

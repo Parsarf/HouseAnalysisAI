@@ -1,0 +1,97 @@
+{
+ "assumption_set_id": "10000000-0000-0000-0000-000000000001",
+ "assumptions": [
+  {
+   "assumption_set_id": null,
+   "display_value": "{'cosmetic': '18', 'moderate': '42', 'heavy': '78', 'gut': '135'}",
+   "name": "Repair $/sqft by condition",
+   "note": null,
+   "value": {
+    "cosmetic": "18",
+    "gut": "135",
+    "heavy": "78",
+    "moderate": "42"
+   }
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "1",
+   "name": "Regional repair index",
+   "note": null,
+   "value": "1"
+  },
+  {
+   "assumption_set_id": null,
+   "display_value": "{'cosmetic': Decimal('18'), 'moderate': Decimal('42'), 'heavy': Decimal('78'), 'gut': Decimal('135')}",
+   "name": "$ per sqft by condition",
+   "note": null,
+   "value": "{'cosmetic': Decimal('18'), 'moderate': Decimal('42'), 'heavy': Decimal('78'), 'gut': Decimal('135')}"
+  }
+ ],
+ "candidates": [],
+ "children": [],
+ "confidence": null,
+ "conflicts": [],
+ "data_confidence": null,
+ "description": "ACQ estimates repairs from square footage and condition using fixed $/sqft assumptions \u2014 never from an LLM-provided dollar figure.",
+ "display_value": "71400",
+ "engine": "finance",
+ "engine_version": "finance-3",
+ "formula": "sqft \u00d7 $/sqft(condition) \u00d7 regional index \u00d7 scenario multiplier",
+ "formula_display": "sqft \u00d7 $/sqft(condition) \u00d7 regional index \u00d7 scenario multiplier",
+ "inputs": [
+  {
+   "display_value": "moderate",
+   "name": "Condition level",
+   "note": "reported condition",
+   "source_fact_id": null,
+   "value": "moderate"
+  }
+ ],
+ "key": "repairs.expected",
+ "resolution": null,
+ "scoring_config_id": null,
+ "sensitivity": [],
+ "source_facts": [],
+ "steps": [
+  {
+   "display_result": "71400",
+   "formula": "sqft \u00d7 $/sqft(condition) \u00d7 regional index",
+   "label": "Base repair budget",
+   "order": 1,
+   "result": "71400.00",
+   "substitution": "1700 \u00d7 42 \u00d7 1"
+  },
+  {
+   "display_result": "99960",
+   "formula": "repair_base \u00d7 scenario multiplier",
+   "label": "Repairs (conservative)",
+   "order": 2,
+   "result": "99960.00",
+   "substitution": "71400 \u00d7 1.4"
+  },
+  {
+   "display_result": "71400",
+   "formula": "repair_base \u00d7 scenario multiplier",
+   "label": "Repairs (expected)",
+   "order": 3,
+   "result": "71400.00",
+   "substitution": "71400 \u00d7 1"
+  },
+  {
+   "display_result": "53550",
+   "formula": "repair_base \u00d7 scenario multiplier",
+   "label": "Repairs (optimistic)",
+   "order": 4,
+   "result": "53550.00",
+   "substitution": "71400 \u00d7 0.75"
+  }
+ ],
+ "title": "Repair budget (expected)",
+ "unresolved_dependencies": [],
+ "value": "71400.00",
+ "value_kind": "estimated",
+ "warnings": [
+  "Planning estimate from published $/sqft assumptions, not a contractor bid."
+ ]
+}

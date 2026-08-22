@@ -493,11 +493,11 @@ def has_grounded_debt(record: NormalizedProperty) -> bool:
     )
 
 
-def underwrite_canonical(record: NormalizedProperty, assumptions) -> UnderwritingResult:
+def underwrite_canonical(record: NormalizedProperty, assumptions, trace=None) -> UnderwritingResult:
     """Run legacy finance math with a null-safe debt boundary for canonical data."""
     from finance import underwrite
 
-    result = underwrite(record, assumptions)
+    result = underwrite(record, assumptions, trace=trace)
     if has_grounded_debt(record) or result.status != "ok":
         return result
     return result.model_copy(update={

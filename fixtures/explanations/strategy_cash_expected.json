@@ -1,0 +1,206 @@
+{
+ "assumption_set_id": "10000000-0000-0000-0000-000000000001",
+ "assumptions": [
+  {
+   "assumption_set_id": "10000000-0000-0000-0000-000000000001",
+   "display_value": "default v1",
+   "name": "Assumption set",
+   "note": null,
+   "value": "default v1"
+  }
+ ],
+ "candidates": [],
+ "children": [
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "239009.76",
+   "engine": "strategies",
+   "engine_version": "strategies-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "strategy.cash.expected.mao",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "Maximum Allowable Offer",
+   "unresolved_dependencies": [],
+   "value": "239009.76",
+   "value_kind": "calculated",
+   "warnings": []
+  },
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "492390",
+   "engine": "strategies",
+   "engine_version": "strategies-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "strategy.cash.expected.all_in_basis",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "All-in basis",
+   "unresolved_dependencies": [],
+   "value": "492390.00",
+   "value_kind": "calculated",
+   "warnings": []
+  },
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "-0.152349",
+   "engine": "strategies",
+   "engine_version": "strategies-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "strategy.cash.expected.roi",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "ROI",
+   "unresolved_dependencies": [],
+   "value": "-0.152349",
+   "value_kind": "calculated",
+   "warnings": []
+  },
+  {
+   "assumption_set_id": null,
+   "assumptions": [],
+   "candidates": [],
+   "children": [],
+   "confidence": null,
+   "conflicts": [],
+   "data_confidence": null,
+   "description": "",
+   "display_value": "-0.0942",
+   "engine": "strategies",
+   "engine_version": "strategies-3",
+   "formula": null,
+   "formula_display": null,
+   "inputs": [],
+   "key": "strategy.cash.expected.margin_of_safety",
+   "resolution": null,
+   "scoring_config_id": null,
+   "sensitivity": [],
+   "source_facts": [],
+   "steps": [],
+   "title": "Margin of safety",
+   "unresolved_dependencies": [],
+   "value": "-0.094200",
+   "value_kind": "calculated",
+   "warnings": []
+  }
+ ],
+ "confidence": null,
+ "conflicts": [],
+ "data_confidence": null,
+ "description": "Buy with cash and resell at the as-is value. Profit = value after resale costs minus everything paid.",
+ "display_value": "-75015",
+ "engine": "strategies",
+ "engine_version": "strategies-3",
+ "formula": "profit = value \u00d7 (1 \u2212 resale%) \u2212 (purchase + acquisition + repairs + holding)",
+ "formula_display": "profit = value \u00d7 (1 \u2212 resale%) \u2212 (purchase + acquisition + repairs + holding)",
+ "inputs": [
+  {
+   "display_value": null,
+   "name": "purchase price used",
+   "note": "from the latest saved offer or recompute; the reported ownership purchase price is the fallback",
+   "source_fact_id": null,
+   "value": "400000"
+  }
+ ],
+ "key": "strategy.cash.expected",
+ "resolution": null,
+ "scoring_config_id": null,
+ "sensitivity": [
+  {
+   "delta": null,
+   "effect": "Profit falls by roughly 45000.",
+   "question": "What if the value were 10% lower?"
+  },
+  {
+   "delta": null,
+   "effect": "Profit falls by about 17850.",
+   "question": "What if repairs ran 25% over budget?"
+  }
+ ],
+ "source_facts": [],
+ "steps": [
+  {
+   "display_result": "13600",
+   "formula": "purchase \u00d7 acq% + flat",
+   "label": "Acquisition costs",
+   "order": 1,
+   "result": "13600.00",
+   "substitution": "400000 \u00d7 0.025 + 3600"
+  },
+  {
+   "display_result": "492390",
+   "formula": "purchase + acquisition + repairs + holding",
+   "label": "All-in basis",
+   "order": 2,
+   "result": "492390.00",
+   "substitution": "400000 + 13600 + 71400 + 7390"
+  },
+  {
+   "display_result": "-75015",
+   "formula": "value \u00d7 (1 \u2212 resale%) \u2212 all-in basis",
+   "label": "Cash profit",
+   "order": 3,
+   "result": "-75015.00",
+   "substitution": "450000 \u00d7 (1 \u2212 0.0725) \u2212 492390"
+  },
+  {
+   "display_result": "239009.76",
+   "formula": "MAO solves profit = target margin: (value \u00d7 (1 \u2212 margin) \u2212 repairs \u2212 holding \u2212 resale \u2212 flat) / (1 + acq%)",
+   "label": "Maximum Allowable Offer (cash)",
+   "order": 4,
+   "result": "239009.76",
+   "substitution": "value=450000, margin=0.2, repairs=71400, holding=7390, resale=32625"
+  },
+  {
+   "display_result": "not_viable",
+   "formula": "viable when profit \u2265 0",
+   "label": "Status",
+   "order": 5,
+   "result": "not_viable",
+   "substitution": "-75015"
+  }
+ ],
+ "title": "Cash strategy (expected)",
+ "unresolved_dependencies": [],
+ "value": "-75015.00",
+ "value_kind": "calculated",
+ "warnings": [
+  "Not viable at this purchase price: the computed profit is negative."
+ ]
+}

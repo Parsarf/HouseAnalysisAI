@@ -36,6 +36,7 @@ from typing import overload
 
 from common.mortgage import is_first, position_key
 from common.rates import estimate_balance
+from common.trace import TraceRecorder, show
 from contracts import (
     AssumptionSet,
     AttachmentBasis,
@@ -53,6 +54,7 @@ from contracts import (
 from finance.transfer_tax import transfer_tax_rate
 
 ZERO = Decimal(0)
+ENGINE_VERSION = "strategies-3"
 ONE = Decimal(1)
 Q2 = Decimal("0.01")
 Q4 = Decimal("0.0001")
@@ -254,7 +256,8 @@ def _resale_flip(arv: Decimal, assumptions: AssumptionSet) -> Decimal:
     return _q(arv * _resale_pct(assumptions) + assumptions.resale.staging_flat)
 
 
-def cash(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, purchase_price: Decimal, scenario: Scenario) -> StrategyResult:
+def cash(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, purchase_price: Decimal, scenario: Scenario,
+         trace: TraceRecorder | None = None) -> StrategyResult:
     with localcontext() as ctx:
         ctx.prec = PRECISION
         value = _v_as_is(underwriting, scenario)
@@ -263,10 +266,42 @@ def cash(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
             return _unavailable(StrategyType.CASH, scenario, "no_value_data", purchase_price)
         if purchase_price <= ZERO:
             return _unavailable(StrategyType.CASH, scenario, "invalid_purchase_price", purchase_price)
-        acquisition = _acquisition_cost(purchase_price, assumptions)
+        acquisition_pct = _acquisition_pct(assumptions)
+        acquisition_flat = _acquisition_flat(assumptions)
+        resale_pct = _resale_pct(assumptions)
+        acquisition = _q(purchase_price * acquisition_pct + acquisition_flat)
         all_in = _q(purchase_price + acquisition + cost.repairs + cost.holding)
-        profit = _q(value * (ONE - _resale_pct(assumptions)) - all_in)
+        profit = _q(value * (ONE - resale_pct) - all_in)
         mao = _cash_mao(value, cost, assumptions)
+        if trace is not None:
+            trace.assumption("Assumption set", f"{assumptions.name} v{assumptions.version}",
+                             assumption_set_id=assumptions.id)
+            trace.step(label="Acquisition costs",
+                       formula="purchase × acq% + flat",
+                       inputs={"purchase price": purchase_price, "acq rate": acquisition_pct, "flat": acquisition_flat},
+                       substitution=f"{show(purchase_price)} × {show(acquisition_pct)} + {show(acquisition_flat)}",
+                       result=acquisition)
+            trace.step(label="All-in basis",
+                       formula="purchase + acquisition + repairs + holding",
+                       inputs={"purchase": purchase_price, "acquisition": acquisition,
+                               "repairs": cost.repairs, "holding": cost.holding},
+                       substitution=f"{show(purchase_price)} + {show(acquisition)} + {show(cost.repairs)} + {show(cost.holding)}",
+                       result=all_in)
+            trace.step(label="Cash profit",
+                       formula="value × (1 − resale%) − all-in basis",
+                       inputs={"as-is value": value, "resale rate": resale_pct, "all-in basis": all_in},
+                       substitution=f"{show(value)} × (1 − {show(resale_pct)}) − {show(all_in)}",
+                       result=profit)
+            trace.step(label="Maximum Allowable Offer (cash)",
+                       formula="MAO solves profit = target margin: "
+                               "(value × (1 − margin) − repairs − holding − resale − flat) / (1 + acq%)",
+                       inputs={"target margin": assumptions.strategy.cash_target_margin},
+                       substitution=f"value={show(value)}, margin={show(assumptions.strategy.cash_target_margin)}, "
+                                    f"repairs={show(cost.repairs)}, holding={show(cost.holding)}, resale={show(cost.resale)}",
+                       result=mao)
+            trace.step(label="Status", formula="viable when profit ≥ 0",
+                       inputs={"profit": profit}, substitution=show(profit),
+                       result="viable" if profit >= 0 else "not_viable")
         return StrategyResult(strategy=StrategyType.CASH, scenario=scenario,
                               status="viable" if profit >= 0 else "not_viable",
                               mao=mao, all_in_basis=all_in, profit=profit,
@@ -275,7 +310,8 @@ def cash(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
                               inputs_echo=_echo(purchase_price))
 
 
-def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, purchase_price: Decimal, scenario: Scenario = Scenario.EXPECTED) -> StrategyResult:
+def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptions: AssumptionSet, purchase_price: Decimal, scenario: Scenario = Scenario.EXPECTED,
+         trace: TraceRecorder | None = None) -> StrategyResult:
     with localcontext() as ctx:
         ctx.prec = PRECISION
         value = _v_as_is(underwriting, scenario)
@@ -298,9 +334,48 @@ def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
         down = _q(purchase_price + cost.repairs - loan)
         coc_denominator = down + cost.holding + acquisition
         margin_target = _flip_margin(assumptions.strategy.flip_target_margin_by_arv_band, arv)
+        mao = _flip_mao(arv, cost, resale_flip, margin_target, assumptions, months)
+        if trace is not None:
+            trace.assumption("Assumption set", f"{assumptions.name} v{assumptions.version}",
+                             assumption_set_id=assumptions.id)
+            trace.assumption("Hard money", {"rate": show(rate), "points": show(points), "LTV": show(ltv)})
+            trace.step(label="Hard-money loan",
+                       formula="LTV × (purchase + repairs)",
+                       inputs={"LTV": ltv, "purchase": purchase_price, "repairs": cost.repairs},
+                       substitution=f"{show(ltv)} × ({show(purchase_price)} + {show(cost.repairs)})",
+                       result=loan)
+            trace.step(label="Financing cost",
+                       formula="points × loan + flat fee + loan × rate/12 × months",
+                       inputs={"points": points, "loan": loan, "rate": rate, "months": months},
+                       substitution=f"{show(points)}×{show(loan)} + {show(assumptions.acquisition.financing_flat)} "
+                                    f"+ {show(loan)}×{show(rate)}/12×{show(months)}",
+                       result=financing)
+            trace.step(label="Flip resale costs",
+                       formula="ARV × resale% + staging flat (staging is flip-only)",
+                       inputs={"ARV": arv, "staging": assumptions.resale.staging_flat},
+                       substitution=f"{show(arv)} × {show(_resale_pct(assumptions))} + {show(assumptions.resale.staging_flat)}",
+                       result=resale_flip)
+            trace.step(label="All-in basis",
+                       formula="purchase + repairs + holding + financing + acquisition + flip resale",
+                       substitution=f"{show(purchase_price)} + {show(cost.repairs)} + {show(cost.holding)} + "
+                                    f"{show(financing)} + {show(acquisition)} + {show(resale_flip)}",
+                       result=all_in)
+            trace.step(label="Flip profit",
+                       formula="ARV − all-in basis",
+                       inputs={"ARV": arv, "all-in basis": all_in},
+                       substitution=f"{show(arv)} − {show(all_in)}", result=profit)
+            trace.step(label="Maximum Allowable Offer (flip)",
+                       formula="solves ARV − MAO×(1+acq%) − repairs − holding − financing(MAO-dependent) "
+                               "− flat fees = margin × ARV algebraically; financing coefficient = LTV × (points + rate/12 × months)",
+                       inputs={"target margin": margin_target, "financing coefficient": ltv * (points + rate / Decimal(12) * months)},
+                       substitution=f"ARV={show(arv)}, margin={show(margin_target)}, repairs={show(cost.repairs)}, "
+                                    f"holding={show(cost.holding)}, resale={show(resale_flip)}",
+                       result=mao)
+            trace.warning("Flip profit depends on the estimated after-repair value and the repair budget; "
+                          "verify both before relying on this number.")
         return StrategyResult(strategy=StrategyType.FLIP, scenario=scenario,
                               status="viable" if profit >= 0 else "not_viable",
-                              mao=_flip_mao(arv, cost, resale_flip, margin_target, assumptions, months),
+                              mao=mao,
                               all_in_basis=all_in, profit=profit,
                               roi=_q(profit / all_in, Q6) if all_in else None,
                               margin_of_safety=_q((arv - all_in) / arv, Q6) if arv else None,
@@ -310,7 +385,8 @@ def flip(record: NormalizedProperty, underwriting: UnderwritingResult, assumptio
                               inputs_echo=_echo(purchase_price))
 
 
-def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, contract_price: Decimal, scenario: Scenario, data_confidence: Decimal | None = None, wholesale_min: Decimal = Decimal(60)) -> StrategyResult:
+def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, contract_price: Decimal, scenario: Scenario, data_confidence: Decimal | None = None, wholesale_min: Decimal = Decimal(60),
+              trace: TraceRecorder | None = None) -> StrategyResult:
     with localcontext() as ctx:
         ctx.prec = PRECISION
         arv = underwriting.value.arv_by_scenario.get(scenario)
@@ -328,6 +404,23 @@ def wholesale(underwriting: UnderwritingResult, assumptions: AssumptionSet, cont
         max_contract = _q(threshold - assumptions.strategy.min_assignment_spread)
         spread = _q(threshold - contract_price)
         viable = spread >= assumptions.strategy.min_assignment_spread and dcs >= wholesale_min
+        if trace is not None:
+            trace.step(label="Investor threshold",
+                       formula="ARV × investor% − repairs",
+                       inputs={"investor %": assumptions.strategy.wholesale_investor_pct},
+                       substitution=f"{show(arv)} × {show(assumptions.strategy.wholesale_investor_pct)} − {show(cost.repairs)}",
+                       result=threshold)
+            trace.step(label="Assignment spread",
+                       formula="investor threshold − contract price",
+                       inputs={"threshold": threshold, "contract price": contract_price},
+                       substitution=f"{show(threshold)} − {show(contract_price)}", result=spread)
+            trace.step(label="Maximum Allowable Offer (wholesale)",
+                       formula="investor threshold − minimum assignment spread",
+                       substitution=f"{show(threshold)} − {show(assumptions.strategy.min_assignment_spread)}",
+                       result=max_contract)
+            if dcs < wholesale_min:
+                trace.warning(f"Wholesale is gated: the Data Confidence Score ({show(dcs)}) is below "
+                              f"the required {show(wholesale_min)}.")
         return StrategyResult(strategy=StrategyType.WHOLESALE, scenario=scenario,
                               status="viable" if viable else "not_viable",
                               mao=max_contract, profit=spread,
@@ -558,7 +651,8 @@ def _weighted_potential(underwriting: UnderwritingResult, assumptions: Assumptio
     return weighted
 
 
-def offer_point(underwriting: UnderwritingResult, assumptions: AssumptionSet, offer: Decimal, scenario: Scenario, label: str | None = None) -> OfferPoint:
+def offer_point(underwriting: UnderwritingResult, assumptions: AssumptionSet, offer: Decimal, scenario: Scenario, label: str | None = None,
+                trace: TraceRecorder | None = None) -> OfferPoint:
     """Authoritative per-offer math (spec §9.2). Every output is linear in the offer
     price, so slider interpolation between grid points is exact (spec §9.3)."""
     with localcontext() as ctx:
@@ -580,6 +674,51 @@ def offer_point(underwriting: UnderwritingResult, assumptions: AssumptionSet, of
         proceeds_low = _q(proceeds_high - potential_payoffs)
         buyer_basis = _q(offer + _acquisition_cost(offer, assumptions) + cost.repairs + cost.holding)
         profit = _q(value * (ONE - _resale_pct(assumptions)) - buyer_basis) if value is not None else None
+        if trace is not None:
+            payoff_fees = _payoff_fees(underwriting)
+            weighted_potential = _weighted_potential(underwriting, assumptions)
+            trace.assumption("Assumption set", f"{assumptions.name} v{assumptions.version}",
+                             assumption_set_id=assumptions.id)
+            trace.step(label="Seller confirmed payoffs",
+                       formula="confirmed obligations + payoff fees",
+                       inputs={"confirmed": underwriting.liabilities.confirmed, "payoff fees": payoff_fees},
+                       substitution=f"{show(underwriting.liabilities.confirmed)} + {show(payoff_fees)}",
+                       result=confirmed_payoffs)
+            trace.step(label="Buyer closing costs",
+                       formula="offer × (title% + transfer tax%) + escrow flat",
+                       inputs={"offer": offer},
+                       substitution=f"{show(offer)} × ({show(assumptions.acquisition.title_pct)} + "
+                                    f"{show(transfer_tax_rate(assumptions.acquisition.transfer_tax_lookup_key))}) + "
+                                    f"{show(assumptions.acquisition.escrow_flat)}",
+                       result=closing)
+            trace.step(label="Seller proceeds (high)",
+                       formula="offer − confirmed payoffs − closing costs",
+                       inputs={"offer": offer, "confirmed payoffs": confirmed_payoffs, "closing": closing},
+                       substitution=f"{show(offer)} − {show(confirmed_payoffs)} − {show(closing)}",
+                       result=proceeds_high)
+            trace.step(label="Seller proceeds (expected)",
+                       formula="proceeds high − probability-weighted potential liens",
+                       inputs={"proceeds high": proceeds_high, "weighted potential": weighted_potential},
+                       substitution=f"{show(proceeds_high)} − {show(weighted_potential)}",
+                       result=proceeds_expected)
+            trace.step(label="Buyer basis",
+                       formula="offer + acquisition costs + repairs + holding",
+                       inputs={"offer": offer, "repairs": cost.repairs, "holding": cost.holding},
+                       substitution=f"{show(offer)} + {show(_acquisition_cost(offer, assumptions))} + "
+                                    f"{show(cost.repairs)} + {show(cost.holding)}",
+                       result=buyer_basis)
+            if value is not None and profit is not None:
+                trace.step(label="Investor profit at this offer",
+                           formula="value × (1 − resale%) − buyer basis",
+                           inputs={"value": value, "buyer basis": buyer_basis},
+                           substitution=f"{show(value)} × (1 − {show(_resale_pct(assumptions))}) − {show(buyer_basis)}",
+                           result=profit)
+            if potential_payoffs > ZERO:
+                trace.input("Potential obligations (full)", potential_payoffs,
+                            note="proceeds low assumes every potential lien attaches in full")
+            if proceeds_low < 0:
+                trace.warning("Proceeds do not cover the estimated obligations at this offer — a short sale "
+                              "would require lender approval.")
         return OfferPoint(offer_price=offer, scenario=scenario, confirmed_payoffs=confirmed_payoffs,
                           potential_payoffs=potential_payoffs, closing_costs=closing,
                           proceeds_low=proceeds_low, proceeds_expected=proceeds_expected,

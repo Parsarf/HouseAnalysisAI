@@ -16,18 +16,13 @@ from sqlalchemy.orm import Session
 
 from contracts import (
     AssumptionSet,
-    EntityType,
-    ExtractedFactDraft,
     NormalizedProperty,
-    NullReason,
     OfferGrid,
     Scenario,
-    SourceKind,
     TimelineEvent,
     UnderwritingResult,
 )
 from db import models as dbm
-from normalization import resolve_facts
 
 from . import serializers
 
@@ -35,55 +30,15 @@ log = logging.getLogger(__name__)
 
 
 def load_normalized(session: Session, property_id: UUID) -> NormalizedProperty | None:
-    canonical = (session.query(dbm.ReportExtraction)
-                 .filter(dbm.ReportExtraction.property_id == property_id,
-                         dbm.ReportExtraction.status == "complete")
-                 .order_by(dbm.ReportExtraction.updated_at.desc())
-                 .first())
-    if canonical is not None:
-        payload = (canonical.normalized_json or {}).get("property")
-        if isinstance(payload, dict):
-            try:
-                return NormalizedProperty.model_validate(payload)
-            except Exception:
-                # Preserve backward compatibility with the fact ledger if a
-                # future schema version cannot be read by this application.
-                log.warning("canonical normalized record could not be loaded", exc_info=True,
-                            extra={"event": "canonical_analysis_load_failed",
-                                   "property_id": property_id})
-    rows = (session.query(dbm.ExtractedFact)
-            .filter(dbm.ExtractedFact.property_id == property_id,
-                    dbm.ExtractedFact.is_active.is_(True))
-            .all())
-    if not rows:
-        return None
-    drafts = [ExtractedFactDraft(
-        report_id=row.report_id or UUID(int=0), extraction_unit_id=row.extraction_unit_id or UUID(int=0),
-        entity_type=EntityType(row.entity_type), entity_local_id=row.entity_local_id,
-        field_path=row.field_path, value_raw=row.value_raw, value_parsed=row.value_parsed,
-        value_text=row.value_text, value_date=row.value_date, value_bool=row.value_bool,
-        unit=row.unit, as_of_date=row.as_of_date, page_number=row.page_number,
-        snippet=row.snippet, extraction_confidence=float(row.extraction_confidence),
-        null_reason=NullReason(row.null_reason) if row.null_reason else None, source_kind=SourceKind(row.source_kind),
-    ) for row in rows]
-    return resolve_facts(property_id, drafts)
+    """Delegates to the explanation package's shared read model."""
+    from explanation.store import load_normalized as _load
+    return _load(session, property_id)
 
 
 def load_assumption_set(session: Session, assumption_set_id: UUID | None = None) -> AssumptionSet | None:
     """Default assumption set as a contract object; None when none is configured."""
-    query = session.query(dbm.AssumptionSet)
-    if assumption_set_id is not None:
-        row = session.get(dbm.AssumptionSet, assumption_set_id)
-    else:
-        row = query.filter(dbm.AssumptionSet.is_default.is_(True)).first()
-        if row is None:
-            row = query.first()
-    if row is None:
-        return None
-    try:
-        return AssumptionSet(id=row.id, version=row.version, name=row.name, **(row.params or {}))
-    except Exception:
-        return None
+    from explanation.store import load_assumption_set as _load
+    return _load(session, assumption_set_id)
 
 
 def load_underwriting(session: Session, property_id: UUID,

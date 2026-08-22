@@ -29,6 +29,7 @@ from typing import overload
 
 from common.money import money
 from common.mortgage import is_first, position_key
+from common.trace import TraceRecorder, show
 from contracts import (
     AssumptionSet,
     AttachmentBasis,
@@ -240,7 +241,7 @@ def _comp_range(record: NormalizedProperty) -> tuple[Decimal | None, Decimal | N
 
 
 def _candidate_weights(record: NormalizedProperty, assumptions: AssumptionSet,
-                       as_of: date | None) -> list[tuple[str, Decimal, Decimal]]:
+                       as_of: date | None, trace: TraceRecorder | None = None) -> list[tuple[str, Decimal, Decimal]]:
     """(type, value, weight) per candidate; weight = base × adjustment, quantized 6dp.
 
     Base: assumption-set `valuation_weights[type]`, else the spec §7.2 table, else 1.0.
@@ -259,6 +260,7 @@ def _candidate_weights(record: NormalizedProperty, assumptions: AssumptionSet,
         if base <= ZERO:
             continue
         adjustment = ONE
+        adjustment_notes: list[str] = []
         if kind == "avm":
             reported_confidence = (
                 candidate.reported_confidence
@@ -266,18 +268,33 @@ def _candidate_weights(record: NormalizedProperty, assumptions: AssumptionSet,
                 else candidate.value.confidence
             )
             adjustment *= Decimal(str(reported_confidence))
+            adjustment_notes.append(f"reported confidence {reported_confidence}")
             if candidate.as_of and as_of:
                 days = max(0, (as_of - candidate.as_of).days)
-                adjustment *= Decimal("0.5") ** (Decimal(days) / AVM_HALF_LIFE_DAYS)
+                decay = Decimal("0.5") ** (Decimal(days) / AVM_HALF_LIFE_DAYS)
+                adjustment *= decay
+                adjustment_notes.append(f"recency decay {show(decay)} over {days} days (90-day half-life)")
         elif "comp" in kind:
-            adjustment *= _comp_quality(record, as_of)
+            quality = _comp_quality(record, as_of)
+            adjustment *= quality
+            adjustment_notes.append(f"comparable-quality adjustment {show(quality)}")
         weight = _q(base * adjustment, Q6)
         if weight > ZERO:
             weighted.append((kind, candidate.value.value, weight))
+            if trace is not None:
+                trace.step(label=f"Valuation candidate weight ({kind})",
+                           formula="weight = base_weight × adjustments",
+                           inputs={"base weight": base, "adjustments": ", ".join(adjustment_notes) or "none"},
+                           substitution=f"{show(base)} × {show(adjustment)}",
+                           result=weight)
+                trace.candidate(label=kind, value=candidate.value.value,
+                                confidence=candidate.value.confidence,
+                                origin="extracted", is_winner=False,
+                                source_fact_id=candidate.value.fact_id)
     return weighted
 
 
-def _mortgage_balance(mortgage, as_of: date | None) -> tuple[Decimal | None, bool]:
+def _mortgage_balance(mortgage, as_of: date | None, trace: TraceRecorder | None = None) -> tuple[Decimal | None, bool]:
     """(balance, is_estimated): reported balance wins; otherwise derive by amortization
     (spec §6.5 — a report with original amount but no balance must not contribute $0)."""
     if mortgage.estimated_balance and mortgage.estimated_balance.value is not None:
@@ -294,6 +311,31 @@ def _mortgage_balance(mortgage, as_of: date | None) -> tuple[Decimal | None, boo
         return None, False
     balance = estimate_balance(original, mortgage.rate, mortgage.term_months,
                                mortgage.origination_date, as_of, loan_type)
+    if trace is not None and balance is not None:
+        rate_used = mortgage.rate
+        rate_note = "reported mortgage rate"
+        if rate_used is None:
+            rate_used = historical_rate(mortgage.origination_date.year, loan_type)
+            rate_note = f"historical fallback rate for {mortgage.origination_date.year} ({loan_type})"
+        months_elapsed = _months_between(mortgage.origination_date, as_of) if as_of is not None else 0
+        trace.step(
+            label=f"Mortgage balance derived by amortization ({_position_key(mortgage.position)})",
+            formula="balance = P × ((1+r)^term − (1+r)^n) / ((1+r)^term − 1), r = annual_rate/12, n = months elapsed",
+            inputs={"original principal": original, "annual rate": rate_used,
+                    "term (months)": mortgage.term_months or DEFAULT_TERM_MONTHS,
+                    "origination date": mortgage.origination_date.isoformat(),
+                    "as-of date": as_of.isoformat() if as_of else None},
+            substitution=f"P={show(original)}, rate={show(rate_used)}, term={mortgage.term_months or DEFAULT_TERM_MONTHS}, n={months_elapsed}",
+            result=balance)
+        trace.assumption("rate source", rate_note)
+        trace.candidate(label=f"amortization estimate ({_position_key(mortgage.position)})",
+                        value=balance, confidence=Decimal("0.55"), origin="estimated", is_winner=True,
+                        derivation_inputs={"original_amount": original, "origination_date": mortgage.origination_date.isoformat(),
+                                           "rate": rate_used, "term_months": mortgage.term_months or DEFAULT_TERM_MONTHS})
+        trace.resolution(method="amortization_v1",
+                         winner_description="no reported current balance; derived from original loan terms",
+                         reason="A report with the original amount but no current balance must still contribute debt.")
+        trace.warning("Estimated mortgage balance is an amortization estimate, not a lender payoff statement.")
     return balance, balance is not None
 
 
@@ -338,7 +380,8 @@ def _bid_mismatch(record: NormalizedProperty, as_of: date | None) -> tuple[Decim
     return None
 
 
-def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None):
+def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None,
+                 trace: TraceRecorder | None = None):
     """Three-bucket liabilities (spec §7.3). Returns (block, potential_weighted) where
     potential_weighted = Σ potential_i × attachment_probability[basis_i] (spec §7.4)."""
     confirmed = ZERO
@@ -381,14 +424,34 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
                     "basis": "heloc_capacity_no_draw_data",
                     "is_estimated": True,
                 })
+                if trace is not None:
+                    trace.step(label=f"Undrawn HELOC capacity treated as potential ({position})",
+                               formula="potential += credit limit (no draw data)",
+                               inputs={"credit limit": capacity, "attachment probability": probability},
+                               substitution=f"limit={show(capacity)}, p={show(probability)}",
+                               result=capacity)
+                    trace.warning(f"HELOC at position {position} has a reported limit but no draw balance; "
+                                  "the full limit is held as a potential obligation.")
             continue
         balance, is_estimated, chosen = max(evaluated, key=lambda item: item[0])
         basis = "recorded" if not is_estimated else "estimated_recorded"
         if chosen.estimated_balance is None or chosen.estimated_balance.value is None:
             basis = "amortization_v1"
+        if trace is not None and len(evaluated) > 1:
+            for candidate_balance, candidate_estimated, mortgage_record in evaluated:
+                trace.candidate(label=f"mortgage {_position_key(mortgage_record.position)}",
+                                value=candidate_balance,
+                                origin="reported" if not candidate_estimated else "estimated",
+                                is_winner=mortgage_record is chosen,
+                                reason="conservative tie-break: highest balance wins" if mortgage_record is chosen else None)
         if bid is not None and _is_first(chosen):
             # Published-bid reconciliation: the trustee's bid is their actual accounting;
             # precedence favors the bid. Divergence >20% is raised via finance_flags().
+            if trace is not None and bid != balance:
+                trace.candidate(label="foreclosure published bid", value=bid, origin="reported", is_winner=True,
+                                reason="the trustee's published bid is their actual accounting and wins over the derived balance")
+                trace.conflict(description=f"Published foreclosure bid {show(bid)} diverges from the first-mortgage balance "
+                                          f"{show(balance)} by more than 20%; the bid was used.", magnitude=abs(bid - balance))
             balance = bid
             if chosen.estimated_balance and chosen.estimated_balance.value is not None:
                 is_estimated = chosen.estimated_balance.is_estimated
@@ -398,6 +461,12 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             # Drawn HELOC is confirmed; undrawn capacity is potential (spec §7.3).
             confirmed += balance
             breakdown.append({"label": f"mortgage:{position}", "amount": balance, "basis": basis, "is_estimated": is_estimated})
+            if trace is not None:
+                trace.step(label=f"Confirmed mortgage balance ({position})",
+                           formula="confirmed += reported/derived drawn balance",
+                           inputs={"balance": balance, "basis": basis},
+                           substitution=f"balance={show(balance)}, basis={basis}, bucket={'estimated' if is_estimated else 'reported'}",
+                           result=balance)
             original = chosen.original_amount.value if chosen.original_amount else None
             if original is not None and original > balance:
                 undrawn = money(original - balance) or ZERO
@@ -410,6 +479,12 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             continue
         confirmed += balance
         breakdown.append({"label": f"mortgage:{position}", "amount": balance, "basis": basis, "is_estimated": is_estimated})
+        if trace is not None:
+            trace.step(label=f"Confirmed mortgage balance ({position})",
+                       formula="confirmed += reported/derived balance",
+                       inputs={"balance": balance, "basis": basis},
+                       substitution=f"balance={show(balance)}, basis={basis}, bucket={'estimated' if is_estimated else 'reported'}",
+                       result=balance)
         # A separately reported HELOC at the same nominal priority may be a
         # distinct obligation. With no draw data, keep its limit out of
         # confirmed debt but expose the largest reported capacity as potential.
@@ -438,6 +513,10 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
                   else assumptions.unknown_lien_medians.get(lien.lien_type, ZERO))
         amount = money(amount) or ZERO
         estimated = lien.amount_is_estimated if has_amount else True
+        if trace is not None:
+            trace.input(f"Lien: {lien.lien_type}", amount if has_amount else None,
+                        note="reported amount" if has_amount else
+                             f"no reliable amount extracted; valued at the {lien.lien_type} median assumption")
         if amount and not has_amount:
             potential += amount
             probability = _clamp(
@@ -445,9 +524,23 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             )
             expected_amount = money(amount * probability) or ZERO
             potential_weighted += expected_amount
+            if trace is not None:
+                trace.step(label=f"Potential lien with unknown amount ({lien.lien_type})",
+                           formula="median amount × attachment probability",
+                           inputs={"median amount": amount, "attachment probability": probability},
+                           substitution=f"{show(amount)} × {show(probability)}",
+                           result=expected_amount)
+                trace.warning(f"The {lien.lien_type} lien has no extracted amount; the type-median "
+                              "estimate is held as a potential obligation, so equity may be overstated.")
         elif lien.attachment_basis == AttachmentBasis.RECORDED_AGAINST_PROPERTY:
             confirmed += amount
             expected_amount = None
+            if trace is not None:
+                trace.step(label=f"Confirmed lien ({lien.lien_type})",
+                           formula="confirmed += recorded-against-property amount",
+                           inputs={"amount": amount, "status": lien.status},
+                           substitution=f"{show(amount)} (basis: recorded_against_property, status: {lien.status})",
+                           result=amount)
         else:
             potential += amount
             probability = _clamp(
@@ -455,6 +548,17 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
             )
             expected_amount = money(amount * probability) or ZERO
             potential_weighted += expected_amount
+            if trace is not None:
+                trace.step(label=f"Potential lien ({lien.lien_type})",
+                           formula="amount × attachment probability",
+                           inputs={"amount": amount, "attachment probability": probability,
+                                   "attachment basis": lien.attachment_basis.value},
+                           substitution=f"{show(amount)} × {show(probability)} ({lien.attachment_basis.value})",
+                           result=expected_amount)
+                trace.resolution(method=f"attachment:{lien.attachment_basis.value}",
+                                 winner_description=f"{lien.lien_type} held as a potential obligation",
+                                 reason=f"The lien names the owner but is not recorded against the property "
+                                        f"(basis: {lien.attachment_basis.value}), so it may never attach.")
         item = {"label": lien.lien_type, "amount": amount,
                 "basis": lien.attachment_basis.value, "is_estimated": estimated}
         if expected_amount is not None:
@@ -464,8 +568,27 @@ def _liabilities(record: NormalizedProperty, assumptions: AssumptionSet, as_of: 
         if tracked and tracked.value is not None:
             confirmed += money(tracked.value) or ZERO
             breakdown.append({"label": label, "amount": money(tracked.value), "basis": "recorded", "is_estimated": False})
+            if trace is not None:
+                trace.step(label=f"Confirmed {label.replace('_', ' ')}",
+                           formula="confirmed += reported amount",
+                           inputs={"amount": tracked.value},
+                           substitution=show(tracked.value), result=money(tracked.value))
     block = LiabilityBlock(confirmed=money(confirmed) or ZERO, potential=money(potential) or ZERO,
                            maximum=money(confirmed + potential) or ZERO, breakdown=breakdown)
+    if trace is not None:
+        trace.step(label="Confirmed obligations total",
+                   formula="Σ confirmed mortgage balances + confirmed liens + delinquent taxes/hoa arrears",
+                   inputs={"confirmed": confirmed}, substitution=show(confirmed), result=block.confirmed)
+        trace.step(label="Potential obligations total",
+                   formula="Σ potential amounts (owner-named liens, undrawn HELOC capacity, unknown-amount medians)",
+                   inputs={"potential": potential}, substitution=show(potential), result=block.potential)
+        trace.step(label="Maximum exposure",
+                   formula="confirmed + potential",
+                   inputs={"confirmed": block.confirmed, "potential": block.potential},
+                   substitution=f"{show(block.confirmed)} + {show(block.potential)}", result=block.maximum)
+        for item in breakdown:
+            trace.input(f"Liability line: {item.get('label')}", item.get("amount"),
+                        note=f"bucket={'estimated' if item.get('is_estimated') else 'reported'}; basis={item.get('basis')}")
     return block, money(potential_weighted) or ZERO
 
 
@@ -513,21 +636,39 @@ def _has_debt_data(record: NormalizedProperty, assumptions: AssumptionSet, as_of
     )
 
 
-def underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None = None) -> UnderwritingResult:
+def underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None = None,
+               trace: TraceRecorder | None = None) -> UnderwritingResult:
     # Precision 40 matches the golden generator; quantization happens per labelled step.
     _validate_assumptions(assumptions)
     with localcontext() as ctx:
         ctx.prec = 40
-        return _underwrite(record, assumptions, as_of)
+        return _underwrite(record, assumptions, as_of, trace)
 
 
-def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None) -> UnderwritingResult:
+def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: date | None,
+                trace: TraceRecorder | None = None) -> UnderwritingResult:
     # Reference date for every date-relative term: caller-supplied as_of, then
     # newest_report_date. Wall-clock dates are never used, keeping runs deterministic.
     ref = as_of or record.data_quality.newest_report_date
+    if trace is not None:
+        trace.assumption("Assumption set", f"{assumptions.name} v{assumptions.version}",
+                         assumption_set_id=assumptions.id)
+        trace.assumption("Repair $/sqft by condition",
+                         {key: show(value) for key, value in assumptions.repairs.psf_by_condition.items()})
+        trace.assumption("Regional repair index", show(assumptions.repairs.regional_index))
+        trace.assumption("Valuation candidate weights",
+                         {key: show(value) for key, value in assumptions.valuation_weights.items()})
+        trace.assumption("Holding months by condition",
+                         {key: show(value) for key, value in assumptions.holding.repair_months_by_condition.items()})
     debt_data_present = _has_debt_data(record, assumptions, ref)
-    liabilities, potential_weighted = _liabilities(record, assumptions, ref)
-    candidates = _candidate_weights(record, assumptions, ref)
+    liabilities, potential_weighted = _liabilities(record, assumptions, ref, trace)
+    candidates = _candidate_weights(record, assumptions, ref, trace)
+    if trace is not None:
+        trace.step(label="Weighted valuation sum",
+                   formula="Σ(value × adjusted weight) / Σ(adjusted weights)",
+                   inputs={kind: value for kind, value, _ in candidates},
+                   substitution=" + ".join(f"({show(value)} × {show(weight)})" for _, value, weight in candidates),
+                   result=None)
     if not candidates:
         return UnderwritingResult(property_id=record.property_id, assumption_set_id=assumptions.id, engine_version=ENGINE_VERSION,
                                   status="insufficient_data", unavailable_reason="no_valuation_candidates",
@@ -539,15 +680,33 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
                                   status="insufficient_data", unavailable_reason="no_valuation_candidates",
                                   liabilities=liabilities, debt_data_present=debt_data_present, confidence=ZERO)
     v_exp = money(weighted_sum / weight_sum)
+    if trace is not None:
+        trace.steps[-1]["result"] = v_exp
+        trace.steps[-1]["display_result"] = show(v_exp)
+        trace.step(label="Total candidate weight",
+                   formula="Σ(adjusted weights)",
+                   inputs={}, substitution=" + ".join(show(weight) for _, _, weight in candidates),
+                   result=weight_sum)
+        trace.step(label="Expected value",
+                   formula="weighted_sum / weight_sum",
+                   inputs={"weighted sum": weighted_sum, "weight sum": weight_sum},
+                   substitution=f"{show(weighted_sum)} / {show(weight_sum)}", result=v_exp)
     if v_exp is None:
         return UnderwritingResult(property_id=record.property_id, assumption_set_id=assumptions.id, engine_version=ENGINE_VERSION,
                                   status="insufficient_data", unavailable_reason="valuation_not_numeric",
                                   liabilities=liabilities, debt_data_present=debt_data_present, confidence=ZERO)
     if len(candidates) == 1:
         dispersion = Decimal("0.15")  # one estimate is not agreement (spec §7.2)
+        if trace is not None:
+            trace.assumption("dispersion", "fixed at 15% — a single valuation candidate shows no independent agreement")
     else:
         variance = sum((weight * (value - v_exp) ** 2 for _, value, weight in candidates), ZERO) / weight_sum
         dispersion = _q(_clamp(variance.sqrt() / v_exp if v_exp else Decimal("0.30"), Decimal("0.04"), Decimal("0.30")), Q6)
+        if trace is not None:
+            trace.step(label="Value dispersion",
+                       formula="clamp(√(Σ(weight × (value − V)²) / Σweight) / V, 4%, 30%)",
+                       inputs={}, substitution=f"weighted std dev / expected value = {show(dispersion)}",
+                       result=dispersion)
     comp_low, comp_high = _comp_range(record)
     # V_low = max(V×(1−disp), comp_range_low or 0); V_high = min(V×(1+disp), comp_range_high or ∞) (spec §7.2)
     raw_low = v_exp * (ONE - dispersion)
@@ -560,9 +719,23 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
         if comp_high is not None and comp_high >= v_exp
         else v_high_raw
     )
+    if trace is not None:
+        trace.step(label="Conservative value (V low)",
+                   formula="V × (1 − dispersion), clamped up to the lowest comparable evidence",
+                   inputs={"expected value": v_exp, "dispersion": dispersion},
+                   substitution=f"{show(v_exp)} × (1 − {show(dispersion)})",
+                   result=v_low)
+        trace.step(label="Optimistic value (V high)",
+                   formula="V × (1 + dispersion), clamped down to the highest comparable evidence",
+                   inputs={"expected value": v_exp, "dispersion": dispersion},
+                   substitution=f"{show(v_exp)} × (1 + {show(dispersion)})",
+                   result=v_high)
     confidence = _clamp(record.data_quality.mean_extraction_confidence, ZERO, ONE)
     if len(candidates) == 1:
         confidence = min(confidence, Decimal("0.5"))
+        if trace is not None:
+            trace.assumption("valuation confidence cap",
+                             "capped at 50% because only one valuation candidate exists")
     values = {Scenario.CONSERVATIVE: v_low, Scenario.EXPECTED: v_exp, Scenario.OPTIMISTIC: v_high}
 
     repair_base = _repairs_base(record, assumptions)
@@ -571,6 +744,35 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
         repairs = {Scenario.CONSERVATIVE: money(repair_base * assumptions.repairs.high_multiplier),
                    Scenario.EXPECTED: repair_base,
                    Scenario.OPTIMISTIC: money(repair_base * assumptions.repairs.low_multiplier)}
+    if trace is not None:
+        sqft_value = record.attributes.sqft.value if record.attributes.sqft else None
+        condition_value = record.condition.condition if record.condition else None
+        if sqft_value is None:
+            trace.unresolved("Repair estimate: property square footage was never extracted, so no "
+                             "repair budget can be computed (it is never silently treated as $0).")
+        else:
+            psf_rate = assumptions.repairs.psf_by_condition.get(
+                condition_value or "moderate", assumptions.repairs.psf_by_condition.get("moderate"))
+            inferred = condition_value is None
+            trace.step(label="Base repair budget",
+                       formula="sqft × $/sqft(condition) × regional index",
+                       inputs={"sqft": sqft_value, "$/sqft": psf_rate,
+                               "regional index": assumptions.repairs.regional_index},
+                       substitution=f"{show(sqft_value)} × {show(psf_rate)} × {show(assumptions.repairs.regional_index)}",
+                       result=repair_base)
+            trace.input("Condition level", condition_value or "moderate",
+                        note="inferred fallback 'moderate' — no condition signal was extracted"
+                             if inferred else "reported condition")
+            trace.assumption("$ per sqft by condition", show(assumptions.repairs.psf_by_condition))
+            for scenario_name, multiplier in (("conservative", assumptions.repairs.high_multiplier),
+                                              ("expected", ONE),
+                                              ("optimistic", assumptions.repairs.low_multiplier)):
+                scenario_key = Scenario(scenario_name)
+                trace.step(label=f"Repairs ({scenario_name})",
+                           formula="repair_base × scenario multiplier",
+                           inputs={"base": repair_base, "multiplier": multiplier},
+                           substitution=f"{show(repair_base)} × {show(multiplier)}",
+                           result=repairs.get(scenario_key, ZERO))
 
     taxes_annual = record.taxes.annual_taxes.value if record.taxes.annual_taxes and record.taxes.annual_taxes.value is not None else ZERO
     hoa_dues = record.hoa.monthly_dues.value if record.hoa.monthly_dues and record.hoa.monthly_dues.value is not None else ZERO
@@ -584,6 +786,33 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
     equity = {}
     costs = {}
     arv_by_scenario: dict[Scenario, Decimal | None] = {}
+    if trace is not None:
+        trace.step(label="Acquisition cost rate",
+                   formula="closing% + title% + acquisition fee% + transfer tax%",
+                   inputs={}, substitution=" + ".join([
+                       f"closing {show(assumptions.acquisition.closing_pct)}",
+                       f"title {show(assumptions.acquisition.title_pct)}",
+                       f"fee {show(assumptions.acquisition.acq_fee_pct)}",
+                       f"transfer tax {show(transfer_tax_rate(assumptions.acquisition.transfer_tax_lookup_key))}"]),
+                   result=acq_pct)
+        trace.step(label="Acquisition flat costs",
+                   formula="escrow + inspection + legal",
+                   inputs={}, substitution=f"{show(assumptions.acquisition.escrow_flat)} + "
+                                           f"{show(assumptions.acquisition.inspection_flat)} + "
+                                           f"{show(assumptions.acquisition.legal_flat)}",
+                   result=acq_flat)
+        trace.step(label="Resale cost rate",
+                   formula="commission% + seller closing% + concessions% + misc%",
+                   inputs={}, substitution=f"{show(assumptions.resale.commission_pct)} + "
+                                           f"{show(assumptions.resale.seller_closing_pct)} + "
+                                           f"{show(assumptions.resale.concessions_pct)} + "
+                                           f"{show(assumptions.resale.misc_pct)}",
+                   result=resale_pct)
+        trace.step(label="Holding period (base)",
+                   formula="acquisition months + repair months(condition) + market days / 30",
+                   inputs={"acquisition months": assumptions.holding.acquisition_months,
+                           "repair months": _holding_months_base(record, assumptions)},
+                   substitution=show(months_base), result=months_base)
     for scenario, value in values.items():
         if value is None:
             continue
@@ -596,6 +825,34 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
         resale = money(value * resale_pct)
         costs[scenario] = CostBlock(acquisition=acquisition or ZERO, repairs=repair_cost or ZERO,
                                     holding=holding or ZERO, resale=resale or ZERO, financing=ZERO)
+        if trace is not None:
+            scenario_name = scenario.value
+            trace.step(label=f"Holding period ({scenario_name})",
+                       formula="base months × scenario factor",
+                       inputs={"base months": months_base, "factor": HOLDING_PERIOD_FACTOR[scenario]},
+                       substitution=f"{show(months_base)} × {show(HOLDING_PERIOD_FACTOR[scenario])}",
+                       result=months)
+            trace.step(label=f"Monthly carrying cost ({scenario_name})",
+                       formula="annual taxes/12 + value × (insurance%yr + maintenance%yr)/12 + utilities + HOA dues",
+                       inputs={"annual taxes": taxes_annual, "insurance %yr": assumptions.holding.insurance_pct_yr,
+                               "maintenance %yr": assumptions.holding.maintenance_pct_yr,
+                               "utilities": assumptions.holding.utilities_monthly, "HOA monthly": hoa_dues},
+                       substitution=f"{show(taxes_annual)}/12 + {show(value)}×({show(assumptions.holding.insurance_pct_yr)}"
+                                   f"+{show(assumptions.holding.maintenance_pct_yr)})/12 + "
+                                   f"{show(assumptions.holding.utilities_monthly)} + {show(hoa_dues)}",
+                       result=monthly)
+            trace.step(label=f"Holding cost ({scenario_name})",
+                       formula="monthly × months",
+                       inputs={"monthly": monthly, "months": months},
+                       substitution=f"{show(monthly)} × {show(months)}", result=holding)
+            trace.step(label=f"Acquisition costs ({scenario_name})",
+                       formula="value × acq_pct + flat",
+                       inputs={"value": value, "acq rate": acq_pct, "flat": acq_flat},
+                       substitution=f"{show(value)} × {show(acq_pct)} + {show(acq_flat)}", result=acquisition)
+            trace.step(label=f"Resale costs ({scenario_name})",
+                       formula="value × resale%",
+                       inputs={"value": value, "resale rate": resale_pct},
+                       substitution=f"{show(value)} × {show(resale_pct)}", result=resale)
         potential_s = {Scenario.CONSERVATIVE: liabilities.potential,
                        Scenario.EXPECTED: potential_weighted,
                        Scenario.OPTIMISTIC: ZERO}[scenario]
@@ -605,10 +862,34 @@ def _underwrite(record: NormalizedProperty, assumptions: AssumptionSet, as_of: d
                                        adjusted=money(value - confirmed - potential_s),
                                        net_realizable=money(value * (ONE - resale_pct) - confirmed - potential_s - holding),
                                        equity_pct=_q(gross / value, Q6) if value != ZERO else None)
+        if trace is not None:
+            scenario_name = scenario.value
+            trace.step(label=f"Gross equity ({scenario_name})",
+                       formula="value − confirmed obligations",
+                       inputs={"value": value, "confirmed obligations": confirmed},
+                       substitution=f"{show(value)} − {show(confirmed)}", result=gross)
+            trace.step(label=f"Adjusted equity ({scenario_name})",
+                       formula="value − confirmed − scenario potential bucket",
+                       inputs={"value": value, "confirmed": confirmed, "potential": potential_s},
+                       substitution=f"{show(value)} − {show(confirmed)} − {show(potential_s)}",
+                       result=equity[scenario].adjusted)
+            trace.step(label=f"Net realizable equity ({scenario_name})",
+                       formula="value × (1 − resale%) − confirmed − potential − holding",
+                       substitution=f"{show(value)} × (1−{show(resale_pct)}) − {show(confirmed)} − "
+                                    f"{show(potential_s)} − {show(holding)}",
+                       result=equity[scenario].net_realizable)
+            trace.input("Potential bucket used", scenario.value,
+                        note="conservative uses full potential; expected uses probability-weighted potential; optimistic uses none")
         # ARV is the after-repair value and exists only when repairs are computable
         # (spec §7.2; recapture multiplier 1.0, deliberately unaggressive).
         repair_value = repairs.get(scenario)
         arv_by_scenario[scenario] = money(value + repair_value) if repair_value is not None else None
+        if trace is not None and repair_value is not None:
+            trace.step(label=f"After-repair value ARV ({scenario.value})",
+                       formula="value + repairs (recapture multiplier 1.0)",
+                       inputs={"value": value, "repairs": repair_value},
+                       substitution=f"{show(value)} + {show(repair_value)}",
+                       result=arv_by_scenario[scenario])
     return UnderwritingResult(property_id=record.property_id, assumption_set_id=assumptions.id, engine_version=ENGINE_VERSION,
                               status="ok", value=ValueBlock(v_low=v_low, v_expected=v_exp, v_high=v_high, dispersion=dispersion,
                               arv_by_scenario=arv_by_scenario,

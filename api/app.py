@@ -33,6 +33,7 @@ from jobs.postgres import PostgresJobQueue
 from .deps import enqueue, get_queue, get_session
 from .filters import translate_filters
 from .routes_chat import router as chat_router
+from .routes_explain import router as explain_router
 from .routes_owner import router as owner_router
 from .routes_portfolio import router as portfolio_router
 from .routes_properties import router as properties_router
@@ -237,6 +238,7 @@ app.include_router(properties_router)
 app.include_router(portfolio_router)
 app.include_router(owner_router)
 app.include_router(chat_router)
+app.include_router(explain_router)
 
 # SPA serving: web/dist is served when the frontend has been built; API and
 # health routes are registered first and always win.

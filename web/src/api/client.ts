@@ -60,7 +60,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function json<T>(path: string, method: string, payload?: unknown): Promise<T> {
+export function json<T>(path: string, method: string, payload?: unknown): Promise<T> {
   return request<T>(`${BASE}${path}`, {
     method,
     headers: payload === undefined ? undefined : { "Content-Type": "application/json" },
@@ -68,7 +68,7 @@ function json<T>(path: string, method: string, payload?: unknown): Promise<T> {
   });
 }
 
-function get<T>(path: string): Promise<T> {
+export function get<T>(path: string): Promise<T> {
   return request<T>(`${BASE}${path}`);
 }
 
