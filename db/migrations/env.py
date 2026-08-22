@@ -1,5 +1,5 @@
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from common.db import Base
 from common.settings import settings
@@ -24,6 +24,18 @@ def run_migrations_online():
     section["sqlalchemy.url"] = settings.database_url
     connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
+        # Alembic creates alembic_version.version_num as VARCHAR(32), which is
+        # too short for this project's revision identifiers. Widen it before
+        # recording any version so longer revision ids do not fail the run.
+        connection.execute(text(
+            "CREATE TABLE IF NOT EXISTS alembic_version ("
+            "version_num VARCHAR(128) NOT NULL,"
+            " CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
+        ))
+        connection.execute(text(
+            "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
+        ))
+        connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
