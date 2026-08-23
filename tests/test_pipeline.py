@@ -50,6 +50,7 @@ class FakeState:
         self.change_events = []
         self.settings = {}
         self.rankings = []
+        self.canonical_records = {}  # property_id -> NormalizedProperty | None
         self.locks_acquired = []  # log, excluded from state comparisons
         self.recomputed_marks = []
 
@@ -92,6 +93,9 @@ class FakeStore:
 
     def load_facts(self, property_id):
         return list(self.state.facts.get(UUID(str(property_id)), []))
+
+    def load_canonical_record(self, property_id):
+        return self.state.canonical_records.get(UUID(str(property_id)))
 
     def reports_ocr_applied(self, property_id):
         return False
@@ -434,6 +438,23 @@ def test_recompute_persists_deal_offer_and_score_rows():
     assert state.recomputed_marks == [(property_id, "ok")]
     # the owner-only lien over $10k fires a lien_attachment flag via flags.collect_flags
     assert any(flag["flag_type"] == "lien_attachment" for flag in state.flags)
+
+
+def test_recompute_prefers_canonical_whole_pdf_record():
+    """A whole-PDF property with an empty fact ledger must still recompute to
+    `ok` from its canonical record (regression: recompute degraded these to
+    insufficient_data and wiped persisted strategies/scores)."""
+    pipeline, factory = make_pipeline()
+    property_id = seed_property(factory.state, with_facts=False)
+    report_id, unit_id = uuid4(), uuid4()
+    canonical = resolve_facts(property_id, property_facts(property_id, unit_id, report_id))
+    factory.state.canonical_records[property_id] = canonical
+
+    computation = pipeline.recompute(property_id, reason="manual")
+
+    assert computation.underwriting.status == "ok"
+    assert factory.state.scores
+    assert factory.state.recomputed_marks == [(property_id, "ok")]
 
 
 def test_compute_normalized_bypasses_fact_ledger_and_persists_results():

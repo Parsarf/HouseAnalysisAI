@@ -174,10 +174,18 @@ class Pipeline:
             assumptions = store.load_assumptions(assumption_set_id)
             scoring_config_id, config = store.active_scoring_config()
             try:
-                record = resolve_facts(
-                    property_id, facts,
-                    ocr_applied=store.reports_ocr_applied(property_id),
-                )
+                # Whole-PDF properties carry their canonical record in
+                # report_extractions; the fact ledger is only provenance for
+                # them. Prefer the canonical record so recompute matches the
+                # deal page instead of degrading to insufficient_data.
+                record = store.load_canonical_record(property_id)
+                if record is None:
+                    record = resolve_facts(
+                        property_id, facts,
+                        ocr_applied=store.reports_ocr_applied(property_id),
+                    )
+                else:
+                    facts = []
             except Exception as exc:
                 log.exception("property normalization failed", extra={
                     **context,

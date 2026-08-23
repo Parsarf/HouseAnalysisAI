@@ -220,6 +220,26 @@ class SqlStore:
         rows = self.session.execute(_FACT_SELECT_SQL, {"pid": property_id}).mappings().all()
         return [_fact_from_row(row) for row in rows]
 
+    def load_canonical_record(self, property_id: UUID):
+        """Canonical whole-PDF NormalizedProperty when one exists (the same
+        record the deal page reads); None otherwise."""
+        from contracts import NormalizedProperty
+
+        row = self.session.execute(
+            text("SELECT normalized_json FROM report_extractions "
+                 "WHERE property_id = :pid AND status = 'complete' "
+                 "ORDER BY updated_at DESC LIMIT 1"),
+            {"pid": property_id}).mappings().first()
+        if row is None:
+            return None
+        payload = (row["normalized_json"] or {}).get("property")
+        if not isinstance(payload, dict):
+            return None
+        try:
+            return NormalizedProperty.model_validate(payload)
+        except Exception:  # noqa: BLE001 - unreadable canonical payloads fall back to the ledger
+            return None
+
     def reports_ocr_applied(self, property_id: UUID) -> bool:
         return bool(self.session.execute(
             text("SELECT COALESCE(bool_or(ocr_applied), false) FROM reports WHERE property_id = :pid"),
