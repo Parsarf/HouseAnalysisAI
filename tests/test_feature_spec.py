@@ -99,6 +99,23 @@ def test_ungrounded_numbers_reports_offenders():
     assert any(value == Decimal("2.5") for value in offenders)
 
 
+def test_salvage_keeps_grounded_sentences_and_drops_offenders():
+    from chat.service import _salvage_grounded_sentences
+
+    context = {"equity": "431824", "value": 725000}
+    text = ("The equity is $431,824 per equity.expected. "
+            "That is roughly $999,999 above the market. "
+            "The expected value is $725,000.")
+    salvaged, dropped = _salvage_grounded_sentences(text, context, {})
+    assert dropped == 1
+    assert "$431,824" in salvaged and "$725,000" in salvaged
+    assert "999,999" not in salvaged
+    assert "omitted" in salvaged
+
+    nothing_kept, dropped = _salvage_grounded_sentences("All bogus $1,000,000.", context, {})
+    assert nothing_kept is None and dropped == 1
+
+
 def test_ungrounded_reply_retries_then_never_raises():
     provider = UngroundedThenGroundedProvider()
     turn = answer_chat(provider, [{"role": "user", "content": "equity?"}],

@@ -177,6 +177,34 @@ def validate_grounded_numbers(text: str, context: dict, tool_results: dict) -> b
     return not ungrounded_numbers(text, context, tool_results)
 
 
+_SENTENCE_RE = __import__("re").compile(r"(?<=[.!?])\s+")
+
+_SALVAGE_NOTE = ("\n\n(Some figures were omitted from this answer because they could not be "
+                 "verified against the deal data.)")
+
+
+def _salvage_grounded_sentences(text: str, context: dict,
+                                tool_results: dict) -> tuple[str, int]:
+    """Keep every sentence whose numbers are grounded; drop only offending ones.
+
+    A single computed aside ("$50k higher") no longer discards an otherwise
+    correct comparison. Returns (filtered_text | None, dropped_count); None
+    when there is nothing grounded to keep."""
+    sentences = _SENTENCE_RE.split(text.strip())
+    kept = []
+    dropped = 0
+    for sentence in sentences:
+        if not sentence.strip():
+            continue
+        if ungrounded_numbers(sentence, context, tool_results):
+            dropped += 1
+        else:
+            kept.append(sentence.strip())
+    if dropped == 0 or not kept:
+        return None, dropped
+    return " ".join(kept) + _SALVAGE_NOTE, dropped
+
+
 _GROUNDED_FALLBACK = ("I couldn't answer that using only the grounded deal data. "
                       "Rephrase the question, or ask me to pull a specific document page.")
 
@@ -199,34 +227,51 @@ def answer_chat(provider: ChatProviderClient, messages: list[dict],
     grounding_tools = {**tool_results, **turn.tool_results}
     if validate_grounded_numbers(turn.text, structured_context, grounding_tools):
         return turn
-    log.warning("chat reply failed grounding; retrying", extra={
-        "event": "chat_grounding_rejected",
-        "ungrounded_numbers": [str(value) for value in
-                               ungrounded_numbers(turn.text, structured_context, grounding_tools)],
-    })
-    # One corrective retry before degrading gracefully — a grounding refusal
-    # must never surface as an HTTP 500 to the user.
+
+    def _diagnose(text: str, tools: dict) -> dict:
+        return {"event": "chat_grounding_rejected",
+                "ungrounded_numbers": [str(value) for value in
+                                       ungrounded_numbers(text, structured_context, tools)]}
+
+    # First resort: keep the grounded sentences and drop only offending ones —
+    # one computed aside must not discard an otherwise correct comparison.
+    salvaged, dropped = _salvage_grounded_sentences(turn.text, structured_context, grounding_tools)
+    if salvaged is not None:
+        log.warning("chat reply partially grounded; salvaged sentences", extra={
+            "event": "chat_grounding_salvaged", "dropped_sentences": dropped,
+            "ungrounded_numbers": _diagnose(turn.text, grounding_tools)["ungrounded_numbers"],
+        })
+        return ChatTurn(salvaged, turn.input_tokens, turn.output_tokens,
+                        turn.cost_usd, turn.model, grounding_tools)
+
+    log.warning("chat reply failed grounding entirely; retrying",
+                extra=_diagnose(turn.text, grounding_tools))
+    # Second resort: one corrective retry with explicit verbatim instructions.
     retry_messages = [*trimmed,
                        {"role": "assistant", "content": turn.text},
                        {"role": "user", "content":
                         "Your previous reply contained numbers that do not appear in STRUCTURED_CONTEXT "
                         "or TOOL_RESULTS. Answer again using ONLY numbers copied verbatim from those "
                         "sources. If the data cannot answer the question, say so plainly."}]
-    retry_tools = dict(grounding_tools)
     second = provider.complete(
-        retry_messages, structured_context, retry_tools,
+        retry_messages, structured_context, dict(grounding_tools),
         tool_definitions=tool_definitions, execute_tool=execute_tool,
     )
     merged_tools = {**grounding_tools, **second.tool_results}
+    total_input = turn.input_tokens + second.input_tokens
+    total_output = turn.output_tokens + second.output_tokens
+    total_cost = turn.cost_usd + second.cost_usd
     if validate_grounded_numbers(second.text, structured_context, merged_tools):
-        return ChatTurn(second.text, turn.input_tokens + second.input_tokens,
-                        turn.output_tokens + second.output_tokens,
-                        turn.cost_usd + second.cost_usd, second.model, merged_tools)
+        return ChatTurn(second.text, total_input, total_output, total_cost,
+                        second.model, merged_tools)
+    salvaged, dropped = _salvage_grounded_sentences(second.text, structured_context, merged_tools)
+    if salvaged is not None:
+        log.warning("retry partially grounded; salvaged sentences", extra={
+            "event": "chat_grounding_salvaged", "dropped_sentences": dropped,
+            **_diagnose(second.text, merged_tools)})
+        return ChatTurn(salvaged, total_input, total_output, total_cost,
+                        second.model, merged_tools)
     log.warning("chat grounding failed after retry; returning safe fallback", extra={
-        "event": "chat_grounding_fallback",
-        "ungrounded_numbers": [str(value) for value in
-                               ungrounded_numbers(second.text, structured_context, merged_tools)],
-    })
-    return ChatTurn(_GROUNDED_FALLBACK, turn.input_tokens + second.input_tokens,
-                    turn.output_tokens + second.output_tokens,
-                    turn.cost_usd + second.cost_usd, second.model, merged_tools)
+        "event": "chat_grounding_fallback", **_diagnose(second.text, merged_tools)})
+    return ChatTurn(_GROUNDED_FALLBACK, total_input, total_output, total_cost,
+                    second.model, merged_tools)
