@@ -141,7 +141,8 @@ class ChatProviderClient:
 
 def _enriched_allowed_numbers(context: dict, tool_results: dict) -> set[Decimal]:
     """Grounding set with phrasing tolerance: percent forms of ratios (including
-    human-style rounding like 92% for 0.9167) and money rounded to thousands."""
+    human-style rounding like 92% for 0.9167), money rounded to thousands, and
+    K/M shorthand forms ("$725K" extracts as 725, "$1.2M" as 1.2)."""
     allowed = allowed_numbers({"context": context, "tools": tool_results})
     enriched = set(allowed)
     for value in allowed:
@@ -150,23 +151,30 @@ def _enriched_allowed_numbers(context: dict, tool_results: dict) -> set[Decimal]
             enriched.add(percent)
             enriched.add(percent.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
             enriched.add(percent.to_integral_value(rounding=ROUND_HALF_UP))
-        if abs(value) >= Decimal(1000):
-            thousands = (value / Decimal(1000)).to_integral_value(rounding=ROUND_HALF_UP)
-            enriched.add(thousands * Decimal(1000))
+        magnitude = abs(value)
+        if magnitude >= Decimal(1000):
+            enriched.add((value / Decimal(1000)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+        if magnitude >= Decimal(1_000_000):
+            enriched.add((value / Decimal(1_000_000)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
     return enriched
 
 
 def _is_incidental(number: Decimal) -> bool:
-    """Small whole numbers are counts, day/month references, or list indices —
-    never material financial claims; requiring them in context would reject
-    honest phrasing like '3 liens' when the payload lists them structurally."""
-    return number == number.to_integral_value() and Decimal(0) <= number <= Decimal(31)
+    """Small whole numbers (either sign — page ranges like '7-9' extract as -9)
+    are counts, dates, day/month references, or list indices; never material
+    financial claims."""
+    return number == number.to_integral_value() and abs(number) <= Decimal(31)
+
+
+def ungrounded_numbers(text: str, context: dict, tool_results: dict) -> list[Decimal]:
+    """Numbers in ``text`` with no basis in the supplied data (diagnostics)."""
+    allowed = _enriched_allowed_numbers(context, tool_results)
+    return [value for value in extract_numbers(text)
+            if value not in allowed and not _is_incidental(value)]
 
 
 def validate_grounded_numbers(text: str, context: dict, tool_results: dict) -> bool:
-    allowed = _enriched_allowed_numbers(context, tool_results)
-    return all(value in allowed for value in extract_numbers(text)
-               if not _is_incidental(value))
+    return not ungrounded_numbers(text, context, tool_results)
 
 
 _GROUNDED_FALLBACK = ("I couldn't answer that using only the grounded deal data. "
@@ -191,6 +199,11 @@ def answer_chat(provider: ChatProviderClient, messages: list[dict],
     grounding_tools = {**tool_results, **turn.tool_results}
     if validate_grounded_numbers(turn.text, structured_context, grounding_tools):
         return turn
+    log.warning("chat reply failed grounding; retrying", extra={
+        "event": "chat_grounding_rejected",
+        "ungrounded_numbers": [str(value) for value in
+                               ungrounded_numbers(turn.text, structured_context, grounding_tools)],
+    })
     # One corrective retry before degrading gracefully — a grounding refusal
     # must never surface as an HTTP 500 to the user.
     retry_messages = [*trimmed,
@@ -209,8 +222,11 @@ def answer_chat(provider: ChatProviderClient, messages: list[dict],
         return ChatTurn(second.text, turn.input_tokens + second.input_tokens,
                         turn.output_tokens + second.output_tokens,
                         turn.cost_usd + second.cost_usd, second.model, merged_tools)
-    log.warning("chat grounding failed after retry; returning safe fallback",
-                extra={"event": "chat_grounding_fallback"})
+    log.warning("chat grounding failed after retry; returning safe fallback", extra={
+        "event": "chat_grounding_fallback",
+        "ungrounded_numbers": [str(value) for value in
+                               ungrounded_numbers(second.text, structured_context, merged_tools)],
+    })
     return ChatTurn(_GROUNDED_FALLBACK, turn.input_tokens + second.input_tokens,
                     turn.output_tokens + second.output_tokens,
                     turn.cost_usd + second.cost_usd, second.model, merged_tools)

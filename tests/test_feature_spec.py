@@ -8,7 +8,13 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from chat.service import ChatProviderClient, ChatTurn, answer_chat, validate_grounded_numbers
+from chat.service import (
+    ChatProviderClient,
+    ChatTurn,
+    answer_chat,
+    ungrounded_numbers,
+    validate_grounded_numbers,
+)
 from contracts import AssumptionSet, NormalizedProperty, Scenario
 from db import models as dbm
 from finance import underwrite
@@ -76,6 +82,21 @@ class UngroundedThenGroundedProvider:
                             Decimal("0.001"), "fake")
         return ChatTurn("The equity is roughly $999,999 by my estimate.", 10, 8,
                         Decimal("0.001"), "fake")
+
+
+def test_grounding_allows_k_and_m_shorthand_and_page_ranges():
+    context = {"value": 725000, "arv": 1200000}
+    assert validate_grounded_numbers("Value is about $725K.", context, {})
+    assert validate_grounded_numbers("ARV is roughly $1.2M.", context, {})
+    # page ranges extract a negative component ("7-9" -> -9)
+    assert validate_grounded_numbers("See pages 7-9 of the report.", {"page": "7"}, {})
+    assert not validate_grounded_numbers("Value is about $800K.", context, {})
+
+
+def test_ungrounded_numbers_reports_offenders():
+    offenders = ungrounded_numbers("Worth $999,888 or 2.5x.", {"value": 725000}, {})
+    assert Decimal("999888") in offenders
+    assert any(value == Decimal("2.5") for value in offenders)
 
 
 def test_ungrounded_reply_retries_then_never_raises():
