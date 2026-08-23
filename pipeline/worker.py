@@ -157,6 +157,24 @@ def _handle_recompute_property(payload) -> None:
     _pipeline().recompute(
         data["property_id"], reason=data.get("reason", "manual"),
         purchase_price=Decimal(str(price)) if price is not None else None)
+    _enqueue_portfolio_rank()
+
+
+def _enqueue_portfolio_rank() -> None:
+    """Chain a portfolio re-rank after any property recompute. The fixed
+    dedupe key coalesces bursts: while one rank job is queued/running,
+    further recomputes reuse it instead of stampeding the queue."""
+    import json
+
+    from common.db import db_session
+    from jobs.postgres import PostgresJobQueue
+
+    with db_session() as session:
+        PostgresJobQueue().enqueue_with_status(
+            session, "rank_scope",
+            json.dumps({"scope_type": "portfolio"}),
+            dedupe_key="rank_scope:portfolio",
+        )
 
 
 def _handle_rank_scope(payload) -> None:
