@@ -58,6 +58,49 @@ def test_chat_answer_uses_grounded_provider_numbers():
     assert "$431,824" in turn.text
 
 
+def test_grounding_allows_human_percent_rounding_of_context_ratios():
+    context = {"confidence": 0.9167}
+    assert validate_grounded_numbers("Confidence is about 92%.", context, {})
+    assert not validate_grounded_numbers("Confidence is about 97%.", context, {})
+
+
+class UngroundedThenGroundedProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, structured_context, tool_results, *,
+                 tool_definitions=None, execute_tool=None):
+        self.calls += 1
+        if any("ONLY numbers copied verbatim" in str(m.get("content")) for m in messages):
+            return ChatTurn("The equity is $431,824 per equity.expected.", 5, 6,
+                            Decimal("0.001"), "fake")
+        return ChatTurn("The equity is roughly $999,999 by my estimate.", 10, 8,
+                        Decimal("0.001"), "fake")
+
+
+def test_ungrounded_reply_retries_then_never_raises():
+    provider = UngroundedThenGroundedProvider()
+    turn = answer_chat(provider, [{"role": "user", "content": "equity?"}],
+                       {"equity": "431824"}, {})
+    assert "$431,824" in turn.text
+    assert provider.calls == 2
+    # retry costs are billed to the same turn
+    assert turn.input_tokens == 15 and turn.output_tokens == 14
+
+
+class AlwaysUngroundedProvider:
+    def complete(self, messages, structured_context, tool_results, *,
+                 tool_definitions=None, execute_tool=None):
+        return ChatTurn("Definitely $999,999.", 10, 8, Decimal("0.001"), "fake")
+
+
+def test_persistently_ungrounded_reply_degrades_to_safe_fallback():
+    turn = answer_chat(AlwaysUngroundedProvider(), [{"role": "user", "content": "equity?"}],
+                       {"equity": "431824"}, {})
+    assert "couldn't answer" in turn.text
+    assert "999" not in turn.text
+
+
 def test_chat_provider_executes_requested_tool_before_answering():
     requests = []
 

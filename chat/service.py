@@ -7,7 +7,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from analyst.comparison import allowed_numbers, extract_numbers
 from common.settings import settings
@@ -139,9 +139,38 @@ class ChatProviderClient:
         raise ProviderError("chat exceeded the maximum tool-call depth")
 
 
-def validate_grounded_numbers(text: str, context: dict, tool_results: dict) -> bool:
+def _enriched_allowed_numbers(context: dict, tool_results: dict) -> set[Decimal]:
+    """Grounding set with phrasing tolerance: percent forms of ratios (including
+    human-style rounding like 92% for 0.9167) and money rounded to thousands."""
     allowed = allowed_numbers({"context": context, "tools": tool_results})
-    return all(value in allowed for value in extract_numbers(text))
+    enriched = set(allowed)
+    for value in allowed:
+        if Decimal(0) <= value <= Decimal(1):
+            percent = value * Decimal(100)
+            enriched.add(percent)
+            enriched.add(percent.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+            enriched.add(percent.to_integral_value(rounding=ROUND_HALF_UP))
+        if abs(value) >= Decimal(1000):
+            thousands = (value / Decimal(1000)).to_integral_value(rounding=ROUND_HALF_UP)
+            enriched.add(thousands * Decimal(1000))
+    return enriched
+
+
+def _is_incidental(number: Decimal) -> bool:
+    """Small whole numbers are counts, day/month references, or list indices —
+    never material financial claims; requiring them in context would reject
+    honest phrasing like '3 liens' when the payload lists them structurally."""
+    return number == number.to_integral_value() and Decimal(0) <= number <= Decimal(31)
+
+
+def validate_grounded_numbers(text: str, context: dict, tool_results: dict) -> bool:
+    allowed = _enriched_allowed_numbers(context, tool_results)
+    return all(value in allowed for value in extract_numbers(text)
+               if not _is_incidental(value))
+
+
+_GROUNDED_FALLBACK = ("I couldn't answer that using only the grounded deal data. "
+                      "Rephrase the question, or ask me to pull a specific document page.")
 
 
 def answer_chat(provider: ChatProviderClient, messages: list[dict],
@@ -160,6 +189,28 @@ def answer_chat(provider: ChatProviderClient, messages: list[dict],
             tool_definitions=tool_definitions, execute_tool=execute_tool,
         )
     grounding_tools = {**tool_results, **turn.tool_results}
-    if not validate_grounded_numbers(turn.text, structured_context, grounding_tools):
-        raise ValueError("chat response contained an ungrounded number")
-    return turn
+    if validate_grounded_numbers(turn.text, structured_context, grounding_tools):
+        return turn
+    # One corrective retry before degrading gracefully — a grounding refusal
+    # must never surface as an HTTP 500 to the user.
+    retry_messages = [*trimmed,
+                       {"role": "assistant", "content": turn.text},
+                       {"role": "user", "content":
+                        "Your previous reply contained numbers that do not appear in STRUCTURED_CONTEXT "
+                        "or TOOL_RESULTS. Answer again using ONLY numbers copied verbatim from those "
+                        "sources. If the data cannot answer the question, say so plainly."}]
+    retry_tools = dict(grounding_tools)
+    second = provider.complete(
+        retry_messages, structured_context, retry_tools,
+        tool_definitions=tool_definitions, execute_tool=execute_tool,
+    )
+    merged_tools = {**grounding_tools, **second.tool_results}
+    if validate_grounded_numbers(second.text, structured_context, merged_tools):
+        return ChatTurn(second.text, turn.input_tokens + second.input_tokens,
+                        turn.output_tokens + second.output_tokens,
+                        turn.cost_usd + second.cost_usd, second.model, merged_tools)
+    log.warning("chat grounding failed after retry; returning safe fallback",
+                extra={"event": "chat_grounding_fallback"})
+    return ChatTurn(_GROUNDED_FALLBACK, turn.input_tokens + second.input_tokens,
+                    turn.output_tokens + second.output_tokens,
+                    turn.cost_usd + second.cost_usd, second.model, merged_tools)
