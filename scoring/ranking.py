@@ -46,15 +46,15 @@ RANKINGS_SQL = text(
         WHERE p.merged_into_id IS NULL
           AND p.archived_at IS NULL
           AND (
-              (:scope_type = 'portfolio' AND :scope_id IS NULL)
+              (:scope_type = 'portfolio' AND CAST(:scope_id AS uuid) IS NULL)
               OR (
                   :scope_type = 'batch'
-                  AND :scope_id IS NOT NULL
+                  AND CAST(:scope_id AS uuid) IS NOT NULL
                   AND EXISTS (
                       SELECT 1
                       FROM reports report
                       WHERE report.property_id = p.id
-                        AND report.batch_id = :scope_id
+                        AND report.batch_id = CAST(:scope_id AS uuid)
                   )
               )
           )
@@ -63,12 +63,12 @@ RANKINGS_SQL = text(
         SELECT r.property_id, r.rank
         FROM rankings r
         WHERE r.scope_type = :scope_type
-          AND r.scope_id IS NOT DISTINCT FROM :scope_id
+          AND r.scope_id IS NOT DISTINCT FROM CAST(:scope_id AS uuid)
           AND r.ranked_at = (
               SELECT MAX(r2.ranked_at)
               FROM rankings r2
               WHERE r2.scope_type = :scope_type
-                AND r2.scope_id IS NOT DISTINCT FROM :scope_id
+                AND r2.scope_id IS NOT DISTINCT FROM CAST(:scope_id AS uuid)
           )
     ),
     latest AS (
@@ -81,7 +81,7 @@ RANKINGS_SQL = text(
         ORDER BY s.property_id, s.computed_at DESC NULLS LAST, s.id DESC
     )
     INSERT INTO rankings (id, scope_type, scope_id, property_id, rank, prev_rank, score, ranked_at)
-    SELECT gen_random_uuid(), :scope_type, :scope_id, latest.property_id,
+    SELECT gen_random_uuid(), :scope_type, CAST(:scope_id AS uuid), latest.property_id,
            RANK() OVER (ORDER BY latest.overall DESC, latest.property_id),
            previous.rank,
            latest.overall,

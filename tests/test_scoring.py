@@ -454,7 +454,15 @@ def test_rank_scope_executes_single_statement_with_scope_params():
     assert "INSERT INTO rankings" in sql
     assert "insufficient_data" in sql and "open_gating_flag" in sql
     assert "JOIN scope_properties" in sql
-    assert "report.batch_id = :scope_id" in sql
+    assert "report.batch_id = CAST(:scope_id AS uuid)" in sql
+    # every scope_id reference must be cast: a bare NULL parameter makes
+    # Postgres fail with AmbiguousParameter on the portfolio path
+    import re as _re
+
+    bare = [m for m in _re.finditer(r"(?<!CAST\():(scope_id|scope_type)\b", sql)
+            if sql[max(0, m.start() - 6):m.start()] != "CAST("]
+    assert all(m.group(1) == "scope_type" for m in bare), \
+        f"uncast scope_id references remain: {[m.group(0) for m in bare]}"
     assert "SELECT scoring_config_id" in sql  # fallback when no config row is active
     assert params == {"scope_type": "batch", "scope_id": scope_id}
 
