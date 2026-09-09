@@ -27,6 +27,9 @@ from contracts import (
     EquityBlock,
     NormalizedProperty,
     Scenario,
+    ScoreSet,
+    StrategyResult,
+    StrategyType,
     UnderwritingResult,
     ValueBlock,
 )
@@ -925,6 +928,87 @@ def test_chat_stream_has_server_session_and_contacts_are_tool_only(
     })
     assert second.status_code == 200
     assert provider.owner_tool_results[0]["contacts"][0]["value"] == "marlene@example.com"
+
+
+def test_chat_preloads_complete_selected_context_and_comparison(
+    whole_pdf_harness, monkeypatch,
+):
+    property_ids = [uuid4(), uuid4()]
+    with whole_pdf_harness.transaction() as session:
+        for property_id, address in zip(property_ids, ("10 Alpha St", "20 Beta St"), strict=True):
+            session.execute(text("""
+                INSERT INTO properties
+                  (id, address_line1, city, state, zip5, pipeline_status,
+                   is_watchlisted, created_at, updated_at)
+                VALUES (:id, :address, 'Anaheim', 'CA', '92804', 'new',
+                        false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """), {"id": property_id.hex, "address": address})
+    scoring_config_id = uuid4()
+    scores = {
+        property_ids[0]: ScoreSet(
+            property_id=property_ids[0], scoring_config_id=scoring_config_id,
+            fos=Decimal("70"), distress=Decimal("20"), data_confidence=Decimal("80"),
+            risk=Decimal("10"), overall=Decimal("62.21"), components={},
+            gates_applied=[], is_rankable=True,
+        ),
+        property_ids[1]: ScoreSet(
+            property_id=property_ids[1], scoring_config_id=scoring_config_id,
+            fos=Decimal("65"), distress=Decimal("20"), data_confidence=Decimal("75"),
+            risk=Decimal("12"), overall=Decimal("60.78"), components={},
+            gates_applied=[], is_rankable=True,
+        ),
+    }
+    strategies = {
+        property_ids[0]: [StrategyResult(
+            strategy=StrategyType.FLIP, scenario=Scenario.EXPECTED,
+            status="viable", profit=Decimal("431824"), roi=Decimal("0.80"),
+        )],
+        property_ids[1]: [StrategyResult(
+            strategy=StrategyType.FLIP, scenario=Scenario.EXPECTED,
+            status="viable", profit=Decimal("200000"), roi=Decimal("0.60"),
+        )],
+    }
+    monkeypatch.setattr(
+        analysis_store, "load_scores", lambda session, property_id: scores[property_id],
+    )
+    monkeypatch.setattr(
+        analysis_store, "load_strategies", lambda session, property_id: strategies[property_id],
+    )
+
+    class ContextProvider:
+        def __init__(self):
+            self.context = None
+            self.tools = None
+
+        def complete(self, messages, structured_context, tool_results, **kwargs):
+            self.context = structured_context
+            self.tools = tool_results
+            return ChatTurn(
+                "The selected property records are ready for comparison.",
+                20, 10, Decimal("0.001"), "fake",
+            )
+
+    provider = ContextProvider()
+    monkeypatch.setattr(routes_chat, "ChatProviderClient", lambda: provider)
+    response = whole_pdf_harness.client.post("/api/chat", json={
+        "messages": [{"role": "user", "content": "Compare these two"}],
+        "property_ids": [str(value) for value in property_ids],
+    })
+    assert response.status_code == 200
+    first = provider.context[str(property_ids[0])]
+    assert first["label"] == "10 Alpha St, Anaheim, CA, 92804"
+    assert {"property", "normalized", "underwriting", "scores", "strategies",
+            "offers_by_scenario", "flags", "timeline", "source_documents",
+            "source_evidence", "owner_analysis"} <= set(first)
+    comparison = provider.tools["selected_property_comparison"]
+    assert comparison["scenario"] == "expected"
+    assert comparison["property_labels"][str(property_ids[1])].startswith("20 Beta St")
+    score_comparison = comparison["score_comparisons"][0]["comparison"]
+    assert score_comparison["a_overall"] == "62.21"
+    flip = comparison["strategy_comparisons"][0]
+    assert flip["precomputed_pairwise_differences"][0]["left_minus_right"] == {
+        "profit": "231824", "roi": "0.20",
+    }
 
 
 def test_multiple_reports_in_one_batch_resolve_to_one_property(whole_pdf_harness):

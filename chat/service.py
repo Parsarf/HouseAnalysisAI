@@ -21,12 +21,27 @@ from report_analysis.provider import (
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are ACQ's property-analysis assistant.
+SYSTEM_PROMPT = """You are ACQ, a rigorous and conversational real-estate acquisition analyst.
+Answer the user's actual question directly and explain the reasoning like a strong expert assistant,
+not a database search result. Selected properties are fully described in STRUCTURED_CONTEXT and are
+identified by both `label` and `property_id`.
+
+For comparisons:
+- Name every compared property by its address/label; never call them only "it", "this one", A, or B.
+- Unless the user specifies otherwise, use the expected scenario and say that you are doing so.
+- Lead with the conclusion, then support it with the most decision-relevant value, equity, debt,
+  profit, ROI, MAO, score, risk, confidence, and data-quality facts that are available.
+- Explain tradeoffs and contrary evidence. Distinguish a higher-return deal from a safer or more
+  certain deal. End with a practical recommendation and what should be verified next.
+- Use short sections or bullets when they improve readability. Do not give a vague winner-only answer.
+
 Every number you state must be copied from STRUCTURED_CONTEXT or TOOL_RESULTS. Never calculate,
-estimate, interpolate, or recompute a figure. Cite the source field name for structured figures or
-the report page for document passages. If the supplied data cannot answer, say so. Owner contacts,
-liens, and bankruptcies are reference-only and never alter underwriting, scoring, offer grids, or
-strategy viability. Do not expose owner contact data unless it appears in TOOL_RESULTS.
+estimate, interpolate, or recompute a figure yourself. Deterministic differences and rankings are in
+`selected_property_comparison`; use those instead of doing arithmetic. Cite the source field path for
+structured figures or the report page for document evidence. If supplied data cannot answer a point,
+say exactly which field is missing. Owner contacts, liens, and bankruptcies are reference-only and
+never alter underwriting, scoring, offer grids, or strategy viability. Do not expose owner contact
+data unless it appears in TOOL_RESULTS from the owner-profile tool.
 """
 
 
@@ -80,12 +95,16 @@ class ChatProviderClient:
             raise PermanentProviderError("chat provider API key is not configured")
         payload: dict = {
             "model": self.model,
+            "max_output_tokens": 6_000,
             "input": [{"role": "system", "content": SYSTEM_PROMPT}, {
                 "role": "user",
                 "content": "STRUCTURED_CONTEXT:\n" + json.dumps(structured_context, default=str)
                 + "\nTOOL_RESULTS:\n" + json.dumps(tool_results, default=str),
             }, *messages],
         }
+        if self.model.startswith("gpt-5"):
+            payload["reasoning"] = {"effort": "low"}
+            payload["text"] = {"verbosity": "medium"}
         if tool_definitions:
             payload["tools"] = tool_definitions
         gathered = dict(tool_results)
@@ -132,8 +151,11 @@ class ChatProviderClient:
                 })
             payload = {
                 "model": self.model, "previous_response_id": response_id,
-                "input": outputs,
+                "input": outputs, "max_output_tokens": 6_000,
             }
+            if self.model.startswith("gpt-5"):
+                payload["reasoning"] = {"effort": "low"}
+                payload["text"] = {"verbosity": "medium"}
             if tool_definitions:
                 payload["tools"] = tool_definitions
         raise ProviderError("chat exceeded the maximum tool-call depth")
@@ -146,9 +168,12 @@ def _enriched_allowed_numbers(context: dict, tool_results: dict) -> set[Decimal]
     allowed = allowed_numbers({"context": context, "tools": tool_results})
     enriched = set(allowed)
     for value in allowed:
+        for exponent in ("1", "0.1", "0.01", "0.001"):
+            enriched.add(value.quantize(Decimal(exponent), rounding=ROUND_HALF_UP))
         if Decimal(0) <= value <= Decimal(1):
             percent = value * Decimal(100)
             enriched.add(percent)
+            enriched.add(percent.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
             enriched.add(percent.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
             enriched.add(percent.to_integral_value(rounding=ROUND_HALF_UP))
         magnitude = abs(value)
@@ -233,26 +258,20 @@ def answer_chat(provider: ChatProviderClient, messages: list[dict],
                 "ungrounded_numbers": [str(value) for value in
                                        ungrounded_numbers(text, structured_context, tools)]}
 
-    # First resort: keep the grounded sentences and drop only offending ones —
-    # one computed aside must not discard an otherwise correct comparison.
-    salvaged, dropped = _salvage_grounded_sentences(turn.text, structured_context, grounding_tools)
-    if salvaged is not None:
-        log.warning("chat reply partially grounded; salvaged sentences", extra={
-            "event": "chat_grounding_salvaged", "dropped_sentences": dropped,
-            "ungrounded_numbers": _diagnose(turn.text, grounding_tools)["ungrounded_numbers"],
-        })
-        return ChatTurn(salvaged, turn.input_tokens, turn.output_tokens,
-                        turn.cost_usd, turn.model, grounding_tools)
-
-    log.warning("chat reply failed grounding entirely; retrying",
+    log.warning("chat reply failed grounding; retrying complete answer",
                 extra=_diagnose(turn.text, grounding_tools))
-    # Second resort: one corrective retry with explicit verbatim instructions.
+    offenders = _diagnose(turn.text, grounding_tools)["ungrounded_numbers"]
+    # Preserve a useful answer by asking for a complete correction before any
+    # sentence-level salvage. Previously, two bad calculated deltas could strip
+    # a detailed comparison down to one vague sentence.
     retry_messages = [*trimmed,
                        {"role": "assistant", "content": turn.text},
                        {"role": "user", "content":
-                        "Your previous reply contained numbers that do not appear in STRUCTURED_CONTEXT "
-                        "or TOOL_RESULTS. Answer again using ONLY numbers copied verbatim from those "
-                        "sources. If the data cannot answer the question, say so plainly."}]
+                        "Rewrite the COMPLETE answer. Do not merely remove detailed sentences. Your "
+                        f"previous reply used these ungrounded numbers: {offenders}. Use ONLY numbers copied verbatim "
+                        "from STRUCTURED_CONTEXT or TOOL_RESULTS, including their precomputed differences, "
+                        "while preserving the conclusion, named-property comparison, tradeoffs, risks, "
+                        "and recommendation. If a comparison is unavailable, identify the missing field."}]
     second = provider.complete(
         retry_messages, structured_context, dict(grounding_tools),
         tool_definitions=tool_definitions, execute_tool=execute_tool,
@@ -265,6 +284,10 @@ def answer_chat(provider: ChatProviderClient, messages: list[dict],
         return ChatTurn(second.text, total_input, total_output, total_cost,
                         second.model, merged_tools)
     salvaged, dropped = _salvage_grounded_sentences(second.text, structured_context, merged_tools)
+    if salvaged is None:
+        salvaged, dropped = _salvage_grounded_sentences(
+            turn.text, structured_context, grounding_tools,
+        )
     if salvaged is not None:
         log.warning("retry partially grounded; salvaged sentences", extra={
             "event": "chat_grounding_salvaged", "dropped_sentences": dropped,

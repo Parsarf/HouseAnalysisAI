@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     extraction_frontier_model: str = "gpt-4o"
     extraction_timeout_seconds: float = 180.0
     extraction_max_retries: int = 3
-    chat_model: str = "gpt-4o-mini"
-    chat_session_token_cap: int = 20_000
+    chat_model: str = "gpt-5-mini"
+    chat_session_token_cap: int = 100_000
     chat_daily_spend_cap_usd: Decimal = Decimal("10.00")
     chat_history_messages: int = 12
     outreach_disclosure: str = ""

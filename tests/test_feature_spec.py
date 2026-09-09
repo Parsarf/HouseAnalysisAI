@@ -15,7 +15,7 @@ from chat.service import (
     ungrounded_numbers,
     validate_grounded_numbers,
 )
-from contracts import AssumptionSet, NormalizedProperty, Scenario
+from contracts import AssumptionSet, NormalizedProperty, Scenario, ScoreSet
 from db import models as dbm
 from finance import underwrite
 from identity.service import normalize_mailing_address, normalize_owner_name
@@ -68,6 +68,11 @@ def test_grounding_allows_human_percent_rounding_of_context_ratios():
     context = {"confidence": 0.9167}
     assert validate_grounded_numbers("Confidence is about 92%.", context, {})
     assert not validate_grounded_numbers("Confidence is about 97%.", context, {})
+
+
+def test_grounding_allows_display_rounding_of_string_serialized_decimals():
+    context = {"overall": "62.2068", "roi": "0.80395"}
+    assert validate_grounded_numbers("Score 62.21; ROI 80.40%.", context, {})
 
 
 class UngroundedThenGroundedProvider:
@@ -139,6 +144,49 @@ def test_persistently_ungrounded_reply_degrades_to_safe_fallback():
     assert "999" not in turn.text
 
 
+class PartiallyUngroundedThenDetailedProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, structured_context, tool_results, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return ChatTurn(
+                "Orange Ave wins. It is $999,999 better.", 10, 8,
+                Decimal("0.001"), "fake",
+            )
+        return ChatTurn(
+            "Orange Ave wins because expected profit is $431,824 (strategies.expected.profit).",
+            12, 14, Decimal("0.002"), "fake",
+        )
+
+
+def test_partially_ungrounded_comparison_is_rewritten_before_salvage():
+    provider = PartiallyUngroundedThenDetailedProvider()
+    turn = answer_chat(
+        provider, [{"role": "user", "content": "compare these two"}],
+        {"expected_profit": "431824"}, {},
+        tool_definitions=[], execute_tool=lambda name, arguments: {},
+    )
+    assert provider.calls == 2
+    assert "$431,824" in turn.text
+    assert "omitted" not in turn.text
+
+
+def test_chat_safe_serializes_nested_contract_as_fields():
+    from api.routes_chat import _chat_safe
+
+    score = ScoreSet(
+        property_id=uuid4(), scoring_config_id=uuid4(), fos=Decimal("70.1"),
+        distress=Decimal("25"), data_confidence=Decimal("80"),
+        risk=Decimal("10"), overall=Decimal("62.2068"), components={},
+        gates_applied=[], is_rankable=True,
+    )
+    encoded = _chat_safe({"scores": score})
+    assert encoded["scores"]["overall"] == "62.2068"
+    assert encoded["scores"]["property_id"] == str(score.property_id)
+
+
 def test_chat_provider_executes_requested_tool_before_answering():
     requests = []
 
@@ -162,7 +210,7 @@ def test_chat_provider_executes_requested_tool_before_answering():
             "usage": {"input_tokens": 5, "output_tokens": 8},
         }
 
-    client = ChatProviderClient(api_key="test", transport=transport)
+    client = ChatProviderClient(api_key="test", model="gpt-5-mini", transport=transport)
     definitions = [{
         "type": "function", "name": "lookup", "description": "Look up equity.",
         "strict": True,
@@ -174,6 +222,9 @@ def test_chat_provider_executes_requested_tool_before_answering():
         tool_definitions=definitions, execute_tool=lambda name, arguments: {"equity": "431824"},
     )
     assert len(requests) == 2
+    assert requests[0]["reasoning"] == {"effort": "low"}
+    assert requests[0]["text"] == {"verbosity": "medium"}
+    assert requests[0]["max_output_tokens"] == 6_000
     assert requests[1]["previous_response_id"] == "resp_1"
     assert requests[1]["input"][0]["type"] == "function_call_output"
     assert turn.input_tokens == 15

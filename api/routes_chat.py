@@ -5,21 +5,25 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime
 from decimal import Decimal
-from itertools import pairwise
+from enum import Enum
+from itertools import combinations
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from analyst.comparison import why_above
 from auth.dependencies import User, current_user
 from chat import ChatProviderClient, answer_chat
 from common.errors import AcqError, ErrorCode
-from common.serializers import json_safe
 from common.settings import settings
 from common.storage import get_document_storage
+from contracts import Scenario, ScoreSet
 from db import models as dbm
 from ops.chat_budget import (
     cache_document_text,
@@ -35,7 +39,6 @@ from report_analysis.provider import PermanentProviderError, ProviderError
 from . import analysis as analysis_store
 from .deps import get_session
 from .routes_owner import owner_profile_payload
-from .serializers import score_set
 
 router = APIRouter(prefix="/api", tags=["chat"])
 log = logging.getLogger(__name__)
@@ -107,25 +110,126 @@ TOOL_DEFINITIONS = [
 ]
 
 
+def _chat_safe(value):
+    """Keep nested contracts structured instead of stringifying Pydantic models."""
+    if isinstance(value, BaseModel):
+        return _chat_safe(value.model_dump(mode="json"))
+    if is_dataclass(value) and not isinstance(value, type):
+        return _chat_safe(asdict(value))
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(key): _chat_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_chat_safe(item) for item in value]
+    return value
+
+
+def _property_label(row: dbm.Property) -> str:
+    return ", ".join(str(item) for item in (
+        row.address_line1, row.city, row.state, row.zip5,
+    ) if item) or str(row.id)
+
+
+def _source_evidence(session: Session, property_id: UUID) -> dict:
+    from report_analysis.read_model import active_entities
+
+    entities = active_entities(session, property_id)
+    facts = session.query(dbm.ExtractedFact).filter(
+        dbm.ExtractedFact.property_id == property_id,
+        dbm.ExtractedFact.is_active.is_(True),
+    ).order_by(dbm.ExtractedFact.field_path, dbm.ExtractedFact.page_number).all()
+    return {
+        "document_entities": [{
+            "report_id": entity.report_id,
+            "role": entity.role,
+            "source_pages": entity.source_pages,
+            "source_references": (entity.raw_json or {}).get("source_references", []),
+            "additional_facts": (entity.raw_json or {}).get("additional_facts", []),
+        } for entity in entities],
+        "field_evidence": [{
+            "field_path": fact.field_path,
+            "value_raw": fact.value_raw,
+            "value_parsed": fact.value_parsed,
+            "value_text": fact.value_text,
+            "value_date": fact.value_date,
+            "value_bool": fact.value_bool,
+            "unit": fact.unit,
+            "as_of_date": fact.as_of_date,
+            "report_id": fact.report_id,
+            "page_number": fact.page_number,
+            "snippet": fact.snippet,
+            "extraction_confidence": fact.extraction_confidence,
+            "source_kind": fact.source_kind,
+        } for fact in facts],
+    }
+
+
 def _structured_property(session: Session, property_id: UUID) -> dict:
-    if session.get(dbm.Property, property_id) is None:
+    row = session.get(dbm.Property, property_id)
+    if row is None:
         raise AcqError(ErrorCode.NOT_FOUND, f"property {property_id} not found")
     record = analysis_store.load_normalized(session, property_id)
     underwriting = analysis_store.load_underwriting(session, property_id, record)
     owner = owner_profile_payload(session, property_id)
-    return json_safe({
+    offers = {
+        scenario.value: analysis_store.load_offers(
+            session, property_id, scenario, underwriting,
+        )
+        for scenario in Scenario
+    }
+    return _chat_safe({
         "property_id": property_id,
+        "label": _property_label(row),
+        "property": {
+            "apn": row.apn,
+            "address_line1": row.address_line1,
+            "city": row.city,
+            "state": row.state,
+            "zip5": row.zip5,
+            "county_fips": row.fips_county,
+            "latitude": row.lat,
+            "longitude": row.lng,
+            "property_type": row.property_type,
+            "beds": row.beds,
+            "baths": row.baths,
+            "sqft": row.sqft,
+            "lot_sqft": row.lot_sqft,
+            "year_built": row.year_built,
+            "units": row.units,
+            "pipeline_status": row.pipeline_status,
+            "underwriting_status": row.underwriting_status,
+            "tags": row.tags,
+            "next_action": row.next_action,
+            "next_action_date": row.next_action_date,
+            "gut_rating": row.gut_rating,
+            "is_watchlisted": row.is_watchlisted,
+        },
         "normalized": record,
         "underwriting": underwriting,
         "scores": analysis_store.load_scores(session, property_id),
         "strategies": analysis_store.load_strategies(session, property_id),
+        "offers_by_scenario": offers,
         "flags": analysis_store.load_flags(session, property_id),
-        "owner_summary": {
+        "timeline": analysis_store.load_timeline(session, property_id),
+        "source_documents": _list_documents(session, property_id),
+        "source_evidence": _source_evidence(session, property_id),
+        "owner_analysis": {
             "owners": [{
                 "id": item["id"], "full_name": item["full_name"],
+                "age": item["age"], "gender": item["gender"],
                 "is_absentee": item["is_absentee"],
             } for item in owner["owners"]],
+            "liens": owner["liens"],
+            "bankruptcies": owner["bankruptcies"],
             "serial_filing": owner["serial_filing"],
+            "timeline": owner["timeline"],
             "owner_lien_total": owner["owner_lien_total"],
         },
     })
@@ -197,26 +301,97 @@ def _document_text(session: Session, report_id: UUID, session_key: str,
 
 
 def _compare(session: Session, property_ids: list[UUID], scenario: str) -> dict:
-    scores = []
-    scenario_results = []
+    rows = {
+        property_id: session.get(dbm.Property, property_id)
+        for property_id in property_ids
+    }
+    missing = [str(property_id) for property_id, row in rows.items() if row is None]
+    if missing:
+        raise AcqError(ErrorCode.NOT_FOUND, f"properties not found: {', '.join(missing)}")
+    labels = {
+        property_id: _property_label(row)
+        for property_id, row in rows.items() if row is not None
+    }
+    scores: list[tuple[UUID, ScoreSet]] = []
+    results_by_property: dict[UUID, list] = {}
     for property_id in property_ids:
-        row = session.query(dbm.Score).filter(dbm.Score.property_id == property_id).order_by(
-            dbm.Score.computed_at.desc().nullslast(), dbm.Score.id.desc(),
-        ).first()
-        if row is not None:
-            scores.append((property_id, score_set(row)))
-        strategies = [
+        score = analysis_store.load_scores(session, property_id)
+        if score is not None:
+            scores.append((property_id, score))
+        results_by_property[property_id] = [
             result for result in analysis_store.load_strategies(session, property_id)
             if result.scenario.value == scenario
         ]
-        scenario_results.append({"property_id": property_id, "strategies": strategies})
-    comparisons = []
-    for (left_id, left), (right_id, right) in pairwise(scores):
-        comparison, explanation = why_above(left, right, a_label=str(left_id), b_label=str(right_id))
-        comparisons.append({"comparison": comparison, "explanation": explanation})
-    return json_safe({
-        "scenario": scenario, "score_comparisons": comparisons,
-        "scenario_strategy_results": scenario_results,
+    score_comparisons = []
+    for (left_id, left), (right_id, right) in combinations(scores, 2):
+        comparison, explanation = why_above(
+            left, right, a_label=labels[left_id], b_label=labels[right_id],
+        )
+        score_comparisons.append({
+            "left_property_id": left_id,
+            "right_property_id": right_id,
+            "comparison": comparison,
+            "explanation": explanation,
+        })
+
+    strategies = sorted({
+        result.strategy.value
+        for results in results_by_property.values() for result in results
+    })
+    strategy_comparisons = []
+    metric_names = (
+        "mao", "all_in_basis", "profit", "roi", "margin_of_safety",
+        "purchase_price", "repairs", "holding", "financing", "resale",
+        "arv", "cap_rate", "cash_flow", "coc",
+    )
+    for strategy in strategies:
+        entries = []
+        numeric_by_property: dict[UUID, dict[str, Decimal]] = {}
+        for property_id in property_ids:
+            result = next((item for item in results_by_property[property_id]
+                           if item.strategy.value == strategy), None)
+            if result is None:
+                continue
+            dumped = result.model_dump(mode="python")
+            metrics = dict(dumped.get("metrics") or {})
+            values = {
+                name: dumped.get(name) if dumped.get(name) is not None else metrics.get(name)
+                for name in metric_names
+            }
+            numeric_by_property[property_id] = {
+                name: Decimal(str(value)) for name, value in values.items()
+                if value is not None
+            }
+            entries.append({
+                "property_id": property_id,
+                "label": labels[property_id],
+                "result": result,
+            })
+        differences = []
+        for left_id, right_id in combinations(numeric_by_property, 2):
+            left_metrics = numeric_by_property[left_id]
+            right_metrics = numeric_by_property[right_id]
+            differences.append({
+                "left_property_id": left_id,
+                "left_label": labels[left_id],
+                "right_property_id": right_id,
+                "right_label": labels[right_id],
+                "left_minus_right": {
+                    name: left_metrics[name] - right_metrics[name]
+                    for name in sorted(set(left_metrics) & set(right_metrics))
+                },
+            })
+        strategy_comparisons.append({
+            "strategy": strategy,
+            "entries": entries,
+            "precomputed_pairwise_differences": differences,
+        })
+    return _chat_safe({
+        "scenario": scenario,
+        "selected_property_order": property_ids,
+        "property_labels": labels,
+        "score_comparisons": score_comparisons,
+        "strategy_comparisons": strategy_comparisons,
     })
 
 
@@ -289,7 +464,11 @@ def chat(body: dict, session: Session = Depends(get_session),
     context = {str(property_id): _structured_property(session, property_id)
                for property_id in property_ids}
     tools: dict = {}
-    encoded_size = len(json.dumps({"c": context, "m": messages}, default=str))
+    if len(property_ids) >= 2:
+        tools["selected_property_comparison"] = _compare(
+            session, property_ids, Scenario.EXPECTED.value,
+        )
+    encoded_size = len(json.dumps({"c": context, "t": tools, "m": messages}, default=str))
     estimated_tokens = encoded_size // 4 + 2_048
     session_key = chat_session_key(user.id, chat_session_id)
     if not reserve_chat_session_tokens(

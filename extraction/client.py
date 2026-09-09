@@ -46,6 +46,7 @@ DEFAULT_TIMEOUT_SECONDS = 180.0
 MODEL_PRICING: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
     "gpt-4o": (Decimal("2.50"), Decimal("10.00")),
+    "gpt-5-mini": (Decimal("0.25"), Decimal("2.00")),
 }
 _FALLBACK_PRICING = (Decimal("2.50"), Decimal("10.00"))
 
