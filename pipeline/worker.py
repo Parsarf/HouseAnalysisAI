@@ -22,7 +22,8 @@ from extraction import ExtractionService, ProviderClient, UnitInput
 from identity.service import attach_report
 from ingestion.worker import ingest_document
 from jobs.postgres import PostgresJobQueue
-from report_analysis.service import ReportAnalysisFailure, analyze_report
+from report_analysis.documents import analyze_document
+from report_analysis.service import ReportAnalysisFailure
 
 from .orchestrator import Pipeline
 
@@ -133,10 +134,11 @@ def _handle_ingest_document(payload) -> None:
 def _handle_analyze_report(payload) -> None:
     data = _payload(payload)
     try:
-        analyze_report(
+        analyze_document(
             UUID(str(data["report_id"])),
             batch_id=UUID(str(data["batch_id"])) if data.get("batch_id") else None,
             job_id=UUID(str(data["_job_id"])) if data.get("_job_id") else None,
+            run_id=UUID(str(data["run_id"])) if data.get("run_id") else None,
         )
     except ReportAnalysisFailure as exc:
         raise PermanentJobFailure(str(exc)) from exc

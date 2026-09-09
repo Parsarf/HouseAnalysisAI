@@ -224,6 +224,11 @@ class SqlStore:
         """Canonical whole-PDF NormalizedProperty when one exists (the same
         record the deal page reads); None otherwise."""
         from contracts import NormalizedProperty
+        from report_analysis.read_model import load_record
+
+        record = load_record(self.session, property_id)
+        if record is not None:
+            return record
 
         row = self.session.execute(
             text("SELECT normalized_json FROM report_extractions "
@@ -241,9 +246,8 @@ class SqlStore:
             return None
 
     def reports_ocr_applied(self, property_id: UUID) -> bool:
-        return bool(self.session.execute(
-            text("SELECT COALESCE(bool_or(ocr_applied), false) FROM reports WHERE property_id = :pid"),
-            {"pid": property_id}).scalar())
+        from report_analysis.read_model import reports_for_property
+        return any(report.ocr_applied for report in reports_for_property(self.session, property_id))
 
     def load_assumptions(self, assumption_set_id: UUID | None = None) -> AssumptionSet:
         if assumption_set_id is not None:

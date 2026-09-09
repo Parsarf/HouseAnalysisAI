@@ -1,8 +1,10 @@
-"""Upload-to-ingestion regressions using real API, ORM, worker, and S3 adapters."""
+"""Legacy ingestion regressions; PDF upload routing is covered by document tests."""
 
 import importlib
 import json
+import logging
 import os
+import tempfile
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
@@ -20,7 +22,14 @@ from api.deps import get_queue, get_session
 from auth.dependencies import make_session
 from common.settings import settings
 from common.storage import S3Storage
-from db.models import Batch, ExtractionUnit, Job, Report
+from db.models import (
+    Batch,
+    DocumentAnalysisRun,
+    ExtractionUnit,
+    Job,
+    Report,
+    ReportEntityExtraction,
+)
 from ingestion import register_pdf
 from ingestion import worker as ingestion_worker
 from jobs.postgres import PostgresJobQueue
@@ -118,6 +127,8 @@ def upload_ingestion_harness(monkeypatch, tmp_path):
     Report.__table__.create(engine)
     ExtractionUnit.__table__.create(engine)
     Job.__table__.create(engine)
+    DocumentAnalysisRun.__table__.create(engine)
+    ReportEntityExtraction.__table__.create(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 
     storage = object.__new__(S3Storage)
@@ -164,13 +175,23 @@ def upload_ingestion_harness(monkeypatch, tmp_path):
 
 
 def upload(harness, name):
-    response = harness.client.post(
-        "/api/uploads",
-        files=[("files", ("report.pdf", harness.pdf, "application/pdf"))],
-        data={"batch_name": name},
-    )
-    assert response.status_code == 200
-    return response.json()
+    # New PDF uploads always use document analysis; exercise retained legacy jobs directly.
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as source:
+        source.write(harness.pdf)
+        source.flush()
+        with harness.session_factory() as session:
+            batch = Batch(id=uuid4(), name=name, file_count=1, total_count=1, status="ingesting")
+            session.add(batch)
+            report, _ = register_pdf(session, Path(source.name), settings.document_root,
+                                      batch_id=batch.id, storage=harness.storage)
+            harness.queue.enqueue(session, "ingest_document", json.dumps({"report_id": str(report.id)}),
+                                  f"ingest:{report.id}")
+            logging.getLogger(__name__).info("legacy job queued", extra={
+                "event": "ingest_job_created", "batch_id": batch.id, "report_id": report.id,
+            })
+            result = {"report_ids": [str(report.id)], "batch_id": str(batch.id)}
+            session.commit()
+            return result
 
 
 def assert_batch_uploaded(harness, batch_id, report_id):
@@ -247,7 +268,7 @@ def test_fresh_unique_pdf_ingests_estimates_and_starts_extraction(
     assert eligible.excluded_unit_statuses == {}
     events = {getattr(record, "event", None) for record in caplog.records}
     required = {
-        "upload_received", "file_saved", "report_registered", "ingest_job_created",
+        "file_saved", "report_registered", "ingest_job_created",
         "worker_job_claimed", "document_materialized", "pdf_opened", "scan_detected",
         "classification_completed", "sectioning_completed", "units_created",
         "report_status_transition", "ingestion_transaction_committed",

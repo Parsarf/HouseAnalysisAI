@@ -65,10 +65,32 @@ def _batch_or_404(session: Session, batch_id: UUID) -> dbm.Batch:
     return batch
 
 
+@router.post("/reports/{report_id}/reanalyze")
+def reanalyze_document(report_id: UUID, body: dict | None = None,
+                       session: Session = Depends(get_session),
+                       queue: PostgresJobQueue = Depends(get_queue),
+                       user: User = Depends(write_user)):
+    from report_analysis.backfill import schedule
+    report = session.get(dbm.Report, report_id)
+    if report is None:
+        raise AcqError(ErrorCode.NOT_FOUND, "report not found")
+    if report.vendor == "pasted":
+        raise AcqError(ErrorCode.INVALID_INPUT, "This action requires an original PDF")
+    run = schedule(session, queue, report, reanalyze=not (body or {}).get("retry", False))
+    return {"report_id": str(report_id), "run_id": str(run.id), "status": run.status}
+
+
 def _batch_payload(batch: dbm.Batch, session: Session) -> dict:
+    from report_analysis.read_model import source_report_id
     reports = session.query(dbm.Report).filter(dbm.Report.batch_id == batch.id).all()
+    sources = {report.id: source_report_id(session, report) for report in reports}
+    entities = session.query(dbm.ReportEntityExtraction).filter(
+        dbm.ReportEntityExtraction.report_id.in_(set(sources.values())),
+        dbm.ReportEntityExtraction.active.is_(True),
+    ).all()
     property_ids = sorted(
-        {report.property_id for report in reports if report.property_id is not None},
+        {report.property_id for report in reports if report.property_id is not None}
+        | {entity.property_id for entity in entities if entity.property_id is not None},
         key=str,
     )
     properties = (
@@ -79,6 +101,11 @@ def _batch_payload(batch: dbm.Batch, session: Session) -> dict:
     for report in reports:
         if report.property_id is not None:
             reports_by_property.setdefault(report.property_id, []).append(str(report.id))
+        for entity in entities:
+            if entity.report_id == sources[report.id] and entity.property_id:
+                ids = reports_by_property.setdefault(entity.property_id, [])
+                if str(report.id) not in ids:
+                    ids.append(str(report.id))
     results = [{
         "property_id": str(row.id),
         "report_ids": reports_by_property.get(row.id, []),
@@ -87,7 +114,25 @@ def _batch_payload(batch: dbm.Batch, session: Session) -> dict:
         "state": row.state,
         "zip5": row.zip5,
         "apn": row.apn,
+        "sources": [{"report_id": str(entity.report_id), "pages": entity.source_pages,
+                     "role": entity.role, "status": entity.status, "issues": entity.issues}
+                    for entity in entities if entity.property_id == row.id],
     } for row in properties]
+    documents = []
+    for report in reports:
+        run = session.query(dbm.DocumentAnalysisRun).filter(dbm.DocumentAnalysisRun.report_id == sources[report.id]).order_by(
+            dbm.DocumentAnalysisRun.generation.desc(),
+        ).first()
+        if run:
+            run_entities = session.query(dbm.ReportEntityExtraction).filter_by(run_id=run.id).all()
+            documents.append({"report_id": str(report.id), "run_id": str(run.id),
+                              "status": run.status, "page_count": run.page_count,
+                              "coverage": run.coverage, "issues": run.issues,
+                              "entities": [{"id": str(entity.id), "kind": entity.kind,
+                                            "property_id": str(entity.property_id) if entity.property_id else None,
+                                            "pages": entity.source_pages, "role": entity.role,
+                                            "status": entity.status, "issues": entity.issues}
+                                           for entity in run_entities]})
     unresolved = []
     for report in reports:
         if not (report.property_id is None
@@ -113,7 +158,8 @@ def _batch_payload(batch: dbm.Batch, session: Session) -> dict:
                       "actual_cost_usd": batch.actual_cost_usd,
                       "awaiting_confirmation": bool(batch.awaiting_confirmation),
                       "property_ids": [str(value) for value in property_ids],
-                      "results": results, "unresolved_reports": unresolved})
+                      "results": results, "unresolved_reports": unresolved,
+                      "property_count": len(property_ids), "documents": documents})
 
 
 @router.get("/batches/{batch_id}")

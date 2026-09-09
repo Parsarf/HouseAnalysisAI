@@ -27,7 +27,7 @@ CLAIM_SQL = text("""
 WITH next_job AS (
   SELECT id FROM jobs
   WHERE status = 'queued' AND run_after <= now()
-  ORDER BY created_at
+  ORDER BY CASE WHEN payload->>'backfill' = 'true' THEN 1 ELSE 0 END, created_at
   FOR UPDATE SKIP LOCKED
   LIMIT 1
 )

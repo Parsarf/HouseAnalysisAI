@@ -52,7 +52,8 @@ def load_underwriting(session: Session, property_id: UUID,
                  .filter(dbm.ReportExtraction.property_id == property_id,
                          dbm.ReportExtraction.status == "complete")
                  .first())
-    if canonical is not None:
+    from report_analysis.read_model import active_entities
+    if canonical is not None or active_entities(session, property_id):
         from report_analysis.normalizer import underwrite_canonical
         return underwrite_canonical(normalized, assumptions)
     from finance import underwrite  # lazy: finance imports contracts either way

@@ -417,6 +417,8 @@ def whole_pdf_harness(monkeypatch, tmp_path):
     _create_property_table(engine)
     for table in (
         dbm.Batch.__table__, dbm.Report.__table__, dbm.ReportExtraction.__table__,
+        dbm.DocumentAnalysisRun.__table__, dbm.DocumentAnalysisChunk.__table__,
+        dbm.ReportEntityExtraction.__table__,
         dbm.ExtractionUnit.__table__, dbm.ExtractedFact.__table__, dbm.Owner.__table__,
         dbm.PropertyOwner.__table__, dbm.OwnerContact.__table__, dbm.Lien.__table__,
         dbm.BankruptcyEvent.__table__, dbm.ForeclosureEvent.__table__,

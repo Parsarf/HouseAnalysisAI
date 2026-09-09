@@ -809,7 +809,7 @@ def test_completed_batch_exposes_property_results_for_analysis_links(client, ses
     assert payload["results"] == [{
         "property_id": str(property_id), "report_ids": [str(report_id)],
         "address_line1": "123 Main St", "city": "Irvine", "state": "CA",
-        "zip5": "92602", "apn": "123-456",
+        "zip5": "92602", "apn": "123-456", "sources": [],
     }]
     assert payload["unresolved_reports"] == []
 

@@ -371,6 +371,19 @@ export interface BatchStatus {
   property_ids?: string[];
   results?: BatchPropertyResult[];
   unresolved_reports?: BatchUnresolvedReport[];
+  property_count?: number;
+  documents?: DocumentAnalysisStatus[];
+}
+
+export interface DocumentAnalysisStatus {
+  report_id: string;
+  run_id: string;
+  status: string;
+  page_count: number;
+  coverage: { page: number; status: string; reason?: string | null }[];
+  issues: { code: string; message?: string; pages?: number[] }[];
+  entities: { id: string; kind: string; property_id: string | null; pages: number[];
+    role: string; status: string; issues: { code: string; message?: string }[] }[];
 }
 
 export interface BatchPropertyResult {

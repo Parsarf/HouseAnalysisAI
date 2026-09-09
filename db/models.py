@@ -178,6 +178,58 @@ class ReportExtraction(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class DocumentAnalysisRun(Base):
+    __tablename__ = "document_analysis_runs"
+    __table_args__ = (UniqueConstraint("report_id", "generation"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    report_id: Mapped[UUID] = mapped_column(ForeignKey("reports.id"), index=True)
+    budget_batch_id: Mapped[UUID | None] = mapped_column(ForeignKey("batches.id"))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    version: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(30), default="analyzing")
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    coverage: Mapped[list] = mapped_column(JSON, default=list)
+    issues: Mapped[list] = mapped_column(JSON, default=list)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), default=Decimal(0))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class DocumentAnalysisChunk(Base):
+    __tablename__ = "document_analysis_chunks"
+    __table_args__ = (UniqueConstraint("run_id", "key"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("document_analysis_runs.id"), index=True)
+    key: Mapped[str] = mapped_column(String(255))
+    pages: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(30), default="queued")
+    payload: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(Text)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), default=Decimal(0))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ReportEntityExtraction(Base):
+    __tablename__ = "report_entity_extractions"
+    __table_args__ = (UniqueConstraint("run_id", "entity_key"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("document_analysis_runs.id"), index=True)
+    report_id: Mapped[UUID] = mapped_column(ForeignKey("reports.id"), index=True)
+    entity_key: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(20))
+    role: Mapped[str] = mapped_column(String(20))
+    property_id: Mapped[UUID | None] = mapped_column(ForeignKey("properties.id"), index=True)
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("owners.id"), index=True)
+    source_pages: Mapped[list] = mapped_column(JSON, default=list)
+    raw_json: Mapped[dict | None] = mapped_column(JSON)
+    normalized_json: Mapped[dict | None] = mapped_column(JSON)
+    issues: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(30), default="queued")
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class ExtractionUnit(Base):
     __tablename__ = "extraction_units"
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)

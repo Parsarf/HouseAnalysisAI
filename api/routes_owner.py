@@ -114,7 +114,7 @@ def get_owner_profile(property_id: UUID, session: Session = Depends(get_session)
 @router.get("/owner-profiles/unlinked")
 def unlinked_owner_profiles(session: Session = Depends(get_session),
                             user: User = Depends(current_user)) -> dict:
-    rows = session.query(dbm.ReportExtraction, dbm.Report).join(
+    rows: list = session.query(dbm.ReportExtraction, dbm.Report).join(
         dbm.Report, dbm.Report.id == dbm.ReportExtraction.report_id,
     ).filter(
         dbm.Report.doc_kind == "owner_profile",
@@ -123,6 +123,11 @@ def unlinked_owner_profiles(session: Session = Depends(get_session),
         dbm.ReportExtraction.status == "complete",
     ).all()
     items = []
+    rows += session.query(dbm.ReportEntityExtraction, dbm.Report).join(
+        dbm.Report, dbm.Report.id == dbm.ReportEntityExtraction.report_id,
+    ).filter(dbm.ReportEntityExtraction.kind == "owner",
+             dbm.ReportEntityExtraction.active.is_(True),
+             dbm.ReportEntityExtraction.status == "complete").all()
     for extraction, report in rows:
         normalized = extraction.normalized_json or {}
         if normalized.get("linked"):
@@ -144,6 +149,7 @@ def unlinked_owner_profiles(session: Session = Depends(get_session),
         candidate_names = {str(row.id): row.full_name for row in candidate_owners}
         items.append({
             "report_id": extraction.report_id,
+            "entity_id": extraction.id if isinstance(extraction, dbm.ReportEntityExtraction) else None,
             "file_name": report.file_path.rsplit("/", 1)[-1],
             "owner_id": owner_id,
             "owner_name": owner.full_name if owner else None,
@@ -158,9 +164,17 @@ def unlinked_owner_profiles(session: Session = Depends(get_session),
 @router.post("/owner-profiles/{report_id}/link")
 def link_owner_profile(report_id: UUID, body: dict, session: Session = Depends(get_session),
                        user: User = Depends(write_user)) -> dict:
-    extraction = session.query(dbm.ReportExtraction).filter(
+    extraction: dbm.ReportExtraction | dbm.ReportEntityExtraction | None = session.query(dbm.ReportExtraction).filter(
         dbm.ReportExtraction.report_id == report_id,
     ).first()
+    if body.get("entity_id"):
+        try:
+            entity_id = UUID(str(body["entity_id"]))
+        except ValueError as exc:
+            raise AcqError(ErrorCode.INVALID_INPUT, "invalid entity_id") from exc
+        extraction = session.query(dbm.ReportEntityExtraction).filter_by(
+            id=entity_id, report_id=report_id, kind="owner", active=True,
+        ).first()
     normalized = extraction.normalized_json if extraction is not None else None
     if not isinstance(normalized, dict) or not normalized.get("owner_id"):
         raise AcqError(ErrorCode.NOT_FOUND, "owner profile not found")
@@ -186,4 +200,6 @@ def link_owner_profile(report_id: UUID, body: dict, session: Session = Depends(g
         raise AcqError(ErrorCode.INVALID_INPUT, "owner_id is not a reviewed link candidate")
     target = confirm_owner_link(session, source_owner_id, target_owner_id)
     extraction.normalized_json = {**normalized, "owner_id": str(target.id), "linked": True}
+    if isinstance(extraction, dbm.ReportEntityExtraction):
+        extraction.owner_id = target.id
     return {"report_id": str(report_id), "owner_id": str(target.id), "linked": True}

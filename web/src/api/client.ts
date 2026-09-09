@@ -37,6 +37,12 @@ import {
 const API_ROOT = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const BASE = `${API_ROOT}/api`;
 
+export function reanalyzeReport(reportId: string, retry = false) {
+  return request<{ run_id: string; status: string }>(`${BASE}/reports/${reportId}/reanalyze`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ retry }),
+  });
+}
+
 let unauthorizedHandler: (() => void) | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
@@ -156,6 +162,7 @@ export interface OwnerLinkCandidate {
 }
 
 export interface UnlinkedOwnerProfile {
+  entity_id?: string | null;
   report_id: string; file_name: string; owner_id: string; owner_name: string | null;
   link_candidates: OwnerLinkCandidate[];
 }
@@ -164,8 +171,8 @@ export function listUnlinkedOwnerProfiles(): Promise<{ items: UnlinkedOwnerProfi
   return get("/owner-profiles/unlinked");
 }
 
-export function confirmOwnerProfileLink(reportId: string, ownerId: string): Promise<{ linked: boolean }> {
-  return json(`/owner-profiles/${encodeURIComponent(reportId)}/link`, "POST", { owner_id: ownerId });
+export function confirmOwnerProfileLink(reportId: string, ownerId: string, entityId?: string | null): Promise<{ linked: boolean }> {
+  return json(`/owner-profiles/${encodeURIComponent(reportId)}/link`, "POST", { owner_id: ownerId, entity_id: entityId });
 }
 
 export interface OutreachDraft {

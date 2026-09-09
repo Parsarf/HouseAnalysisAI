@@ -150,7 +150,7 @@ async def upload(files: list[UploadFile] = File(...), batch_name: str | None = F
     root = settings.document_root
     root.mkdir(parents=True, exist_ok=True)
     storage = get_document_storage()
-    whole_pdf = settings.analysis_pipeline == "whole_pdf"
+    whole_pdf = True  # Every PDF uses page-accounted multi-property analysis.
     batch = dbm.Batch(id=batch_id, name=batch_name, file_count=len(files),
                       total_count=len(files), status="analyzing" if whole_pdf else "ingesting")
     session.add(batch)

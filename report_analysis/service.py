@@ -255,13 +255,19 @@ def _page_for(path: str, extraction: PropertyReportExtraction, row: dict | None 
 
 def _replace_evidence(
     session: Session, report: dbm.Report, extraction: PropertyReportExtraction,
+    *, property_id: UUID | None = None, entity_id: UUID | None = None,
 ) -> int:
     """Optional provenance rows; canonical JSON remains the processing source."""
-    session.query(dbm.ExtractedFact).filter(
+    query = session.query(dbm.ExtractedFact).filter(
         dbm.ExtractedFact.report_id == report.id,
         dbm.ExtractedFact.extraction_unit_id.is_(None),
         dbm.ExtractedFact.source_kind == "report",
-    ).delete(synchronize_session=False)
+    )
+    if entity_id is not None:
+        query = query.filter(dbm.ExtractedFact.entity_local_id.like(f"{entity_id}:%"))
+        query.update({"is_active": False}, synchronize_session=False)
+    else:
+        query.delete(synchronize_session=False)
     payload = extraction.model_dump(mode="json")
     inserted = 0
 
@@ -291,9 +297,9 @@ def _replace_evidence(
             except ValueError:
                 pass
         session.add(dbm.ExtractedFact(
-            id=uuid4(), property_id=report.property_id, report_id=report.id,
+            id=uuid4(), property_id=property_id or report.property_id, report_id=report.id,
             extraction_unit_id=None, entity_type=entity_type,
-            entity_local_id=local_id, field_path=path, value_raw=str(value),
+            entity_local_id=f"{entity_id}:{local_id}" if entity_id else local_id, field_path=path, value_raw=str(value),
             value_parsed=value_parsed,
             value_text=value if isinstance(value, str) and value_date is None else None,
             value_date=value_date,

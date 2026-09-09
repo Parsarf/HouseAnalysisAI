@@ -305,7 +305,9 @@ def test_unresolved_trace_never_looks_confirmed():
 def sqlite_session():
     engine = create_engine("sqlite:///:memory:")
     needed = ["reports", "report_extractions", "extracted_facts", "assumption_sets",
-              "deal_scenarios", "rankings"]
+              "deal_scenarios", "rankings", "report_entity_extractions"]
+    from tests.test_whole_pdf_analysis import _create_property_table
+    _create_property_table(engine)
     tables = [Base.metadata.tables[name] for name in needed]
     Base.metadata.create_all(engine, tables=tables)
     factory = sessionmaker(bind=engine)

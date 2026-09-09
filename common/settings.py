@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     extraction_api_key: str | None = None
     extraction_base_url: str = "https://api.openai.com/v1"
     whole_pdf_model: str = "gpt-4o-mini"
+    pdf_chunk_pages: int = 8
+    pdf_chunk_max_bytes: int = 12_000_000
+    pdf_backfill_budget_usd: Decimal = Decimal("25.00")
     extraction_cheap_model: str = "gpt-4o-mini"
     extraction_frontier_model: str = "gpt-4o"
     extraction_timeout_seconds: float = 180.0

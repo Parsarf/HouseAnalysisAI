@@ -258,6 +258,12 @@ def confirm_owner_link(session: Session, source_owner_id: UUID, target_owner_id:
         session.query(model).filter(model.owner_id == source.id).update(
             {"owner_id": target.id}, synchronize_session=False,
         )
+    from db.models import ReportEntityExtraction
+    for entity in session.query(ReportEntityExtraction).filter(
+        ReportEntityExtraction.owner_id == source.id,
+    ).all():
+        entity.owner_id = target.id
+        entity.normalized_json = {**(entity.normalized_json or {}), "owner_id": str(target.id)}
     session.delete(source)
     session.flush()
     return target

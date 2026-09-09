@@ -28,6 +28,10 @@ log = logging.getLogger(__name__)
 
 
 def load_normalized(session: Session, property_id: UUID) -> NormalizedProperty | None:
+    from report_analysis.read_model import load_record
+    record = load_record(session, property_id)
+    if record is not None:
+        return record
     canonical = (session.query(dbm.ReportExtraction)
                  .filter(dbm.ReportExtraction.property_id == property_id,
                          dbm.ReportExtraction.status == "complete")

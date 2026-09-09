@@ -30,7 +30,7 @@ def classify_pdf(path: Path) -> tuple[DocumentKind, float]:
         import fitz
 
         with fitz.open(path) as document:
-            text = "\n".join(page.get_text() for page in document[: min(4, len(document))])
+            text = "\n".join(page.get_text() for page in document)
     except (ImportError, OSError, RuntimeError, ValueError):
         text = ""
     return classify_document_text(text)

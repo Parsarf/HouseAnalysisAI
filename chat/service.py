@@ -184,7 +184,7 @@ _SALVAGE_NOTE = ("\n\n(Some figures were omitted from this answer because they c
 
 
 def _salvage_grounded_sentences(text: str, context: dict,
-                                tool_results: dict) -> tuple[str, int]:
+                                tool_results: dict) -> tuple[str | None, int]:
     """Keep every sentence whose numbers are grounded; drop only offending ones.
 
     A single computed aside ("$50k higher") no longer discards an otherwise

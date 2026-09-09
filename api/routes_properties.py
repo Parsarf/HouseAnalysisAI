@@ -434,10 +434,8 @@ def timeline(property_id: UUID, session: Session = Depends(get_session),
 def property_reports(property_id: UUID, session: Session = Depends(get_session),
                      user: User = Depends(current_user)) -> dict:
     _get_property(session, property_id)
-    rows = (session.query(dbm.Report)
-            .filter(dbm.Report.property_id == property_id)
-            .order_by(dbm.Report.created_at.desc())
-            .all())
+    from report_analysis.read_model import reports_for_property
+    rows = sorted(reports_for_property(session, property_id), key=lambda row: row.created_at, reverse=True)
     return {"items": [{
         "id": str(row.id), "report_type": row.report_type, "vendor": row.vendor,
         "generated_date": row.generated_date.isoformat() if row.generated_date else None,

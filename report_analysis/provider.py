@@ -57,6 +57,10 @@ class ProviderTimeout(ProviderError):
     """The provider did not answer within the configured bounded timeout."""
 
 
+class ProviderIncompleteError(ProviderError):
+    """The provider could not finish this input; a smaller input may succeed."""
+
+
 class PermanentProviderError(RuntimeError):
     """A 4xx request rejection that retrying unchanged cannot repair."""
 
@@ -152,7 +156,8 @@ class WholePdfProviderClient:
         self.sleep = sleep
 
     def analyze_pdf(self, pdf_path: Path, *, doc_kind: DocumentKind = "property_profile",
-                    log_context: dict | None = None) -> ProviderAnalysis:
+                    log_context: dict | None = None, schema: dict | None = None,
+                    instruction: str | None = None) -> ProviderAnalysis:
         if not self.api_key:
             raise PermanentProviderError("extraction API key is not configured")
         pdf_bytes = pdf_path.read_bytes()
@@ -172,14 +177,14 @@ class WholePdfProviderClient:
                         "filename": pdf_path.name or "report.pdf",
                         "file_data": pdf_data_url,
                     },
-                    {"type": "input_text", "text": OWNER_SYSTEM_PROMPT if doc_kind == "owner_profile" else SYSTEM_PROMPT},
+                    {"type": "input_text", "text": instruction or (OWNER_SYSTEM_PROMPT if doc_kind == "owner_profile" else SYSTEM_PROMPT)},
                 ],
             }],
             "text": {
                 "format": {
                     "type": "json_schema",
                     "name": "owner_profile_extraction" if doc_kind == "owner_profile" else "property_report_extraction",
-                    "schema": owner_schema() if doc_kind == "owner_profile" else canonical_schema(),
+                    "schema": schema or (owner_schema() if doc_kind == "owner_profile" else canonical_schema()),
                     "strict": True,
                 },
             },
@@ -234,6 +239,10 @@ class WholePdfProviderClient:
                 continue
 
             if 200 <= status < 300:
+                if response.get("status") == "incomplete":
+                    raise ProviderIncompleteError(
+                        "provider output incomplete; split the source and retry"
+                    )
                 try:
                     extracted = json.loads(_response_text(response))
                 except (TypeError, ValueError, json.JSONDecodeError) as exc:

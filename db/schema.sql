@@ -52,3 +52,32 @@ CREATE TABLE IF NOT EXISTS historical_rate_index (id uuid PRIMARY KEY, year inte
 CREATE TABLE IF NOT EXISTS regional_cost_index (id uuid PRIMARY KEY, region_key text NOT NULL UNIQUE, index_value numeric(10,6) NOT NULL, effective_from date);
 CREATE TABLE IF NOT EXISTS transfer_tax_rates (id uuid PRIMARY KEY, lookup_key text NOT NULL UNIQUE, rate numeric(9,6) NOT NULL, flat_amount numeric(14,2), notes text);
 CREATE TABLE IF NOT EXISTS prompt_versions (id uuid PRIMARY KEY, version text NOT NULL UNIQUE, unit_type text, prompt_path text, prompt_hash text, created_at timestamptz DEFAULT now());
+
+CREATE TABLE IF NOT EXISTS document_analysis_runs (
+ id uuid PRIMARY KEY, report_id uuid NOT NULL REFERENCES reports(id), budget_batch_id uuid REFERENCES batches(id), generation integer NOT NULL,
+ version varchar(40) NOT NULL, status varchar(30) NOT NULL, page_count integer NOT NULL DEFAULT 0,
+ coverage jsonb NOT NULL DEFAULT '[]', issues jsonb NOT NULL DEFAULT '[]',
+ cost_usd numeric(14,6) NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(report_id, generation)
+);
+CREATE INDEX IF NOT EXISTS ix_document_analysis_runs_report_id ON document_analysis_runs(report_id);
+CREATE TABLE IF NOT EXISTS document_analysis_chunks (
+ id uuid PRIMARY KEY, run_id uuid NOT NULL REFERENCES document_analysis_runs(id), key varchar(255) NOT NULL,
+ pages jsonb NOT NULL DEFAULT '[]', status varchar(30) NOT NULL, payload jsonb, error text,
+ cost_usd numeric(14,6) NOT NULL DEFAULT 0, attempts integer NOT NULL DEFAULT 0, UNIQUE(run_id, key)
+);
+CREATE INDEX IF NOT EXISTS ix_document_analysis_chunks_run_id ON document_analysis_chunks(run_id);
+CREATE TABLE IF NOT EXISTS report_entity_extractions (
+ id uuid PRIMARY KEY, run_id uuid NOT NULL REFERENCES document_analysis_runs(id),
+ report_id uuid NOT NULL REFERENCES reports(id), entity_key varchar(255) NOT NULL,
+ kind varchar(20) NOT NULL, role varchar(20) NOT NULL,
+ property_id uuid REFERENCES properties(id), owner_id uuid REFERENCES owners(id),
+ source_pages jsonb NOT NULL DEFAULT '[]', raw_json jsonb, normalized_json jsonb,
+ issues jsonb NOT NULL DEFAULT '[]', status varchar(30) NOT NULL, active boolean NOT NULL DEFAULT false,
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(run_id, entity_key)
+);
+CREATE INDEX IF NOT EXISTS ix_report_entity_extractions_run_id ON report_entity_extractions(run_id);
+CREATE INDEX IF NOT EXISTS ix_report_entity_extractions_report_id ON report_entity_extractions(report_id);
+CREATE INDEX IF NOT EXISTS ix_report_entity_extractions_property_id ON report_entity_extractions(property_id);
+CREATE INDEX IF NOT EXISTS ix_report_entity_extractions_owner_id ON report_entity_extractions(owner_id);

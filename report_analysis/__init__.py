@@ -4,6 +4,7 @@ from .provider import (
     PermanentProviderError,
     ProviderAnalysis,
     ProviderError,
+    ProviderIncompleteError,
     ProviderTimeout,
     WholePdfProviderClient,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "PropertyReportExtraction",
     "ProviderAnalysis",
     "ProviderError",
+    "ProviderIncompleteError",
     "ProviderTimeout",
     "WholePdfProviderClient",
     "canonical_schema",

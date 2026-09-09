@@ -132,11 +132,19 @@ def _structured_property(session: Session, property_id: UUID) -> dict:
 
 
 def _list_documents(session: Session, property_id: UUID) -> list[dict]:
-    rows = session.query(dbm.Report).filter(dbm.Report.property_id == property_id).all()
+    from report_analysis.read_model import reports_for_property
+    rows = reports_for_property(session, property_id)
     owner_ids = {row[0] for row in session.query(dbm.PropertyOwner.owner_id).filter(
         dbm.PropertyOwner.property_id == property_id,
     ).all()}
     if owner_ids:
+        owner_entities = session.query(dbm.ReportEntityExtraction).filter(
+            dbm.ReportEntityExtraction.owner_id.in_(owner_ids),
+            dbm.ReportEntityExtraction.active.is_(True),
+        ).all()
+        rows.extend(session.query(dbm.Report).filter(
+            dbm.Report.id.in_([entity.report_id for entity in owner_entities]),
+        ).all())
         for extraction, report in session.query(dbm.ReportExtraction, dbm.Report).join(
             dbm.Report, dbm.Report.id == dbm.ReportExtraction.report_id,
         ).filter(dbm.Report.doc_kind == "owner_profile").all():
@@ -164,6 +172,13 @@ def _document_text(session: Session, report_id: UUID, session_key: str,
     start = max(1, page_start)
     end_requested = max(start, page_end or start)
     end_requested = min(end_requested, start + 9)
+    from report_analysis.read_model import source_report_id
+    owner_entities = session.query(dbm.ReportEntityExtraction).filter(
+        dbm.ReportEntityExtraction.report_id == source_report_id(session, report),
+        dbm.ReportEntityExtraction.kind == "owner",
+    ).all()
+    if any(start <= page <= end_requested for entity in owner_entities for page in entity.source_pages):
+        raise AcqError(ErrorCode.INVALID_INPUT, "Pages containing owner profiles require the owner-profile tool")
     cache_key = f"{report_id}:{start}:{end_requested}"
     cached = cached_document_text(session, session_key, cache_key)
     if cached is not None:
