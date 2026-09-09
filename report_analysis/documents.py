@@ -413,7 +413,12 @@ def analyze_document(report_id: UUID, *, batch_id=None, job_id=None, run_id=None
                                 raise
                             except PermanentProviderError:
                                 raise
-                            except (ProviderError, ValidationError, ValueError) as exc:
+                            except ProviderError:
+                                # A queue retry can reuse completed entity and
+                                # chunk checkpoints. Do not turn a temporary
+                                # provider outage into a terminal partial run.
+                                raise
+                            except (ValidationError, ValueError) as exc:
                                 group["issues"].append({"code": "entity_extraction_failed", "message": str(exc)[:500]})
                         _publish_entity(factory, canonical_id, run_id, key, group, compute, identity_resolver)
                     issues.extend({"code": "unreadable_page", "pages": [number]}
@@ -436,6 +441,12 @@ def analyze_document(report_id: UUID, *, batch_id=None, job_id=None, run_id=None
                     _set_status(factory, run_id, status, issues)
         except BudgetPaused as exc:
             _set_status(factory, run_id, "paused_budget", [{"code": "budget", "message": str(exc)}])
+        except ProviderError:
+            # Transport outages and provider throttling are transient. Leave
+            # checkpoints intact and let the durable job queue back off/retry.
+            log.warning("document analysis deferred after provider failure",
+                        extra={"run_id": str(run_id)}, exc_info=True)
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             log.exception("document analysis failed", extra={"run_id": str(run_id)})
             _set_status(factory, run_id, "failed", [{"code": "document_failed", "message": str(exc)[:500]}])

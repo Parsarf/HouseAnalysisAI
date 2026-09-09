@@ -10,6 +10,7 @@ import pytest
 
 from common.settings import settings
 from db import models as dbm
+from pipeline.worker import _mark_terminal_failure
 from report_analysis.document_identity import resolve_identity
 from report_analysis.document_schemas import Discovery
 from report_analysis.documents import _validate_discovery, analyze_document
@@ -82,7 +83,7 @@ class DocumentProvider:
         else:
             entity = json.loads(instruction.rsplit("\n", 1)[1])
             if entity["key"] == self.fail:
-                raise ProviderError("Simulated provider failure")
+                raise ValueError("Simulated invalid entity extraction")
             payload = property_payload(entity["key"])
             payload["source_references"][0]["source_page"] = entity["pages"][0]
             payload["source_references"][0]["evidence"] = entity["address"]
@@ -212,6 +213,72 @@ def test_permanent_provider_failure_stops_without_recursive_splitting(whole_pdf_
     assert provider.calls == 1
     with h.transaction() as session:
         assert session.get(dbm.DocumentAnalysisRun, run_id).status == "failed"
+
+
+def test_transient_discovery_failure_is_left_for_queue_retry(whole_pdf_harness):
+    class UnavailableProvider:
+        def analyze_pdf(self, path, *, schema, instruction, log_context):
+            raise ProviderError("rate limited")
+
+    h = whole_pdf_harness
+    uploaded = upload(h, ["A"])
+    with pytest.raises(ProviderError, match="rate limited"):
+        analyze(h, uploaded, UnavailableProvider(), [])
+    with h.transaction() as session:
+        run = session.query(dbm.DocumentAnalysisRun).one()
+        assert run.status == "analyzing"
+        chunk = session.query(dbm.DocumentAnalysisChunk).one()
+        assert chunk.status == "failed"
+
+
+def test_transient_entity_failure_is_left_for_queue_retry(whole_pdf_harness):
+    class EntityUnavailableProvider(DocumentProvider):
+        def analyze_pdf(self, path, *, schema, instruction, log_context):
+            if "entities" not in schema["properties"]:
+                raise ProviderError("rate limited")
+            return super().analyze_pdf(
+                path, schema=schema, instruction=instruction, log_context=log_context
+            )
+
+    h = whole_pdf_harness
+    uploaded = upload(h, ["A"])
+    with pytest.raises(ProviderError, match="rate limited"):
+        analyze(h, uploaded, EntityUnavailableProvider(), [])
+    with h.transaction() as session:
+        run = session.query(dbm.DocumentAnalysisRun).one()
+        assert run.status == "analyzing"
+        chunks = session.query(dbm.DocumentAnalysisChunk).all()
+        assert [chunk.status for chunk in chunks] == ["complete", "failed"]
+
+
+def test_exhausted_provider_retries_mark_analysis_failed(whole_pdf_harness):
+    h = whole_pdf_harness
+    uploaded = upload(h, ["A"])
+    with pytest.raises(ProviderError):
+        analyze(h, uploaded, type("UnavailableProvider", (), {
+            "analyze_pdf": lambda *args, **kwargs: (_ for _ in ()).throw(
+                ProviderError("provider failed after 3 attempts (429): rate limit reached")
+            ),
+        })(), [])
+    with h.transaction() as session:
+        run = session.query(dbm.DocumentAnalysisRun).one()
+        _mark_terminal_failure(session, {
+            "id": UUID("00000000-0000-0000-0000-000000000001"),
+            "name": "analyze_report",
+            "payload": {
+                "report_id": uploaded["report_ids"][0],
+                "run_id": str(run.id),
+            },
+        }, ProviderError("rate limit reached"))
+    with h.transaction() as session:
+        run = session.query(dbm.DocumentAnalysisRun).one()
+        assert run.status == "failed"
+        assert run.issues[-1]["code"] == "provider_retry_exhausted"
+        report = session.get(dbm.Report, UUID(uploaded["report_ids"][0]))
+        batch = session.get(dbm.Batch, UUID(uploaded["batch_id"]))
+        assert report.status == "failed"
+        assert batch.status == "needs_review"
+        assert batch.failed_count == 1
 
 
 def test_discovery_requires_all_pages_and_valid_entity_links():

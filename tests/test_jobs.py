@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from jobs import InMemoryJobQueue, JobStatus
-from jobs.postgres import PostgresJobQueue
+from jobs.postgres import PostgresJobQueue, _retry_delay
 
 
 class MappingResult:
@@ -71,3 +71,8 @@ def test_postgres_claimable_summary_groups_due_queued_jobs():
     summary = PostgresJobQueue().claimable_summary(session)
 
     assert summary == {"extract_unit": 2, "ingest_document": 1}
+
+
+def test_postgres_rate_limit_retry_waits_for_token_window():
+    assert _retry_delay(1, "provider failed (429): Rate limit reached") == 60
+    assert _retry_delay(1, "temporary provider failure") == 2

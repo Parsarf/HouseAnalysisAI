@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
 
+RATE_LIMIT_RETRY_SECONDS = 60
+
 ENQUEUE_SQL = text("""
 INSERT INTO jobs (id, name, payload, dedupe_key, max_attempts)
 VALUES (:id, :name, CAST(:payload AS jsonb), :dedupe_key, :max_attempts)
@@ -49,6 +51,14 @@ ORDER BY name
 class EnqueueResult:
     id: UUID
     status: str
+
+
+def _retry_delay(attempts: int, error: str) -> int:
+    delay = min(3600, 2 ** attempts)
+    normalized = error.casefold()
+    if "429" in normalized or "rate limit" in normalized:
+        return max(RATE_LIMIT_RETRY_SECONDS, delay)
+    return delay
 
 
 class PostgresJobQueue:
@@ -94,7 +104,7 @@ class PostgresJobQueue:
 
     def fail(self, session: Session, job_id: UUID, attempts: int, max_attempts: int, error: str) -> None:
         dead = attempts >= max_attempts
-        delay = min(3600, 2 ** attempts)
+        delay = _retry_delay(attempts, error)
         session.execute(text("""
           UPDATE jobs SET status=:status, last_error=:error,
             run_after=:run_after, locked_at=NULL, completed_at=CASE WHEN :dead THEN now() ELSE NULL END

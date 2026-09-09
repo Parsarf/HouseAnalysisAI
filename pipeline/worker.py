@@ -17,12 +17,12 @@ from common.db import db_session
 from common.errors import ErrorCode
 from common.storage import get_document_storage
 from contracts import ReportStatus
-from db.models import Batch, ExtractionUnit, Report
+from db.models import Batch, DocumentAnalysisRun, ExtractionUnit, Report
 from extraction import ExtractionService, ProviderClient, UnitInput
 from identity.service import attach_report
 from ingestion.worker import ingest_document
 from jobs.postgres import PostgresJobQueue
-from report_analysis.documents import analyze_document
+from report_analysis.documents import analyze_document, refresh_batches
 from report_analysis.service import ReportAnalysisFailure
 
 from .orchestrator import Pipeline
@@ -306,11 +306,26 @@ def _mark_terminal_failure(session, job: dict, exc: Exception) -> None:
     """Move domain records to terminal failure when a queue job is exhausted."""
     data = _payload(job["payload"])
     batch: Batch | None = None
+    analysis_status_refreshed = False
     if job["name"] == "analyze_report" and data.get("report_id"):
         report = session.get(Report, UUID(str(data["report_id"])))
         if report is not None:
-            # The report-analysis service records a precise terminal state in
-            # its own transaction before raising. Preserve it here.
+            if data.get("run_id"):
+                run = session.get(DocumentAnalysisRun, UUID(str(data["run_id"])))
+                if run is not None and run.status == "analyzing":
+                    run.status = "failed"
+                    run.issues = [*(run.issues or []), {
+                        "code": "provider_retry_exhausted",
+                        "message": str(exc)[:500],
+                    }]
+                    for row in session.query(Report).filter(
+                        (Report.id == report.id) | (Report.duplicate_of == report.id),
+                    ).all():
+                        row.status = "failed"
+                        row.failure_reason = "failed"
+                    session.flush()
+                    refresh_batches(session, report.id)
+                    analysis_status_refreshed = True
             batch = session.get(Batch, report.batch_id) if report.batch_id else None
     elif job["name"] == "ingest_document" and data.get("report_id"):
         report = session.get(Report, UUID(str(data["report_id"])))
@@ -330,7 +345,7 @@ def _mark_terminal_failure(session, job: dict, exc: Exception) -> None:
                 batch = session.get(Batch, report.batch_id) if report.batch_id else None
                 if batch is not None and not was_failed:
                     batch.failed_count = (batch.failed_count or 0) + 1
-    if batch is not None:
+    if batch is not None and not analysis_status_refreshed:
         if job["name"] == "ingest_document":
             failed_reports = (session.query(Report)
                               .filter(Report.batch_id == batch.id,
