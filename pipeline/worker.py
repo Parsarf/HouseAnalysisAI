@@ -215,6 +215,9 @@ class Worker:
         self._session_factory = session_factory or db_session
 
     def run_once(self) -> bool:
+        # Persist the claim before invoking a handler. Handlers perform work in
+        # their own transactions and may heartbeat the job row; keeping the
+        # claim transaction open would make those updates wait on our own lock.
         with self._session_factory() as session:
             job = self.queue.claim(session)
             if not job:
@@ -233,36 +236,39 @@ class Worker:
             log.info("job found", extra={
                 **context, "event": "worker_job_claimed", "success": True,
             })
-            try:
-                handler_payload = _payload(job["payload"])
-                handler_payload["_job_id"] = str(job["id"])
-                self.handlers[job["name"]](handler_payload)
-            except Exception as exc:
-                terminal = isinstance(exc, PermanentJobFailure) or job["attempts"] >= job["max_attempts"]
-                attempts = job["max_attempts"] if terminal else job["attempts"]
+
+        try:
+            handler_payload = _payload(job["payload"])
+            handler_payload["_job_id"] = str(job["id"])
+            self.handlers[job["name"]](handler_payload)
+        except Exception as exc:
+            terminal = isinstance(exc, PermanentJobFailure) or job["attempts"] >= job["max_attempts"]
+            attempts = job["max_attempts"] if terminal else job["attempts"]
+            with self._session_factory() as session:
                 self.queue.fail(session, job["id"], attempts, job["max_attempts"], str(exc))
                 if terminal:
                     _mark_terminal_failure(session, job, exc)
-                log.exception(
-                    "job failed permanently" if terminal else "job failed; retry scheduled",
-                    extra={
-                        **context,
-                        "event": "job_failed_permanently" if terminal else "job_retry_scheduled",
-                        "success": False,
-                        "job_status": "dead" if terminal else "queued",
-                        "error_type": type(exc).__name__,
-                        "error_message": str(exc),
-                    },
-                )
-            else:
-                self.queue.complete(session, job["id"])
-                log.info("job completion", extra={
+            log.exception(
+                "job failed permanently" if terminal else "job failed; retry scheduled",
+                extra={
                     **context,
-                    "event": "worker_job_completed",
-                    "success": True,
-                    "job_status": "complete",
-                })
-            return True
+                    "event": "job_failed_permanently" if terminal else "job_retry_scheduled",
+                    "success": False,
+                    "job_status": "dead" if terminal else "queued",
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
+        else:
+            with self._session_factory() as session:
+                self.queue.complete(session, job["id"])
+            log.info("job completion", extra={
+                **context,
+                "event": "worker_job_completed",
+                "success": True,
+                "job_status": "complete",
+            })
+        return True
 
     def recover_stale(self) -> int:
         recover = getattr(self.queue, "recover_stale", None)

@@ -1111,6 +1111,40 @@ def test_worker_logs_job_lifecycle(caplog):
     assert completed.job_status == "complete"
 
 
+def test_worker_commits_claim_before_running_handler():
+    events = []
+
+    @contextmanager
+    def transaction():
+        session = object()
+        events.append("transaction_opened")
+        try:
+            yield session
+        finally:
+            events.append("transaction_committed")
+
+    class TransactionQueue(FakeQueue):
+        def claim(self, session):
+            events.append("claim")
+            return super().claim(session)
+
+        def complete(self, session, job_id):
+            events.append("complete")
+            super().complete(session, job_id)
+
+    queue = TransactionQueue([_job("demo", {})])
+
+    def handler(payload):
+        events.append("handler")
+        assert events == ["transaction_opened", "claim", "transaction_committed", "handler"]
+
+    assert Worker({"demo": handler}, queue=queue, session_factory=transaction).run_once()
+    assert events == [
+        "transaction_opened", "claim", "transaction_committed", "handler",
+        "transaction_opened", "complete", "transaction_committed",
+    ]
+
+
 def test_worker_reports_claimable_job_kinds():
     queue = FakeQueue([
         _job("extract_unit", {"unit_id": str(uuid4())}),
